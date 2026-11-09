@@ -1,0 +1,9 @@
+{#- Language selector (footer of the panel and of the login pages). -#}
+{%- import "_macros.html" as m -%}
+{%- set here = request.url.path ~ ('?' ~ request.url.query if request.url.query else '') -%}
+<div class="lang-switch" role="group" aria-label="{{ _('Language') }}">
+  {{ m.icon('language') }}
+  <span class="lang-switch__opts">
+    {%- for code, name in LANGS.items() %}<a href="/lang/{{ code }}?next={{ here|urlencode }}" hreflang="{{ code }}" lang="{{ code }}" title="{{ name }}" aria-label="{{ name }}"{% if code == ui_lang() %} aria-current="true"{% endif %}>{{ code|upper }}</a>{% endfor -%}
+  </span>
+</div>

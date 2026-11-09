@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from .secrets_store import SecretStore
+from .i18n import tr
 
 PASSWORD_MIN = 12
 SCRYPT_N, SCRYPT_R, SCRYPT_P = 2**15, 8, 1
@@ -65,7 +66,7 @@ CREATE TABLE IF NOT EXISTS recovery_codes (
 
 def hash_password(password: str) -> str:
     if len(password) < PASSWORD_MIN:
-        raise ValueError(f"la contraseña debe tener al menos {PASSWORD_MIN} caracteres")
+        raise ValueError(tr("the password must have at least {min} characters", min=PASSWORD_MIN))
     salt = secrets.token_bytes(16)
     dk = hashlib.scrypt(password.encode(), salt=salt, n=SCRYPT_N, r=SCRYPT_R, p=SCRYPT_P, maxmem=64 * 1024 * 1024, dklen=32)
     return f"scrypt${SCRYPT_N}${SCRYPT_R}${SCRYPT_P}${base64.b64encode(salt).decode()}${base64.b64encode(dk).decode()}"
@@ -166,9 +167,9 @@ class AuthStore:
     def create_user(self, username: str, password: str) -> int:
         username = username.strip().lower()
         if not username or not username.replace("-", "").replace("_", "").replace(".", "").isalnum():
-            raise ValueError("usuario no válido (letras, números, punto, guion o guion bajo)")
+            raise ValueError(tr("invalid username (letters, numbers, dot, hyphen or underscore)"))
         if self.conn.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone():
-            raise ValueError(f"el usuario {username} ya existe")
+            raise ValueError(tr("the user {user} already exists", user=username))
         cur = self.conn.execute("INSERT INTO users (username, pw_hash, created_at) VALUES (?, ?, ?)",
                                 (username, hash_password(password), _iso(_now())))
         self.conn.commit()

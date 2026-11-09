@@ -21,9 +21,19 @@ from urllib.parse import unquote, urlparse
 
 import httpx
 
+from .i18n import LANGS, N_, tn, translate
+
 log = logging.getLogger("multicdn.notify")
 DEDUP_SECONDS = 600
 ICON = {"switch": "🔀", "alert": "⚠️", "error": "❌", "auth": "🔐", "config": "✅"}
+# Resúmenes de configuración que se avisan (mismas claves que en gcore_setup), en cualquier idioma:
+# el historial guarda el texto en el idioma en que se escribió.
+NOTIFIED_CONFIG = (N_("Prepared on Gcore: resource {id}, certificate until {date}"),
+                   N_("Certificate renewed on Gcore, valid until {date}"))
+
+
+def _config_prefixes() -> tuple[str, ...]:
+    return tuple(translate(key, lang).split("{")[0] for key in NOTIFIED_CONFIG for lang in LANGS)
 
 
 def should_notify(event: dict) -> bool:
@@ -33,11 +43,11 @@ def should_notify(event: dict) -> bool:
     if kind in ("alert", "error"):
         return True
     if kind == "auth":
-        return "bloque" in event["summary"].lower()
+        summary = event["summary"].lower()
+        return "bloque" in summary or "blocked" in summary
     if kind == "config":
-        s = event["summary"]
         # Primera preparación y renovaciones automáticas; una actualización la lanza el usuario.
-        return s.startswith("Preparado en Gcore") or s.startswith("Certificado renovado")
+        return event["summary"].startswith(_config_prefixes())
     return False
 
 
@@ -46,12 +56,12 @@ def format_text(event: dict) -> tuple[str, str]:
     title = f"{ICON.get(event['kind'], 'ℹ️')} {event.get('domain') or 'Multi-CDN'}: {event['summary']}"
     lines = [title]
     if event.get("transition"):
-        lines.append(f"Cambio: {event['transition']}")
+        lines.append(tn("Switch: {transition}", transition=event["transition"]))
     for host, before, after in event.get("dns_diff") or []:
         lines.append(f"  {host}: {before} → {after}")
     if event.get("signals"):
-        lines.append("Señales: " + " · ".join(event["signals"]))
-    lines.append(f"Por: {event['actor']}")
+        lines.append(tn("Signals: {signals}", signals=" · ".join(event["signals"])))
+    lines.append(tn("By: {actor}", actor=event["actor"]))
     return title[:150], "\n".join(lines)
 
 
@@ -85,7 +95,7 @@ class Notifier:
             results["email"] = await asyncio.to_thread(self._email, subject, body)
         for channel, outcome in results.items():
             if outcome != "ok":
-                log.warning("aviso por %s no enviado: %s", channel, outcome)
+                log.warning("%s notification not sent: %s", channel, outcome)
         return results
 
     async def _telegram(self, text: str) -> str:

@@ -10,7 +10,8 @@ IPs are blocked, and moves it back once the block is over. A hostname is only ev
 proxied by Cloudflare or a CNAME to the backup CDN: the origin IP is never published.
 
 It ships as a private panel (login with password + TOTP) plus the controller that
-does the switching, Gcore preparation (certificates included) and alerts.
+does the switching, Gcore preparation (certificates included) and alerts. The panel
+is in English and Spanish.
 
 ## Run
 
@@ -19,7 +20,7 @@ docker run -d --name multicdn-panel --restart unless-stopped \
   --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
   -p 127.0.0.1:8765:8765 -v ./data:/app/data --env-file .env \
   pepebits/multi-cdn:latest
-docker exec -it multicdn-panel python -m app.cli crear-usuario <user>
+docker exec -it multicdn-panel python -m app.cli create-user <user>
 ```
 
 The panel listens on `127.0.0.1:8765`: reach it through an SSH tunnel or a private

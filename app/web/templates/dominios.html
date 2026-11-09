@@ -1,80 +1,80 @@
 {% extends "base.html" %}
-{% block title %}Dominios{% endblock %}
-{% block crumb %}{{ m.crumbs('Dominios') }}{% endblock %}
-{% block heading %}Dominios{% endblock %}
+{% block title %}{{ _('Domains') }}{% endblock %}
+{% block crumb %}{{ m.crumbs(_('Domains')) }}{% endblock %}
+{% block heading %}{{ _('Domains') }}{% endblock %}
 
 {% block content %}
 <section class="card" aria-labelledby="lista">
   <div class="card__head">
-    <h2 id="lista">Inventario</h2>
-    <span class="mono muted">{{ domains|length }} dominios</span>
+    <h2 id="lista">{{ m.icon('list') }} {{ _('Inventory') }}</h2>
+    <span class="mono muted">{{ _n('{n} domain', '{n} domains', domains|length) }}</span>
   </div>
   {% if domains %}
-  <div class="table-wrap" role="region" tabindex="0" aria-label="Tabla de dominios, desplazable">
+  <div class="table-wrap" role="region" tabindex="0" aria-label="{{ _('Domains table, scrollable') }}">
     <table class="stack">
-      <caption class="visually-hidden">Dominios inventariados</caption>
-      <thead><tr><th scope="col">Dominio</th><th scope="col">Prioridad</th><th scope="col">Política</th><th scope="col">Estado</th><th scope="col">Hostnames</th><th scope="col">Gcore</th><th scope="col"><span class="visually-hidden">Acciones</span></th></tr></thead>
+      <caption class="visually-hidden">{{ _('Domains in the inventory') }}</caption>
+      <thead><tr><th scope="col">{{ _('Domain') }}</th><th scope="col">{{ _('Priority') }}</th><th scope="col">{{ _('Policy') }}</th><th scope="col">{{ _('Status') }}</th><th scope="col">Hostnames</th><th scope="col">Gcore</th><th scope="col"><span class="visually-hidden">{{ _('Actions') }}</span></th></tr></thead>
       <tbody>
         {% for d in domains %}
         <tr>
           <th scope="row"><a href="/dominios/{{ d.name }}">{{ d.name }}</a></th>
-          <td data-label="Prioridad">{{ m.priority_tag(d) }}</td>
-          <td data-label="Política">{{ d.policy_label }}</td>
-          <td data-label="Estado"><span class="pill tone-{{ d.status_tone }}">{{ d.status_label }}</span>{{ m.change_badge(changes.get(d.name)) }}</td>
+          <td data-label="{{ _('Priority') }}">{{ m.priority_tag(d) }}</td>
+          <td data-label="{{ _('Policy') }}">{{ d.policy_label }}</td>
+          <td data-label="{{ _('Status') }}"><span class="pill tone-{{ d.status_tone }}">{{ d.status_label }}</span>{{ m.change_badge(changes.get(d.name)) }}</td>
           <td data-label="Hostnames" class="mono">{{ d.hosts|length }}</td>
-          <td data-label="Gcore">{{ 'listo' if d.gcore_ready else 'sin configurar' }}</td>
-          <td class="actions-cell"><button class="btn btn--danger btn--sm" type="button" data-open="del-{{ loop.index }}">Eliminar<span class="visually-hidden"> {{ d.name }}</span></button></td>
+          <td data-label="Gcore">{{ _('ready') if d.gcore_ready else _('not set up') }}</td>
+          <td class="actions-cell"><button class="btn btn--danger btn--sm" type="button" data-open="del-{{ loop.index }}">{{ _('Delete') }}<span class="visually-hidden"> {{ d.name }}</span></button></td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   {% else %}
-  <p class="card__body" style="margin:0">Todavía no hay dominios. Añade uno abajo o impórtalo desde Cloudflare.</p>
+  <p class="card__body" style="margin:0">{{ m.icon('info') }} {{ _('No domains yet. Add one below or import it from Cloudflare.') }}</p>
   {% endif %}
 </section>
 
 <section class="card" aria-labelledby="importar">
-  <div class="card__head"><h2 id="importar">Importar desde Cloudflare</h2></div>
+  <div class="card__head"><h2 id="importar">{{ m.icon('cloud') }} {{ _('Import from Cloudflare') }}</h2></div>
   <div class="card__body row">
     {% if cf_creds %}
-    <p style="margin:0">Elige una credencial, una zona y los registros web a vigilar. Se guardan el zone ID, los IDs de registro y la credencial que usará el dominio.</p>
-    <a class="btn btn--primary" href="/dominios/importar">Importar zona</a>
+    <p style="margin:0">{{ _('Choose a credential, a zone and the web records to watch. The zone ID, the record IDs and the credential the domain will use are saved.') }}</p>
+    <a class="btn btn--primary" href="/dominios/importar">{{ m.icon('upload') }}{{ _('Import zone') }}</a>
     {% else %}
-    <p style="margin:0">Añade una credencial de Cloudflare en <a href="/ajustes/cuentas">Ajustes → Cuentas de proveedor</a> para importar zonas y registros automáticamente.</p>
+    <p style="margin:0">{{ _m('Add a Cloudflare credential in <a href="/ajustes/cuentas">Settings → Provider accounts</a> to import zones and records automatically.') }}</p>
     {% endif %}
   </div>
 </section>
 
 <section class="card" aria-labelledby="nuevo">
-  <div class="card__head"><h2 id="nuevo">Añadir dominio a mano</h2></div>
+  <div class="card__head"><h2 id="nuevo">{{ m.icon('plus') }} {{ _('Add a domain by hand') }}</h2></div>
   {% if servers %}
   <form class="card__body form-grid" method="post" action="/dominios">{{ csrf_field() }}
     <div>
-      <label for="name">Dominio</label>
-      <input id="name" type="text" name="name" required placeholder="ejemplo.com" autocomplete="off" spellcheck="false">
+      <label for="name">{{ _('Domain') }}</label>
+      <input id="name" type="text" name="name" required placeholder="{{ _('example.com') }}" autocomplete="off" spellcheck="false">
     </div>
     <div>
       <label for="hostnames">Hostnames</label>
-      <input id="hostnames" type="text" name="hostnames" placeholder="ejemplo.com www.ejemplo.com" autocomplete="off" spellcheck="false" aria-describedby="hostnames-help">
-      <p id="hostnames-help" class="help">Separados por espacios. Si lo dejas vacío se añaden el dominio y www.</p>
+      <input id="hostnames" type="text" name="hostnames" placeholder="{{ _('example.com www.example.com') }}" autocomplete="off" spellcheck="false" aria-describedby="hostnames-help">
+      <p id="hostnames-help" class="help">{{ _('Separated by spaces. If you leave it empty, the domain and www are added.') }}</p>
     </div>
     <div>
-      <label for="server">Servidor</label>
+      <label for="server">{{ _('Server') }}</label>
       <select id="server" name="server">{% for sid in servers %}<option>{{ sid }}</option>{% endfor %}</select>
     </div>
     <div>
-      <label for="priority">Prioridad</label>
-      <select id="priority" name="priority"><option value="critical">Crítica</option><option value="medium" selected>Media</option><option value="low">Baja</option></select>
+      <label for="priority">{{ _('Priority') }}</label>
+      <select id="priority" name="priority"><option value="critical">{{ _('Critical') }}</option><option value="medium" selected>{{ _('Medium') }}</option><option value="low">{{ _('Low') }}</option></select>
     </div>
     <div>
-      <label for="policy">Política</label>
-      <select id="policy" name="policy"><option value="preventive">Preventiva</option><option value="reactive" selected>Reactiva</option><option value="manual">Manual</option></select>
+      <label for="policy">{{ _('Policy') }}</label>
+      <select id="policy" name="policy"><option value="preventive">{{ _('Preventive') }}</option><option value="reactive" selected>{{ _('Reactive') }}</option><option value="manual">{{ _('Manual') }}</option></select>
     </div>
-    <div class="form-actions"><button class="btn btn--primary" type="submit">Añadir dominio</button></div>
+    <div class="form-actions"><button class="btn btn--primary" type="submit">{{ m.icon('plus') }}{{ _('Add domain') }}</button></div>
   </form>
   {% else %}
-  <p class="card__body" style="margin:0">Primero registra un servidor de origen en <a href="/ajustes#servidores">Ajustes</a>.</p>
+  <p class="card__body" style="margin:0">{{ m.icon('info') }} {{ _m('First register an origin server in <a href="/ajustes#servidores">Settings</a>.') }}</p>
   {% endif %}
 </section>
 {% for d in domains %}{{ m.delete_dialog(d, loop.index, dry_run) }}{% endfor %}

@@ -13,7 +13,7 @@ def _code(client, offset=1):
 
 
 def test_every_route_requires_session(anon):
-    public = ("/login", "/static", "/healthz")
+    public = ("/login", "/static", "/healthz", "/lang/")  # /lang/ only sets a preference cookie
     checked = 0
     for route in anon.app.routes:
         if not isinstance(route, APIRoute) or route.path.startswith(public):

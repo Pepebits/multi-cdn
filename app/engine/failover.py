@@ -31,6 +31,7 @@ import httpx
 from ..providers import cloudflare as cf
 from ..providers import gcore
 from ..providers.cloudflare import OriginExposureError, plan_to_gcore
+from ..i18n import N_, tn, tnn, tr
 from ..signals.hayahora import ISPS
 
 RETURN_AFTER = {"critical": timedelta(minutes=45), "medium": timedelta(minutes=30), "low": timedelta(minutes=30)}
@@ -42,8 +43,8 @@ MASS_BLOCK = 50  # IPs de Cloudflare bloqueadas en ≥3 operadoras
 MATCH_LEAD = {"critical": timedelta(minutes=45), "medium": timedelta(minutes=30), "low": timedelta(minutes=30)}
 
 DNS_BEFORE = {
-    "cloudflare": "Cloudflare proxied", "gcore": "CNAME → Gcore", "origin": "A → IP de origen (sin proxy)",
-    "other": "otro destino", "unresolved": "sin resolver",
+    "cloudflare": "Cloudflare proxied", "gcore": "CNAME → Gcore", "origin": N_("A → origin IP (not proxied)"),
+    "other": N_("other target"), "unresolved": N_("unresolved"),
 }
 
 SCHEMA = """
@@ -157,6 +158,10 @@ class EngineStore:
 
 # ---------------------------------------------------------------- acciones DNS
 
+def dns_before(provider: str) -> str:
+    """Texto del estado DNS anterior para el diff del historial (idioma de las notificaciones)."""
+    return tn(DNS_BEFORE[provider]) if provider in DNS_BEFORE else provider
+
 class SwitchFailed(Exception):
     def __init__(self, message: str, diff: list):
         super().__init__(message)
@@ -168,10 +173,10 @@ async def switch_to_gcore(state, name: str) -> tuple[list, bool]:
     domain = state.inventory.domains[name]
     switchable = [h for h in domain.hostnames if h.failover]
     if not switchable:
-        raise SwitchFailed("Ningún hostname está marcado para conmutar", [])
+        raise SwitchFailed(tn("No hostname is marked to switch"), [])
     missing = [h.name for h in switchable if not h.gcore_target]
     if missing:
-        raise SwitchFailed(f"Gcore no configurado para: {', '.join(missing)}", [])
+        raise SwitchFailed(tn("Gcore not configured for: {hosts}", hosts=", ".join(missing)), [])
     from ..firewall_status import request_refresh
     request_refresh()  # que el firewall tenga los rangos de Gcore al día cuando llegue el tráfico
     client = state.cloudflare_for(domain)
@@ -183,7 +188,7 @@ async def switch_to_gcore(state, name: str) -> tuple[list, bool]:
                 continue
             change = plan_to_gcore(h.name, h.gcore_target)
             await client.apply(domain.zone_id, h.cloudflare_record_id, change)
-            diff.append([h.name, DNS_BEFORE.get(before.provider, before.provider) if before else "desconocido",
+            diff.append([h.name, dns_before(before.provider) if before else tn("unknown"),
                          change.describe()])
     except (OriginExposureError, ValueError, RuntimeError, httpx.HTTPError) as exc:
         raise SwitchFailed(str(exc) or type(exc).__name__, diff) from exc
@@ -206,7 +211,7 @@ async def return_to_cloudflare(state, name: str, *, force_all: bool = False) -> 
             origin = server.origin_ipv4 if server else None
             change = cf.plan_restore(h, str(origin) if origin else None)
             await client.apply(domain.zone_id, h.cloudflare_record_id, change)
-            diff.append([h.name, "CNAME → Gcore" if force_all else DNS_BEFORE.get(provider, provider), change.describe()])
+            diff.append([h.name, "CNAME → Gcore" if force_all else dns_before(provider), change.describe()])
     except (OriginExposureError, ValueError, RuntimeError, httpx.HTTPError) as exc:
         raise SwitchFailed(str(exc) or type(exc).__name__, diff) from exc
     return diff, client.dry_run
@@ -222,23 +227,23 @@ async def check_backup(state, name: str) -> str | None:
         try:
             status = await gcore.resource_status(token, domain.gcore_resource_id)
         except (RuntimeError, httpx.HTTPError) as exc:
-            return f"no se pudo consultar el recurso en Gcore ({exc})"
+            return tn("could not query the resource on Gcore ({error})", error=exc)
         if status != "active":
-            return f"el recurso de Gcore aún no está activo en todo el borde (estado «{status}»)"
+            return tn("the Gcore resource is not active on the whole edge yet (status «{status}»)", status=status)
     for h in (h for h in domain.hostnames if h.failover):
         if not h.gcore_target:
-            return f"{h.name} no tiene destino Gcore (prepara el dominio en Gcore)"
+            return tn("{host} has no Gcore target (prepare the domain on Gcore)", host=h.name)
         ips = await gcore.edge_ipv4s(h.gcore_target)
         if not ips:
-            return f"no se resuelve el borde de Gcore {h.gcore_target}"
-        blocked = [f"{ip} en {ISPS[isp]}" for ip in ips for isp in ISPS
+            return tn("the Gcore edge {target} does not resolve", target=h.gcore_target)
+        blocked = [tn("{ip} on {isp}", ip=ip, isp=ISPS[isp]) for ip in ips for isp in ISPS
                    if state.feed and (s := state.feed.state(ip, isp)) and s.blocked]
         if blocked:
-            return f"el borde de Gcore también está bloqueado ({', '.join(blocked[:3])})"
+            return tn("the Gcore edge is blocked too ({blocked})", blocked=", ".join(blocked[:3]))
         try:
             ok, detail = await gcore.probe_all_edges(h.gcore_target, h.name)
         except (OSError, asyncio.TimeoutError) as exc:
-            ok, detail = False, f"{h.name}: sin respuesta del borde de Gcore ({type(exc).__name__})"
+            ok, detail = False, tn("{host}: no response from the Gcore edge ({error})", host=h.name, error=type(exc).__name__)
         if not ok:
             return detail
     return None
@@ -273,11 +278,12 @@ def decide(view, cfg, st: DomainState, *, dry_run: bool, mass: int, now: datetim
     Gcore por el calendario, pero nunca volver."""
     reasons = []
     if feed_ok and view.blocked_count:
-        reasons.append(f"IPs de Cloudflare bloqueadas en {view.blocked_count} operadora{'s' if view.blocked_count != 1 else ''}")
+        reasons.append(tnn("Cloudflare IPs blocked at {n} ISP", "Cloudflare IPs blocked at {n} ISPs", view.blocked_count))
     elif feed_ok and cfg.policy == "preventive" and mass >= MASS_BLOCK:
-        reasons.append(f"bloqueo masivo en curso ({mass} IPs de Cloudflare bloqueadas)")
+        reasons.append(tn("mass block underway ({count} Cloudflare IPs blocked)", count=mass))
     if cfg.policy == "preventive" and match is not None:
-        reasons.append(f"partido de {match.competition} ({match.name}, {_fmt(match.kickoff)})")
+        reasons.append(tn("{competition} match ({match}, {time})", competition=match.competition, match=match.name,
+                          time=_fmt(match.kickoff)))
     if reasons or not feed_ok:
         st.clear_since = None
     elif st.clear_since is None:
@@ -290,7 +296,7 @@ def decide(view, cfg, st: DomainState, *, dry_run: bool, mass: int, now: datetim
     if reasons and on_cf:
         return Decision("switch", reasons)
     if not reasons and feed_ok and on_backup and now - st.clear_since >= RETURN_AFTER[cfg.priority]:
-        return Decision("return", [f"sin bloqueos desde las {_fmt(st.clear_since)}"])
+        return Decision("return", [tn("no blocks since {time}", time=_fmt(st.clear_since))])
     return Decision("none", reasons)
 
 
@@ -329,10 +335,10 @@ async def _act(state, view, cfg, st: DomainState, decision: Decision, now: datet
         st.paused = True
         st.hold_reason = "demasiados cambios"
         state.events.add(actor="auto", kind="alert", domain=name,
-                         summary=f"Conmutación automática pausada: {len(st.switches)} cambios en 6 h. "
-                                 "Revisa el dominio y reanúdala desde el panel")
+                         summary=tn("Automatic switching paused: {count} switches in 6 h. "
+                                    "Check the domain and resume it from the panel", count=len(st.switches)))
         return
-    signals = [f"{r.name}: bloqueada" for r in view.isp_rows if r.state == "blocked"]
+    signals = [tn("{isp}: blocked", isp=r.name) for r in view.isp_rows if r.state == "blocked"]
 
     def fail(msg: str, diff=None) -> None:
         if msg != st.last_error:  # no repetir el mismo fallo cada ciclo
@@ -341,24 +347,25 @@ async def _act(state, view, cfg, st: DomainState, decision: Decision, now: datet
 
     if decision.action == "switch":
         if not cfg.gcore_resource_id or not view.gcore_ready:
-            return fail("Cambio automático a Gcore no posible: el dominio no está preparado en Gcore. Sigue en Cloudflare")
+            return fail(tn("Automatic switch to Gcore not possible: the domain is not prepared on Gcore. Stays on Cloudflare"))
         problem = await check_backup(state, name)
         if problem:
             from ..origin_health import down_note
-            return fail(f"Cambio automático a Gcore cancelado: {problem}{down_note(state, name)}. Sigue en Cloudflare")
+            return fail(tn("Automatic switch to Gcore cancelled: {problem}{note}. Stays on Cloudflare",
+                           problem=problem, note=down_note(state, name)))
         try:
             diff, simulated = await switch_to_gcore(state, name)
         except SwitchFailed as exc:
-            return fail(f"Cambio automático a Gcore fallido: {exc}", exc.diff)
+            return fail(tn("Automatic switch to Gcore failed: {error}", error=exc), exc.diff)
         st.sim_backup = True if simulated else None
-        transition, summary = "CF → GCORE", "Cambio automático a Gcore: " + "; ".join(decision.reasons)
+        transition, summary = "CF → GCORE", tn("Automatic switch to Gcore: {reasons}", reasons="; ".join(decision.reasons))
     else:
         try:
             diff, simulated = await return_to_cloudflare(state, name, force_all=state.dry_run and st.sim_backup is True)
         except SwitchFailed as exc:
-            return fail(f"Vuelta automática a Cloudflare fallida: {exc}", exc.diff)
+            return fail(tn("Automatic return to Cloudflare failed: {error}", error=exc), exc.diff)
         st.sim_backup = False if simulated else None
-        transition, summary = "GCORE → CF", "Vuelta automática a Cloudflare: " + "; ".join(decision.reasons)
+        transition, summary = "GCORE → CF", tn("Automatic return to Cloudflare: {reasons}", reasons="; ".join(decision.reasons))
     st.switches.append(now)
     st.last_error = None
     state.events.add(actor="auto", kind="switch", domain=name, transition=transition, summary=summary,
@@ -373,39 +380,50 @@ def describe(state, name: str, now: datetime | None = None) -> dict:
     cfg = state.inventory.domains[name]
     st = state.engine.get(name)
     if not auto_enabled(state):
-        return {"tone": "neutral", "text": "Automático desactivado en Ajustes → Operación", "resumable": False}
+        return {"tone": "neutral", "text": tr("Automatic switching off in Settings → Operation"), "resumable": False}
     if cfg.policy == "manual":
-        return {"tone": "neutral", "text": "Política manual: solo avisa, no cambia nada", "resumable": False}
+        return {"tone": "neutral", "text": tr("Manual policy: only alerts, never changes anything"), "resumable": False}
     if not eligible(cfg):
-        return {"tone": "warn", "text": "Sin credencial o zona de Cloudflare: no puede cambiar automáticamente", "resumable": False}
+        return {"tone": "warn", "text": tr("No Cloudflare credential or zone: cannot switch automatically"), "resumable": False}
     if st.paused:
-        text = "En mantenimiento hasta que lo reanudes" if st.hold_reason == "mantenimiento" \
-            else "Pausado por demasiados cambios seguidos"
+        text = tr("In maintenance until you resume it") if st.hold_reason == "mantenimiento" \
+            else tr("Paused after too many switches in a row")
         return {"tone": "warn", "text": text, "resumable": True}
     if st.hold_until and now < st.hold_until:
-        when = f"{st.hold_until.astimezone(UTC):%d/%m %H:%M} UTC" if st.hold_until - now > timedelta(hours=20) else f"las {_fmt(st.hold_until)}"
-        why = "en mantenimiento" if st.hold_reason == "mantenimiento" else "por un cambio manual"
-        return {"tone": "warn", "text": f"En pausa hasta {when} {why}", "resumable": True}
-    text = "Activo: pasa a Gcore si se bloquean sus IPs de Cloudflare"
+        maintenance = st.hold_reason == "mantenimiento"
+        if st.hold_until - now > timedelta(hours=20):
+            date = f"{st.hold_until.astimezone(UTC):%d/%m %H:%M} UTC"
+            text = tr("Paused until {date} for maintenance", date=date) if maintenance \
+                else tr("Paused until {date} after a manual change", date=date)
+        else:
+            time = _fmt(st.hold_until)
+            text = tr("Paused until {time} for maintenance", time=time) if maintenance \
+                else tr("Paused until {time} after a manual change", time=time)
+        return {"tone": "warn", "text": text, "resumable": True}
     calendar = getattr(state, "calendar", None)
     if cfg.policy == "preventive":
-        text += f", hay un bloqueo masivo o empieza un partido ({int(MATCH_LEAD[cfg.priority].total_seconds() // 60)} min antes)"
+        text = tr("Active: switches to Gcore if its Cloudflare IPs get blocked, a mass block is underway or a match "
+                  "starts ({minutes} min before)", minutes=int(MATCH_LEAD[cfg.priority].total_seconds() // 60))
         nxt = calendar.upcoming(now) if calendar else None
         if nxt:
-            text += f". Próximo partido: {nxt.name}, {nxt.kickoff.astimezone(UTC):%d/%m %H:%M} UTC"
+            text = tr("{text}. Next match: {match}, {when}", text=text, match=nxt.name,
+                      when=f"{nxt.kickoff.astimezone(UTC):%d/%m %H:%M} UTC")
+    else:
+        text = tr("Active: switches to Gcore if its Cloudflare IPs get blocked")
     on_backup = any((r := state.resolutions.get(h.name)) and r.provider == "gcore" for h in cfg.hostnames if h.failover)
     if state.dry_run and st.sim_backup is not None:
         on_backup = st.sim_backup
     match = calendar.active(now, MATCH_LEAD[cfg.priority]) if calendar and cfg.policy == "preventive" else None
+    wait = int(RETURN_AFTER[cfg.priority].total_seconds() // 60)
     if on_backup and match:
-        text = f"En Gcore durante el partido {match.name}; después espera {int(RETURN_AFTER[cfg.priority].total_seconds() // 60)} min sin bloqueos"
+        text = tr("On Gcore during the {match} match; then waits {minutes} min without blocks", match=match.name, minutes=wait)
     elif on_backup and st.clear_since:
-        text = f"En Gcore. Sin bloqueos desde las {_fmt(st.clear_since)}: vuelta a Cloudflare hacia las " \
-               f"{_fmt(st.clear_since + RETURN_AFTER[cfg.priority])}"
+        text = tr("On Gcore. No blocks since {since}: back to Cloudflare around {eta}", since=_fmt(st.clear_since),
+                  eta=_fmt(st.clear_since + RETURN_AFTER[cfg.priority]))
     elif on_backup:
-        text = f"En Gcore mientras dure el bloqueo; vuelve a Cloudflare tras {int(RETURN_AFTER[cfg.priority].total_seconds() // 60)} min sin bloqueos"
+        text = tr("On Gcore while the block lasts; returns to Cloudflare after {minutes} min without blocks", minutes=wait)
     if st.last_error:
-        return {"tone": "error", "text": f"{text}. Último fallo: {st.last_error}", "resumable": True}
+        return {"tone": "error", "text": tr("{text}. Last failure: {error}", text=text, error=st.last_error), "resumable": True}
     return {"tone": "ok", "text": text, "resumable": False}
 
 
@@ -430,7 +448,7 @@ def change_indicator(state, name: str, now: datetime | None = None) -> dict | No
         waiting = [h.name for h in hosts if (r := state.resolutions.get(h.name)) is None or r.provider != target]
         if waiting:
             return {"kind": "propagating", "target": target,
-                    "text": f"Cambiando a {CDN_NAME[target]}… propagando DNS"}
+                    "text": tr("Switching to {cdn}… propagating DNS", cdn=CDN_NAME[target])}
     if not auto_enabled(state) or not eligible(cfg):
         return None
     st = state.engine.get(name)
@@ -444,10 +462,10 @@ def change_indicator(state, name: str, now: datetime | None = None) -> dict | No
     if on_backup and st.clear_since and not in_match:
         eta = st.clear_since + RETURN_AFTER[cfg.priority]
         if eta > now:
-            return {"kind": "pending", "target": "cloudflare", "text": f"Vuelta a Cloudflare hacia las {_fmt(eta)}"}
+            return {"kind": "pending", "target": "cloudflare", "text": tr("Back to Cloudflare around {time}", time=_fmt(eta))}
     if not on_backup and cfg.policy == "preventive" and calendar:
         nxt = calendar.upcoming(now)
         if nxt and nxt.kickoff - MATCH_LEAD[cfg.priority] - now < UPCOMING_WINDOW:
             when = max(now, nxt.kickoff - MATCH_LEAD[cfg.priority])
-            return {"kind": "pending", "target": "gcore", "text": f"Pasa a Gcore a las {_fmt(when)} ({nxt.name})"}
+            return {"kind": "pending", "target": "gcore", "text": tr("Switches to Gcore at {time} ({match})", time=_fmt(when), match=nxt.name)}
     return None

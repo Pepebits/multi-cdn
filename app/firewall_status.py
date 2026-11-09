@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from .i18n import tn
+
 MAX_AGE = timedelta(hours=48)   # el temporizador va cada 24 h
 WHILE_ON_BACKUP = timedelta(hours=1)  # con tráfico por Gcore, rangos de como mucho 1 h
 
@@ -34,11 +36,11 @@ class FirewallStatus:
 
     def problem(self, now: datetime) -> str | None:
         if self.error:
-            return f"la última actualización falló: {self.error}"
+            return tn("the last update failed: {error}", error=self.error)
         if self.last_ok is None:
-            return "todavía no se ha aplicado ninguna lista"
+            return tn("no list has been applied yet")
         if now - self.last_ok > MAX_AGE:
-            return f"los rangos no se actualizan desde {self.last_ok:%d/%m %H:%M} UTC"
+            return tn("the ranges have not been updated since {date} UTC", date=f"{self.last_ok:%d/%m %H:%M}")
         return None
 
 
@@ -98,8 +100,8 @@ def check(state, now: datetime | None = None) -> None:
     problem = status.problem(now)
     previous = state.events.get_value("firewall_problem") or ""
     if problem and problem != previous:
-        state.events.add(actor="auto", kind="alert", summary=f"Firewall del origen: {problem}")
+        state.events.add(actor="auto", kind="alert", summary=tn("Origin firewall: {problem}", problem=problem))
         state.events.set_value("firewall_problem", problem)
     elif not problem and previous:
-        state.events.add(actor="auto", kind="alert", summary="Firewall del origen: rangos actualizados de nuevo")
+        state.events.add(actor="auto", kind="alert", summary=tn("Origin firewall: ranges updated again"))
         state.events.set_value("firewall_problem", "")

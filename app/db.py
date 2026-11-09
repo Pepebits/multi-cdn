@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from .i18n import tr
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -96,7 +98,7 @@ class EventStore:
     def set_setting(self, key: str, value: int) -> None:
         lo, hi = RETENTION_LIMITS[key]
         if not lo <= value <= hi:
-            raise ValueError(f"valor fuera de rango ({lo}–{hi})")
+            raise ValueError(tr("value out of range ({lo}–{hi})", lo=lo, hi=hi))
         self.conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                           (key, str(value)))
         self.conn.commit()

@@ -9,7 +9,7 @@ off Cloudflare's proxy, publishes the origin IP for good. multi-cdn moves each d
 second CDN instead, before or as soon as its Cloudflare IPs are blocked, and moves it back
 once the block is over.
 
-> The panel and the deployment guide are in Spanish for now; English is planned.
+The panel speaks English and Spanish (it follows your browser; switch in the footer).
 
 ## How it works
 
@@ -31,27 +31,35 @@ once the block is over.
   statistics, Gcore traffic against its free quota, backups, and a terminal runbook for
   when the panel itself is down.
 
-## Run it
+## Get started
 
-```bash
-mkdir multi-cdn && cd multi-cdn
-curl -fsSLO https://raw.githubusercontent.com/Pepebits/multi-cdn/main/compose.yaml
-curl -fsSL https://raw.githubusercontent.com/Pepebits/multi-cdn/main/.env.example -o .env
-# set MULTICDN_SECRET_KEY in .env (see the comment there) and keep MULTICDN_DRY_RUN=true
-docker compose up -d
-docker compose exec panel python -m app.cli crear-usuario <user>
-```
+The [deployment guide](deploy/README.md) walks through it in 10 steps, from an empty server
+to live failover. In short:
 
-The panel listens on `127.0.0.1:8765` only. Reach it through an SSH tunnel
-(`ssh -N -L 8765:127.0.0.1:8765 <user>@<server>`) or a private network such as Tailscale,
-never through the CDNs it controls. DNS changes are simulated until
-`MULTICDN_DRY_RUN=false` is set in the server environment; the panel cannot turn them on.
+1. **Install** on your server (Docker with the compose plugin):
 
-The image (`ghcr.io/pepebits/multi-cdn`, also `pepebits/multi-cdn` on Docker Hub) is Alpine-based, runs as a
-non-root user with a read-only root filesystem, and is built for amd64 and arm64 with an
-SBOM and provenance.
+   ```bash
+   git clone https://github.com/Pepebits/multi-cdn.git && cd multi-cdn
+   deploy/install.sh     # creates .env with a new master key: save it, fill in .env
+   deploy/install.sh     # builds and starts the panel on 127.0.0.1:8765
+   ```
 
-Full deployment, firewall and Caddy setup: [`deploy/README.md`](deploy/README.md).
+2. **Create your user** (password + authenticator app):
+   `docker compose exec panel python -m app.cli create-user <user>`
+3. **Open the panel** through an SSH tunnel, from your computer:
+   `ssh -N -L 8765:127.0.0.1:8765 <user>@<server>`, then <http://localhost:8765>.
+   Never publish it through the CDNs it controls.
+4. **In the panel**: add your Cloudflare and Gcore tokens, import your domains, and
+   *Prepare on Gcore* each one.
+5. **Protect the origin** with the firewall and Caddy snippets in [`deploy/`](deploy/).
+6. **Go live**: everything is a dry run until `MULTICDN_DRY_RUN=false` is set in the server's
+   `.env`; the panel itself cannot turn it on.
+
+Prefer the published image without cloning? `compose.yaml` uses
+`ghcr.io/pepebits/multi-cdn` (also `pepebits/multi-cdn` on Docker Hub): download it and
+`.env.example`, set `MULTICDN_SECRET_KEY`, then `docker compose up -d`. The image is
+Alpine-based, runs as a non-root user with a read-only root filesystem, and is built for amd64
+and arm64 with an SBOM and provenance.
 
 ## Develop
 
@@ -59,7 +67,7 @@ Full deployment, firewall and Caddy setup: [`deploy/README.md`](deploy/README.md
 cp .env.example .env
 uv sync
 uv run pytest
-uv run python -m app.cli crear-usuario <user>
+uv run python -m app.cli create-user <user>
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8765
 ```
 

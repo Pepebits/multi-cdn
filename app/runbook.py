@@ -18,6 +18,7 @@ import os
 import httpx
 
 from .config import load_dotenv
+from .i18n import tn
 
 TARGETS = {"gcore": "Gcore", "cloudflare": "Cloudflare"}
 
@@ -35,6 +36,10 @@ def _state():
     secrets = SecretStore(db)
     events = EventStore(db)
     events.listeners.append(Notifier(secrets))
+    from . import i18n
+    from .main import load_notify_lang
+    load_notify_lang(events)
+    i18n.set_ui(i18n.notify_lang())  # the terminal speaks the notification language
     state = State(store=InventoryStore(secrets), secrets=secrets, creds=CredentialStore(secrets),
                   auth=AuthStore(secrets), events=events,
                   dry_run_env=os.environ.get("MULTICDN_DRY_RUN", "true").lower() != "false")
@@ -61,17 +66,25 @@ async def _drain() -> None:
     await asyncio.gather(*[t for t in asyncio.all_tasks() if t is not me], return_exceptions=True)
 
 
+def _mode(state) -> str:
+    return tn("Mode: DRY RUN (DNS is not touched)") if state.dry_run else tn("Mode: live")
+
+
+def _no_switch() -> str:
+    return "  " + tn("(does not switch)")
+
+
 async def status(out=print) -> int:
     from .views import build_all
 
     state = _state()
     try:
         await _observe(state)
-        out(f"Modo: {'SIMULACIÓN (no se toca el DNS)' if state.dry_run else 'real'}")
+        out(_mode(state))
         for d in build_all(state.inventory, state.resolutions, state.feed, state.engine.known_ips()):
             out(f"\n{d.name}  ·  {d.status_label}")
             for h in d.hosts:
-                out(f"  {h.name:34} {h.provider_label:18} {h.dns_text}{'' if h.failover else '  (no conmuta)'}")
+                out(f"  {h.name:34} {h.provider_label:18} {h.dns_text}{'' if h.failover else _no_switch()}")
         return 0
     finally:
         await state.client.aclose()
@@ -82,31 +95,33 @@ async def switch(name: str, target: str, *, assume_yes: bool = False, force: boo
     from .engine import failover
 
     if target not in TARGETS:
-        out(f"Destino no válido: {target} (gcore o cloudflare)")
+        out(tn("Invalid target: {target} (gcore or cloudflare)", target=target))
         return 2
     state = _state()
     try:
         if name not in state.inventory.domains:
-            out(f"{name} no está en el inventario")
+            out(tn("{domain} is not in the inventory", domain=name))
             return 2
         await _observe(state)
         domain = state.inventory.domains[name]
-        out(f"Modo: {'SIMULACIÓN (no se toca el DNS)' if state.dry_run else 'real'}")
+        out(_mode(state))
         for h in domain.hostnames:
             r = state.resolutions.get(h.name)
-            out(f"  {h.name:34} ahora: {r.provider if r else 'sin resolver'}{'' if h.failover else '  (no conmuta)'}")
+            now = tn("now: {provider}", provider=r.provider if r else tn("unresolved"))
+            out(f"  {h.name:34} {now}{'' if h.failover else _no_switch()}")
         if target == "gcore":
-            out("Comprobando que Gcore sirve el dominio…")
+            out(tn("Checking that Gcore serves the domain…"))
             problem = await failover.check_backup(state, name)
             if problem:
-                out(f"AVISO: {problem}")
+                out(tn("WARNING: {problem}", problem=problem))
                 if not force:
-                    out("No se cambia. Repite con --forzar si aun así quieres pasar a Gcore.")
+                    out(tn("Not switching. Repeat with --force if you still want to move it to Gcore."))
                     return 1
             else:
-                out("Gcore responde en todos sus bordes.")
-        if not assume_yes and ask(f"Escribe {name} para pasarlo a {TARGETS[target]}: ").strip() != name:
-            out("Cancelado: no se ha cambiado nada")
+                out(tn("Gcore responds on all its edges."))
+        if not assume_yes and ask(tn("Type {domain} to move it to {target}: ", domain=name,
+                                     target=TARGETS[target])).strip() != name:
+            out(tn("Cancelled: nothing has changed"))
             return 1
         try:
             if target == "gcore":
@@ -115,21 +130,22 @@ async def switch(name: str, target: str, *, assume_yes: bool = False, force: boo
                 diff, simulated = await failover.return_to_cloudflare(
                     state, name, force_all=state.dry_run and state.engine.get(name).sim_backup is True)
         except failover.SwitchFailed as exc:
-            state.events.add(actor="cli", kind="error", domain=name, summary=f"Cambio desde la terminal fallido: {exc}",
+            state.events.add(actor="cli", kind="error", domain=name, summary=tn("Switch from the terminal failed: {error}", error=exc),
                              dns_diff=exc.diff)
-            out(f"ERROR: {exc}")
+            out(tn("ERROR: {error}", error=exc))
             return 1
         if not diff:
-            out(f"Nada que cambiar: ya estaba en {TARGETS[target]}")
+            out(tn("Nothing to change: it was already on {target}", target=TARGETS[target]))
             return 0
         state.engine.manual_change(name, to_backup=target == "gcore", simulated=simulated)
         transition = "CF → GCORE" if target == "gcore" else "GCORE → CF"
         state.events.add(actor="cli", kind="switch", domain=name, transition=transition,
-                         summary=f"Cambio manual a {TARGETS[target]} desde la terminal", dns_diff=diff, simulated=simulated)
+                         summary=tn("Manual switch to {target} from the terminal", target=TARGETS[target]),
+                         dns_diff=diff, simulated=simulated)
         for host, before, after in diff:
             out(f"  {host}: {before} → {after}")
-        out(("Simulado: no se ha tocado el DNS." if simulated else "Aplicado.")
-            + " El automático de este dominio queda en pausa 1 h.")
+        out(tn("Simulated: DNS has not been touched. Automatic mode for this domain is paused for 1 h.")
+            if simulated else tn("Applied. Automatic mode for this domain is paused for 1 h."))
         return 0
     finally:
         await _drain()

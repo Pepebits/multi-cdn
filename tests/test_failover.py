@@ -345,3 +345,27 @@ def test_change_indicator_pending_return_and_preventive_match(st):
     c = failover.change_indicator(st, "example.com", now)
     assert c["target"] == "gcore" and "Pasa a Gcore a las" in c["text"] and "Celta Vigo – Levante" in c["text"]
     assert "Pasa a Gcore" in __import__("app.main", fromlist=["x"]).templates.env.get_template("_macros.html").module.change_badge(c)
+
+
+def test_cli_english_command_names(tmp_path, monkeypatch, capsys):
+    from app import cli, runbook
+    monkeypatch.setenv("MULTICDN_DB", str(tmp_path / "c.db"))
+    monkeypatch.delenv("MULTICDN_SECRET_KEY", raising=False)
+    assert cli.main(["origin-secrets"]) == 0
+    assert "huella" in capsys.readouterr().out
+    assert cli.main(["origin-secrets", "--caddy"]) == 0 and "X-Origin-Auth" in capsys.readouterr().out
+    assert cli.main(["rotate-origin-secret", "gcore"]) == 0
+    assert cli.main(["retire-previous-secret", "gcore"]) == 0
+    assert cli.main(["list-users"]) == 0
+    calls = []
+
+    async def fake_switch(name, target, *, assume_yes=False, force=False, out=print, ask=input):
+        calls.append((name, target, assume_yes, force))
+        return 0
+    monkeypatch.setattr(runbook, "switch", fake_switch)
+    assert cli.main(["switch", "example.com", "gcore", "--yes", "--force"]) == 0
+    assert cli.main(["cambiar", "example.com", "cloudflare", "--si", "--forzar"]) == 0
+    assert calls == [("example.com", "gcore", True, True), ("example.com", "cloudflare", True, True)]
+    names = set(cli._parser()._subparsers._group_actions[0].choices)
+    for english, spanish in cli.COMMANDS.items():
+        assert english in names and set(spanish) <= names

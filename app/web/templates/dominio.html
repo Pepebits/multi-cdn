@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 {% block title %}{{ d.name }}{% endblock %}
-{% block crumb %}{{ m.crumbs(d.name, [('Dominios', '/dominios')]) }}{% endblock %}
+{% block crumb %}{{ m.crumbs(d.name, [(_('Domains'), '/dominios')]) }}{% endblock %}
 {% block heading %}{{ d.name }}{% endblock %}
 
 {% block banner %}
 {% if d.status == 'origin' %}
 <div class="banner banner--danger" role="alert">
   <span class="live" aria-hidden="true"></span>
-  <strong>Origen expuesto.</strong>
-  <span>Algún hostname resuelve a la IP del servidor sin pasar por un CDN.</span>
+  <strong>{{ _('Origin exposed.') }}</strong>
+  <span>{{ _('A hostname resolves to the server IP without going through a CDN.') }}</span>
 </div>
 {% endif %}
 {% endblock %}
@@ -16,38 +16,38 @@
 {% block content %}
 <section class="card" aria-labelledby="resumen-dominio">
   <div class="card__head">
-    <h2 id="resumen-dominio">Estado</h2>
-    <span>{{ m.priority_tag(d) }} <span class="pill pill--neutral">política {{ d.policy_label }}</span></span>
+    <h2 id="resumen-dominio">{{ m.icon('pulse') }} {{ _('Status') }}</h2>
+    <span>{{ m.priority_tag(d) }} <span class="pill pill--neutral">{{ _('{policy} policy', policy=d.policy_label) }}</span></span>
   </div>
   <div class="card__body stack-gap">
     <div class="status tone-{{ d.status_tone }}"><span>{{ d.status_label }}</span></div>
     {% if d.alerts %}
-    <ul class="alerts">{% for a in d.alerts %}<li class="notice notice--{{ 'error' if 'expuesto' in a else 'warn' }}">{{ a }}</li>{% endfor %}</ul>
+    <ul class="alerts">{% for a in d.alerts %}<li class="notice notice--{{ 'error' if ('expuesto' in a or 'exposed' in a) else 'warn' }}">{{ m.icon('alert') }} {{ a }}</li>{% endfor %}</ul>
     {% endif %}
     {% if not cfg.cloudflare_credential %}
-    <p class="notice notice--warn" style="margin:0">Sin credencial de Cloudflare asignada: los cambios de este dominio solo se pueden simular. Asígnala en <a href="#config">Configuración</a>.</p>
+    <p class="notice notice--warn" style="margin:0">{{ m.icon('alert') }} {{ _m('No Cloudflare credential assigned: changes to this domain can only be simulated. Assign it in <a href="#config">Configuration</a>.') }}</p>
     {% endif %}
     <div class="auto-line notice{{ {'ok': ' notice--ok', 'warn': ' notice--warn', 'error': ' notice--error'}.get(auto.tone, '') }}">
-      <p style="margin:0"><strong>Cambio automático:</strong> {{ auto.text }}</p>
+      <p style="margin:0">{{ m.icon('check' if auto.tone == 'ok' else ('alert' if auto.tone in ('warn', 'error') else 'info')) }} <strong>{{ _('Automatic switch:') }}</strong> {{ auto.text }}</p>
       {% if auto.resumable %}
-      <form method="post" action="/dominios/{{ d.name }}/automatico/reanudar">{{ csrf_field() }}<button class="btn btn--sm" type="submit">Reanudar ahora</button></form>
+      <form method="post" action="/dominios/{{ d.name }}/automatico/reanudar">{{ csrf_field() }}<button class="btn btn--sm" type="submit">{{ m.icon('play') }}{{ _('Resume now') }}</button></form>
       {% elif auto.tone in ('ok', 'error') %}
       <form method="post" action="/dominios/{{ d.name }}/automatico/mantenimiento" class="maint-form">{{ csrf_field() }}
-        <label for="maint-horas">Mantenimiento</label>
+        <label for="maint-horas">{{ m.icon('wrench') }} {{ _('Maintenance') }}</label>
         <select id="maint-horas" name="horas">{% for h, label in maintenance_options.items() %}<option value="{{ h }}">{{ label }}</option>{% endfor %}</select>
-        <button class="btn btn--sm" type="submit">Pausar automático</button>
+        <button class="btn btn--sm" type="submit">{{ m.icon('pause') }}{{ _('Pause automatic switching') }}</button>
       </form>
       {% endif %}
     </div>
     <div class="row">
       {% if d.status != 'cloudflare' and d.status != 'unknown' %}
-      <button class="btn" type="button" data-open="volver">Volver a Cloudflare…</button>
+      <button class="btn" type="button" data-open="volver">{{ m.icon('refresh') }}{{ _('Back to Cloudflare…') }}</button>
       {% endif %}
       {% if d.gcore_ready %}
-      <button class="btn btn--primary" type="button" data-open="confirmar">Cambiar a Gcore…</button>
+      <button class="btn btn--primary" type="button" data-open="confirmar">{{ m.icon('switch') }}{{ _('Switch to Gcore…') }}</button>
       {% else %}
-      <button class="btn" type="button" aria-disabled="true" aria-describedby="gcore-pendiente">Cambiar a Gcore…</button>
-      <p id="gcore-pendiente" class="muted" style="margin:0;align-self:center">Indica el destino Gcore de cada hostname en la tabla de abajo para activar el cambio.</p>
+      <button class="btn" type="button" aria-disabled="true" aria-describedby="gcore-pendiente">{{ m.icon('switch') }}{{ _('Switch to Gcore…') }}</button>
+      <p id="gcore-pendiente" class="muted" style="margin:0;align-self:center">{{ _('Enter the Gcore target of each hostname in the table below to enable the switch.') }}</p>
       {% endif %}
     </div>
   </div>
@@ -55,35 +55,35 @@
 
 <section class="card" aria-labelledby="gcore-titulo" id="gcore">
   <div class="card__head">
-    <h2 id="gcore-titulo">Respaldo Gcore</h2>
-    {% if cfg.gcore_resource_id %}<span class="pill pill--free">Preparado</span>{% else %}<span class="pill pill--nodata">Sin preparar</span>{% endif %}
+    <h2 id="gcore-titulo">{{ m.icon('cloud') }} {{ _('Gcore backup') }}</h2>
+    {% if cfg.gcore_resource_id %}<span class="pill pill--free">{{ _('Prepared') }}</span>{% else %}<span class="pill pill--nodata">{{ _('Not prepared') }}</span>{% endif %}
   </div>
   <div class="card__body stack-gap">
     {% set origin_ok = (cfg.hostnames and inventory_servers[cfg.hostnames[0].server]) %}
     <ul class="checks">
-      <li><span>Credencial de Gcore asignada</span><span class="pill {{ 'pill--free' if cfg.gcore_credential else 'pill--blocked' }}">{{ 'Sí' if cfg.gcore_credential else 'Falta' }}</span></li>
-      <li><span>Credencial de Cloudflare (para el certificado DNS-01)</span><span class="pill {{ 'pill--free' if cfg.cloudflare_credential else 'pill--blocked' }}">{{ 'Sí' if cfg.cloudflare_credential else 'Falta' }}</span></li>
-      <li><span>IP de origen del servidor</span><span class="pill {{ 'pill--free' if origin_ok else 'pill--blocked' }}">{{ 'Registrada' if origin_ok else 'Falta' }}</span></li>
+      <li><span>{{ _('Gcore credential assigned') }}</span><span class="pill {{ 'pill--free' if cfg.gcore_credential else 'pill--blocked' }}">{{ _('Yes') if cfg.gcore_credential else _('Missing') }}</span></li>
+      <li><span>{{ _('Cloudflare credential (for the DNS-01 certificate)') }}</span><span class="pill {{ 'pill--free' if cfg.cloudflare_credential else 'pill--blocked' }}">{{ _('Yes') if cfg.cloudflare_credential else _('Missing') }}</span></li>
+      <li><span>{{ _('Server origin IP') }}</span><span class="pill {{ 'pill--free' if origin_ok else 'pill--blocked' }}">{{ _('Registered') if origin_ok else _('Missing') }}</span></li>
     </ul>
     {% if cfg.gcore_resource_id %}
     <dl class="kv">
-      <div><dt>Recurso CDN</dt><dd>{{ cfg.gcore_resource_id }}</dd></div>
-      <div><dt>Destino DNS</dt><dd>{{ cfg.hostnames|map(attribute='gcore_target')|select|first|default('—') }}</dd></div>
-      <div><dt>Certificado</dt><dd>válido hasta {{ cfg.cert_not_after[:10] if cfg.cert_not_after else '—' }}</dd></div>
-      <div><dt>Renovación automática</dt><dd>{{ ('a partir del ' ~ renew_from.strftime('%d/%m/%Y') ~ ' (30 días antes de caducar)') if renew_from else '—' }}</dd></div>
+      <div><dt>{{ _('CDN resource') }}</dt><dd>{{ cfg.gcore_resource_id }}</dd></div>
+      <div><dt>{{ _('DNS target') }}</dt><dd>{{ cfg.hostnames|map(attribute='gcore_target')|select|first|default('—') }}</dd></div>
+      <div><dt>{{ _('Certificate') }}</dt><dd>{{ _('valid until {date}', date=cfg.cert_not_after[:10] if cfg.cert_not_after else '—') }}</dd></div>
+      <div><dt>{{ _('Automatic renewal') }}</dt><dd>{{ _('from {date} (30 days before expiry)', date=renew_from.strftime('%d/%m/%Y')) if renew_from else '—' }}</dd></div>
     </dl>
     {% endif %}
-    <p class="help" style="margin:0">Crea o actualiza en Gcore el origen, el certificado (Let's Encrypt por DNS-01 en Cloudflare) y el recurso CDN. <strong>No cambia el DNS público</strong>: el dominio sigue en Cloudflare hasta que conmutes.</p>
+    <p class="help" style="margin:0">{{ m.icon('info') }} {{ _m("Creates or updates on Gcore the origin, the certificate (Let's Encrypt via DNS-01 on Cloudflare) and the CDN resource. <strong>It does not change the public DNS</strong>: the domain stays on Cloudflare until you switch.") }}</p>
     <form method="post" action="/dominios/{{ d.name }}/gcore/preparar" class="actions-end">{{ csrf_field() }}
       <button class="btn btn--primary" type="submit" {% if job and not job.done %}disabled{% endif %}>
-        {{ 'Preparando…' if job and not job.done else ('Actualizar en Gcore' if cfg.gcore_resource_id else 'Preparar en Gcore') }}
+        {% if job and not job.done %}{{ m.icon('clock') }}{{ _('Preparing…') }}{% else %}{{ m.icon('refresh' if cfg.gcore_resource_id else 'wrench') }}{{ _('Update on Gcore') if cfg.gcore_resource_id else _('Prepare on Gcore') }}{% endif %}
       </button>
     </form>
     {% if job %}
-    <div class="joblog" role="log" aria-live="polite" aria-label="Progreso de la preparación en Gcore" {% if not job.done %}data-running{% endif %}>
+    <div class="joblog" role="log" aria-live="polite" aria-label="{{ _('Progress of the Gcore preparation') }}" {% if not job.done %}data-running{% endif %}>
       <ol>
-        {% for level, text in job.lines %}<li class="joblog__{{ level }}"><span class="visually-hidden">{{ {'error': 'Error: ', 'warn': 'Aviso: ', 'ok': 'Correcto: '}.get(level, '') }}</span>{{ text }}</li>{% endfor %}
-        {% if not job.done %}<li class="joblog__info">En curso…</li>{% endif %}
+        {% for level, text in job.lines %}<li class="joblog__{{ level }}"><span class="visually-hidden">{{ {'error': _('Error: '), 'warn': _('Warning: '), 'ok': _('OK: ')}.get(level, '') }}</span>{{ text }}</li>{% endfor %}
+        {% if not job.done %}<li class="joblog__info">{{ _('In progress…') }}</li>{% endif %}
       </ol>
     </div>
     {% endif %}
@@ -91,30 +91,30 @@
 </section>
 
 <section class="card" aria-labelledby="cabecera-titulo" id="cabecera">
-  <div class="card__head"><h2 id="cabecera-titulo">Cabecera secreta hacia el origen</h2></div>
+  <div class="card__head"><h2 id="cabecera-titulo">{{ m.icon('lock') }} {{ _('Secret header to the origin') }}</h2></div>
   <div class="card__body stack-gap">
-    <p class="help" style="margin:0">Cada CDN añade <span class="mono">X-Origin-Auth</span> con su propio secreto a las peticiones que llegan al servidor. Cuando los dos estén al día, Caddy puede rechazar todo lo que no la traiga (ver <span class="mono">deploy/README.md</span>): así ni otra cuenta de Cloudflare o Gcore puede llegar a tu origen.</p>
+    <p class="help" style="margin:0">{{ m.icon('info') }} {{ _m('Each CDN adds <span class="mono">X-Origin-Auth</span> with its own secret to the requests that reach the server. When both are up to date, Caddy can reject everything that does not carry it (see <span class="mono">deploy/README.md</span>): that way not even another Cloudflare or Gcore account can reach your origin.') }}</p>
     <ul class="checks">
-      <li><span>Cloudflare (regla de transformación de la zona)</span><span class="pill pill--{{ origin_header.cloudflare[0] }}">{{ origin_header.cloudflare[1] }}</span></li>
-      <li><span>Gcore (cabecera del recurso CDN; se aplica con «{{ 'Actualizar' if cfg.gcore_resource_id else 'Preparar' }} en Gcore»)</span><span class="pill pill--{{ origin_header.gcore[0] }}">{{ origin_header.gcore[1] }}</span></li>
+      <li><span>{{ _('Cloudflare (zone transform rule)') }}</span><span class="pill pill--{{ origin_header.cloudflare[0] }}">{{ origin_header.cloudflare[1] }}</span></li>
+      <li><span>{{ _('Gcore (CDN resource header; applied with “{action}”)', action=_('Update on Gcore') if cfg.gcore_resource_id else _('Prepare on Gcore')) }}</span><span class="pill pill--{{ origin_header.gcore[0] }}">{{ origin_header.gcore[1] }}</span></li>
     </ul>
     <form method="post" action="/dominios/{{ d.name }}/origen/cloudflare" class="actions-end">{{ csrf_field() }}
-      <button class="btn {{ 'btn--primary' if origin_header.cloudflare[1] != 'Al día' else '' }}" type="submit" {% if not cfg.cloudflare_credential %}disabled{% endif %}>Aplicar en Cloudflare</button>
+      <button class="btn {{ 'btn--primary' if origin_header.cloudflare[0] != 'free' else '' }}" type="submit" {% if not cfg.cloudflare_credential %}disabled{% endif %}>{{ m.icon('shield') }}{{ _('Apply on Cloudflare') }}</button>
     </form>
   </div>
 </section>
 
 <section class="card" aria-labelledby="operadoras">
   <div class="card__head">
-    <h2 id="operadoras">Estado por operadora</h2>
-    <span class="mono muted">Fuente: feed hayahora</span>
+    <h2 id="operadoras">{{ m.icon('server') }} {{ _('Status by ISP') }}</h2>
+    <span class="mono muted">{{ _('Source: hayahora feed') }}</span>
   </div>
   {% if d.monitored_ips %}
-  <div class="table-wrap" role="region" tabindex="0" aria-label="Tabla de operadoras, desplazable">
+  <div class="table-wrap" role="region" tabindex="0" aria-label="{{ _('ISP table, scrollable') }}">
     <table>
-      <caption class="visually-hidden">Bloqueo de cada IP de Cloudflare del dominio en cada operadora</caption>
+      <caption class="visually-hidden">{{ _('Block of each Cloudflare IP of the domain on each ISP') }}</caption>
       <thead>
-        <tr><th scope="col">Operadora</th>{% for ip in d.monitored_ips %}<th scope="col" class="mono">{{ ip }}</th>{% endfor %}<th scope="col">Desde</th></tr>
+        <tr><th scope="col">{{ _('ISP') }}</th>{% for ip in d.monitored_ips %}<th scope="col" class="mono">{{ ip }}</th>{% endfor %}<th scope="col">{{ _('Since') }}</th></tr>
       </thead>
       <tbody>
         {% for row in d.isp_rows %}
@@ -132,44 +132,45 @@
   </div>
   {% else %}
   <p class="card__body" style="margin:0">
-    {% if d.cf_ips %}Las IPs de Cloudflare de este dominio ({{ d.cf_ips|join(', ') }}) no están monitorizadas en el feed, así que no hay datos por operadora. El controlador usará la señal de bloqueo masivo.
-    {% else %}Ningún hostname resuelve ahora mismo a Cloudflare, así que no hay IPs que cruzar con el feed.{% endif %}
+    {{ m.icon('info') }}
+    {% if d.cf_ips %}{{ _("This domain's Cloudflare IPs ({ips}) are not monitored in the feed, so there is no per-ISP data. The controller will use the mass block signal.", ips=d.cf_ips|join(', ')) }}
+    {% else %}{{ _('No hostname resolves to Cloudflare right now, so there are no IPs to match against the feed.') }}{% endif %}
   </p>
   {% endif %}
 </section>
 
 <section class="card" aria-labelledby="hostnames">
-  <div class="card__head"><h2 id="hostnames">Hostnames</h2></div>
+  <div class="card__head"><h2 id="hostnames">{{ m.icon('globe') }} Hostnames</h2></div>
   <form method="post" action="/dominios/{{ d.name }}/hostnames">{{ csrf_field() }}
-    <div class="table-wrap" role="region" tabindex="0" aria-label="Tabla de hostnames, desplazable">
+    <div class="table-wrap" role="region" tabindex="0" aria-label="{{ _('Hostnames table, scrollable') }}">
       <table class="stack">
-        <caption class="visually-hidden">Hostnames del dominio, su DNS público y su configuración de respaldo</caption>
-        <thead><tr><th scope="col">Hostname</th><th scope="col">Servido por</th><th scope="col">DNS público</th><th scope="col">Servidor</th><th scope="col">Destino Gcore</th><th scope="col">Conmutar</th><th scope="col"><span class="visually-hidden">Acciones</span></th></tr></thead>
+        <caption class="visually-hidden">{{ _('Hostnames of the domain, their public DNS and their backup configuration') }}</caption>
+        <thead><tr><th scope="col">Hostname</th><th scope="col">{{ _('Served by') }}</th><th scope="col">{{ _('Public DNS') }}</th><th scope="col">{{ _('Server') }}</th><th scope="col">{{ _('Gcore target') }}</th><th scope="col">{{ _('Switch') }}</th><th scope="col"><span class="visually-hidden">{{ _('Actions') }}</span></th></tr></thead>
         <tbody>
           {% for h in d.hosts %}
           {% set c = cfg.hostnames[loop.index0] %}
           <tr>
-            <th scope="row" class="mono">{{ h.name }}{% if c.cloudflare_record_id %}<br><span class="muted">registro CF enlazado</span>{% endif %}</th>
-            <td data-label="Servido por"><span class="pill {{ 'pill--free' if h.provider == 'cloudflare' else ('pill--backup' if h.provider == 'gcore' else ('pill--blocked' if h.provider == 'origin' else 'pill--nodata')) }}">{{ h.provider_label }}</span></td>
-            <td class="mono" data-label="DNS público">{{ h.dns_text }}</td>
-            <td data-label="Servidor">
-              <label class="visually-hidden" for="srv-{{ loop.index }}">Servidor de {{ h.name }}</label>
+            <th scope="row" class="mono">{{ h.name }}{% if c.cloudflare_record_id %}<br><span class="muted">{{ _('CF record linked') }}</span>{% endif %}</th>
+            <td data-label="{{ _('Served by') }}"><span class="pill {{ 'pill--free' if h.provider == 'cloudflare' else ('pill--backup' if h.provider == 'gcore' else ('pill--blocked' if h.provider == 'origin' else 'pill--nodata')) }}">{{ h.provider_label }}</span></td>
+            <td class="mono" data-label="{{ _('Public DNS') }}">{{ h.dns_text }}</td>
+            <td data-label="{{ _('Server') }}">
+              <label class="visually-hidden" for="srv-{{ loop.index }}">{{ _('Server for {host}', host=h.name) }}</label>
               <select id="srv-{{ loop.index }}" name="server:{{ h.name }}">
                 {% for sid in servers %}<option value="{{ sid }}" {% if sid == c.server %}selected{% endif %}>{{ sid }}</option>{% endfor %}
               </select>
             </td>
-            <td data-label="Destino Gcore">
-              <label class="visually-hidden" for="gc-{{ loop.index }}">Destino Gcore de {{ h.name }}</label>
+            <td data-label="{{ _('Gcore target') }}">
+              <label class="visually-hidden" for="gc-{{ loop.index }}">{{ _('Gcore target for {host}', host=h.name) }}</label>
               <input id="gc-{{ loop.index }}" type="text" name="gcore:{{ h.name }}" value="{{ c.gcore_target or '' }}" placeholder="cl-xxxx.gcorecdn.com" autocomplete="off" spellcheck="false">
             </td>
-            <td data-label="Conmutar">
+            <td data-label="{{ _('Switch') }}">
               <input id="fo-{{ loop.index }}" type="checkbox" name="failover:{{ h.name }}" value="1" {% if c.failover %}checked{% endif %} aria-describedby="fo-help">
-              <label class="inline" for="fo-{{ loop.index }}">Sí<span class="visually-hidden">, conmutar {{ h.name }} a Gcore</span></label>
+              <label class="inline" for="fo-{{ loop.index }}">{{ _('Yes') }}<span class="visually-hidden">{{ _(', switch {host} to Gcore', host=h.name) }}</span></label>
             </td>
             <td class="actions-cell">
               <button class="btn btn--danger btn--sm" type="submit" formnovalidate
                       formaction="/dominios/{{ d.name }}/hostnames/{{ h.name }}/quitar"
-                      title="Deja de vigilarlo; no cambia su DNS">Quitar<span class="visually-hidden"> {{ h.name }} del inventario</span></button>
+                      title="{{ _('Stops watching it; does not change its DNS') }}">{{ _('Remove') }}<span class="visually-hidden">{{ _(' {host} from the inventory', host=h.name) }}</span></button>
             </td>
           </tr>
           {% endfor %}
@@ -178,71 +179,71 @@
     </div>
     <div class="card__body form-grid">
       <div>
-        <label for="new-hostnames">Añadir hostnames</label>
+        <label for="new-hostnames">{{ _('Add hostnames') }}</label>
         <input id="new-hostnames" type="text" name="new_hostnames" placeholder="api.{{ d.name }}" autocomplete="off" spellcheck="false" aria-describedby="new-hostnames-help">
-        <p id="new-hostnames-help" class="help">Separados por espacios. Deben pertenecer a {{ d.name }}.</p>
-        <p id="fo-help" class="help">Desmarca «Conmutar» en los hostnames que deben quedarse siempre en Cloudflare, como un www que solo redirige. «Quitar» deja de vigilar el hostname, pero no cambia su DNS.</p>
+        <p id="new-hostnames-help" class="help">{{ _('Separated by spaces. They must belong to {domain}.', domain=d.name) }}</p>
+        <p id="fo-help" class="help">{{ _('Untick “Switch” on the hostnames that must always stay on Cloudflare, such as a www that only redirects. “Remove” stops watching the hostname, but does not change its DNS.') }}</p>
       </div>
       <div>
-        <label for="new-server">Servidor de los nuevos</label>
+        <label for="new-server">{{ _('Server for the new ones') }}</label>
         <select id="new-server" name="new_server">{% for sid in servers %}<option>{{ sid }}</option>{% endfor %}</select>
       </div>
-      <div class="form-actions"><button class="btn btn--primary" type="submit">Guardar hostnames</button></div>
+      <div class="form-actions"><button class="btn btn--primary" type="submit">{{ _('Save hostnames') }}</button></div>
     </div>
   </form>
 </section>
 
 <section class="card" aria-labelledby="config">
-  <div class="card__head"><h2 id="config">Configuración</h2></div>
+  <div class="card__head"><h2 id="config">{{ m.icon('gear') }} {{ _('Configuration') }}</h2></div>
   <form class="card__body form-grid" method="post" action="/dominios/{{ d.name }}/configuracion">{{ csrf_field() }}
     <div>
-      <label for="priority">Prioridad</label>
+      <label for="priority">{{ _('Priority') }}</label>
       <select id="priority" name="priority">
-        {% for v, l in [('critical','Crítica'),('medium','Media'),('low','Baja')] %}<option value="{{ v }}" {% if cfg.priority == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
+        {% for v, l in [('critical', _('Critical')), ('medium', _('Medium')), ('low', _('Low'))] %}<option value="{{ v }}" {% if cfg.priority == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
       </select>
     </div>
     <div>
-      <label for="policy">Política</label>
+      <label for="policy">{{ _('Policy') }}</label>
       <select id="policy" name="policy" aria-describedby="policy-help">
-        {% for v, l in [('preventive','Preventiva'),('reactive','Reactiva'),('manual','Manual')] %}<option value="{{ v }}" {% if cfg.policy == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
+        {% for v, l in [('preventive', _('Preventive')), ('reactive', _('Reactive')), ('manual', _('Manual'))] %}<option value="{{ v }}" {% if cfg.policy == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
       </select>
-      <p id="policy-help" class="help">Preventiva: cambia antes de cada partido, ante un bloqueo masivo o si se bloquean sus IPs. Reactiva: solo si se bloquean sus IPs. Manual: solo avisa.</p>
+      <p id="policy-help" class="help">{{ _('Preventive: switches before every match, on a mass block or if its IPs get blocked. Reactive: only if its IPs get blocked. Manual: only alerts.') }}</p>
     </div>
     <div>
-      <label for="cloudflare_credential">Credencial de Cloudflare</label>
+      <label for="cloudflare_credential">{{ _('Cloudflare credential') }}</label>
       <select id="cloudflare_credential" name="cloudflare_credential" aria-describedby="cfcred-help">
-        <option value="">Sin asignar</option>
+        <option value="">{{ _('Unassigned') }}</option>
         {% for c in cf_creds %}<option value="{{ c.id }}" {% if cfg.cloudflare_credential == c.id %}selected{% endif %}>{{ c.label }} ({{ c.hint }})</option>{% endfor %}
       </select>
-      <p id="cfcred-help" class="help">La que tiene acceso a la zona de este dominio. <a href="/ajustes/cuentas">Gestionar</a></p>
+      <p id="cfcred-help" class="help">{{ _("The one with access to this domain's zone.") }} <a href="/ajustes/cuentas">{{ _('Manage') }}</a></p>
     </div>
     <div>
-      <label for="gcore_credential">Credencial de Gcore</label>
+      <label for="gcore_credential">{{ _('Gcore credential') }}</label>
       <select id="gcore_credential" name="gcore_credential">
-        <option value="">Sin asignar</option>
+        <option value="">{{ _('Unassigned') }}</option>
         {% for c in gc_creds %}<option value="{{ c.id }}" {% if cfg.gcore_credential == c.id %}selected{% endif %}>{{ c.label }} ({{ c.hint }})</option>{% endfor %}
       </select>
     </div>
     <div>
-      <label for="zone_id">Zone ID de Cloudflare</label>
+      <label for="zone_id">{{ _('Cloudflare zone ID') }}</label>
       <input id="zone_id" type="text" name="zone_id" value="{{ cfg.zone_id or '' }}" autocomplete="off" spellcheck="false" aria-describedby="zone-help">
-      <p id="zone-help" class="help">Se rellena solo al importar desde Cloudflare.</p>
+      <p id="zone-help" class="help">{{ _('Filled in automatically when importing from Cloudflare.') }}</p>
     </div>
-    <div class="form-actions"><button class="btn btn--primary" type="submit">Guardar configuración</button></div>
+    <div class="form-actions"><button class="btn btn--primary" type="submit">{{ _('Save configuration') }}</button></div>
   </form>
 </section>
 
 <section class="card" aria-labelledby="historial-dominio">
-  <div class="card__head"><h2 id="historial-dominio">Historial del dominio</h2><a class="btn" href="/historial?dominio={{ d.name }}">Ver todo</a></div>
+  <div class="card__head"><h2 id="historial-dominio">{{ m.icon('history') }} {{ _('Domain history') }}</h2><a class="btn" href="/historial?dominio={{ d.name }}">{{ _('View all') }}</a></div>
   {% if events %}<ul class="timeline">{% for e in events %}{{ m.event_row(e, show_domain=false) }}{% endfor %}</ul>
-  {% else %}<p class="card__body muted" style="margin:0">Sin eventos para este dominio.</p>{% endif %}
+  {% else %}<p class="card__body muted" style="margin:0">{{ _('No events for this domain.') }}</p>{% endif %}
 </section>
 
 <section class="card" aria-labelledby="eliminar">
-  <div class="card__head"><h2 id="eliminar">Eliminar del inventario</h2></div>
+  <div class="card__head"><h2 id="eliminar">{{ m.icon('trash') }} {{ _('Remove from the inventory') }}</h2></div>
   <div class="card__body row">
-    <p style="margin:0;flex:1">El controlador dejará de vigilar este dominio. Antes eliges si queda en Cloudflare, en Gcore o sin cambios.</p>
-    <button class="btn btn--danger" type="button" data-open="del-0">Eliminar…</button>
+    <p style="margin:0;flex:1">{{ _('The controller will stop watching this domain. First you choose whether it stays on Cloudflare, on Gcore or unchanged.') }}</p>
+    <button class="btn btn--danger" type="button" data-open="del-0">{{ m.icon('trash') }}{{ _('Delete…') }}</button>
   </div>
 </section>
 {{ m.delete_dialog(d, 0, dry_run) }}
@@ -252,32 +253,32 @@
   <form method="post" action="/dominios/{{ d.name }}/cambiar">{{ csrf_field() }}
     <input type="hidden" name="target" value="gcore">
     <div class="dialog__head">
-      <h2 id="confirmar-titulo">Cambiar {{ d.name }} a Gcore</h2>
-      <button class="btn" type="button" data-close aria-label="Cerrar">✕</button>
+      <h2 id="confirmar-titulo">{{ m.icon('switch') }} {{ _('Switch {domain} to Gcore', domain=d.name) }}</h2>
+      <button class="btn" type="button" data-close aria-label="{{ _('Close') }}">✕</button>
     </div>
     <div class="dialog__body">
-      <p style="margin:0">Los hostnames pasarán a resolver hacia Gcore. Quien tenga el DNS en caché puede tardar hasta 5 minutos en cambiar.</p>
-      <div class="table-wrap" role="region" tabindex="0" aria-label="Tabla de cambios DNS, desplazable">
+      <p style="margin:0">{{ _('The hostnames will resolve to Gcore. Anyone with the DNS cached may take up to 5 minutes to switch.') }}</p>
+      <div class="table-wrap" role="region" tabindex="0" aria-label="{{ _('DNS changes table, scrollable') }}">
         <table class="stack">
-          <caption>Cambios DNS</caption>
-          <thead><tr><th scope="col">Hostname</th><th scope="col">Ahora</th><th scope="col">Después</th></tr></thead>
+          <caption>{{ _('DNS changes') }}</caption>
+          <thead><tr><th scope="col">Hostname</th><th scope="col">{{ _('Now') }}</th><th scope="col">{{ _('After') }}</th></tr></thead>
           <tbody>
             {% for h in d.hosts %}
-            <tr><th scope="row" class="mono">{{ h.name }}</th><td class="mono" data-label="Ahora">{{ h.dns_text }}</td><td class="mono" data-label="Después">{% if h.failover %}CNAME → {{ h.gcore_target }} · TTL 60{% else %}sin cambios (excluido){% endif %}</td></tr>
+            <tr><th scope="row" class="mono">{{ h.name }}</th><td class="mono" data-label="{{ _('Now') }}">{{ h.dns_text }}</td><td class="mono" data-label="{{ _('After') }}">{% if h.failover %}CNAME → {{ h.gcore_target }} · TTL 60{% else %}{{ _('no changes (excluded)') }}{% endif %}</td></tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
-      <p class="notice notice--ok" style="margin:0">Los registros MX, TXT y demás registros no web no se modifican.</p>
-      {% if dry_run %}<p class="notice notice--warn" style="margin:0">Modo simulación: el cambio se registrará pero no se aplicará en Cloudflare.</p>{% endif %}
+      <p class="notice notice--ok" style="margin:0">{{ m.icon('check') }} {{ _('MX, TXT and other non-web records are not modified.') }}</p>
+      {% if dry_run %}<p class="notice notice--warn" style="margin:0">{{ m.icon('alert') }} {{ _('Dry run: the switch will be recorded but not applied on Cloudflare.') }}</p>{% endif %}
       <div>
-        <label for="confirm">Escribe <span class="mono">{{ d.name }}</span> para confirmar</label>
+        <label for="confirm">{{ _m('Type <span class="mono">{domain}</span> to confirm', domain=d.name) }}</label>
         <input id="confirm" name="confirm" type="text" autocomplete="off" spellcheck="false" required data-expected="{{ d.name }}">
       </div>
     </div>
     <div class="dialog__foot">
-      <button class="btn" type="button" data-close>Cancelar</button>
-      <button class="btn btn--primary" type="submit" data-submit disabled>Cambiar a Gcore</button>
+      <button class="btn" type="button" data-close>{{ _('Cancel') }}</button>
+      <button class="btn btn--primary" type="submit" data-submit disabled>{{ m.icon('switch') }}{{ _('Switch to Gcore') }}</button>
     </div>
   </form>
 </dialog>
@@ -285,26 +286,25 @@
 <dialog id="volver" aria-labelledby="volver-titulo">
   <form method="post" action="/dominios/{{ d.name }}/volver">{{ csrf_field() }}
     <div class="dialog__head">
-      <h2 id="volver-titulo">Volver {{ d.name }} a Cloudflare</h2>
-      <button class="btn" type="button" data-close aria-label="Cerrar">✕</button>
+      <h2 id="volver-titulo">{{ m.icon('refresh') }} {{ _('Move {domain} back to Cloudflare', domain=d.name) }}</h2>
+      <button class="btn" type="button" data-close aria-label="{{ _('Close') }}">✕</button>
     </div>
     <div class="dialog__body">
-      <p style="margin:0">Se restauran con proxy de Cloudflare los hostnames que no estén ya en Cloudflare. Si sigue habiendo bloqueo en las operadoras, la web volverá a fallar para esos usuarios.</p>
+      <p style="margin:0">{{ _('The hostnames not already on Cloudflare are restored with the Cloudflare proxy. If the ISPs are still blocking, the website will fail again for those users.') }}</p>
       <ul class="checks">
-        {% for h in d.hosts %}<li><span class="mono">{{ h.name }}</span><span class="pill {{ 'pill--free' if h.provider == 'cloudflare' else 'pill--backup' }}">{{ 'sin cambios' if h.provider == 'cloudflare' else h.provider_label ~ ' → Cloudflare' }}</span></li>{% endfor %}
+        {% for h in d.hosts %}<li><span class="mono">{{ h.name }}</span><span class="pill {{ 'pill--free' if h.provider == 'cloudflare' else 'pill--backup' }}">{{ _('no changes') if h.provider == 'cloudflare' else h.provider_label ~ ' → Cloudflare' }}</span></li>{% endfor %}
       </ul>
-      {% if d.blocked_count %}<p class="notice notice--error" style="margin:0">El feed marca ahora {{ d.blocked_count }} operadoras con las IPs de Cloudflare bloqueadas.</p>{% endif %}
-      {% if dry_run %}<p class="notice notice--warn" style="margin:0">Modo simulación: el cambio se registrará pero no se aplicará en Cloudflare.</p>{% endif %}
+      {% if d.blocked_count %}<p class="notice notice--error" style="margin:0">{{ m.icon('alert') }} {{ _n('The feed currently shows {n} ISP with the Cloudflare IPs blocked.', 'The feed currently shows {n} ISPs with the Cloudflare IPs blocked.', d.blocked_count) }}</p>{% endif %}
+      {% if dry_run %}<p class="notice notice--warn" style="margin:0">{{ m.icon('alert') }} {{ _('Dry run: the switch will be recorded but not applied on Cloudflare.') }}</p>{% endif %}
       <div>
-        <label for="volver-confirm">Escribe <span class="mono">{{ d.name }}</span> para confirmar</label>
+        <label for="volver-confirm">{{ _m('Type <span class="mono">{domain}</span> to confirm', domain=d.name) }}</label>
         <input id="volver-confirm" name="confirm" type="text" autocomplete="off" spellcheck="false" required data-expected="{{ d.name }}">
       </div>
     </div>
     <div class="dialog__foot">
-      <button class="btn" type="button" data-close>Cancelar</button>
-      <button class="btn btn--primary" type="submit" data-submit disabled>Volver a Cloudflare</button>
+      <button class="btn" type="button" data-close>{{ _('Cancel') }}</button>
+      <button class="btn btn--primary" type="submit" data-submit disabled>{{ m.icon('refresh') }}{{ _('Back to Cloudflare') }}</button>
     </div>
   </form>
 </dialog>
 {% endblock %}
-

@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 from . import certs
+from .i18n import tn, tnn, tr
 from .providers import gcore
 
 
@@ -84,8 +85,9 @@ async def prepare_domain(state, name: str, job: Job, renewal: bool = False) -> N
         job.ok = True
     except Exception as exc:  # se muestra en el panel y queda en el historial
         job.log(str(exc), "error")
-        what = "Renovación del certificado en Gcore fallida" if renewal else "Preparación en Gcore fallida"
-        state.events.add(actor="auto", kind="error", domain=name, summary=f"{what}: {exc}"[:500])
+        summary = tn("Certificate renewal on Gcore failed: {error}", error=exc) if renewal \
+            else tn("Preparation on Gcore failed: {error}", error=exc)
+        state.events.add(actor="auto", kind="error", domain=name, summary=summary[:500])
     finally:
         job.done = True
 
@@ -97,44 +99,46 @@ async def _prepare(state, name: str, job: Job, renewal: bool = False) -> None:
     gc_token = state.creds.secret(domain.gcore_credential)
     cf_token = state.creds.secret(domain.cloudflare_credential)
     if not gc_token:
-        raise RuntimeError("Asigna una credencial de Gcore al dominio (Configuración)")
+        raise RuntimeError(tn("Assign a Gcore credential to the domain (Configuration)"))
     if not cf_token:
-        raise RuntimeError("Asigna una credencial de Cloudflare al dominio: hace falta para emitir el certificado por DNS-01")
+        raise RuntimeError(tn("Assign a Cloudflare credential to the domain: it is needed to issue the certificate via DNS-01"))
 
     hosts = [h for h in domain.hostnames if h.origin_kind != "tunnel"]
     skipped = [h.name for h in domain.hostnames if h.origin_kind == "tunnel"]
     if skipped:
-        job.log(f"Se omiten por ser Cloudflare Tunnel (sin IP de origen): {', '.join(skipped)}", "warn")
+        job.log(tr("Skipped because they use Cloudflare Tunnel (no origin IP): {hosts}", hosts=", ".join(skipped)), "warn")
     if not hosts:
-        raise RuntimeError("Ningún hostname tiene origen por IP: Gcore no puede servir este dominio")
+        raise RuntimeError(tn("No hostname has an IP origin: Gcore cannot serve this domain"))
     servers = {h.server for h in hosts}
     if len(servers) > 1:
-        raise RuntimeError(f"Los hostnames están en varios servidores ({', '.join(sorted(servers))}); un recurso Gcore usa un solo origen")
+        raise RuntimeError(tn("The hostnames are on several servers ({servers}); a Gcore resource uses a single origin",
+                              servers=", ".join(sorted(servers))))
     server_id = servers.pop()
     origin_ip = inv.servers[server_id].origin_ipv4
     if not origin_ip:
-        raise RuntimeError(f"El servidor {server_id} no tiene IP de origen registrada (Ajustes → Servidores)")
+        raise RuntimeError(tn("Server {server} has no origin IP registered (Settings → Servers)", server=server_id))
 
     names = [h.name for h in hosts]
     primary = name if name in names else names[0]
     secondary = [n for n in names if n != primary]
 
     target = await gcore.account_cname(gc_token)
-    job.log(f"Cuenta Gcore verificada · destino DNS: {target}")
+    job.log(tr("Gcore account verified · DNS target: {target}", target=target))
 
     group_id = await gcore.ensure_origin_group(gc_token, f"multicdn-{server_id}", str(origin_ip))
-    job.log(f"Grupo de origen multicdn-{server_id} listo (id {group_id}, HTTPS :443)")
+    job.log(tr("Origin group multicdn-{server} ready (id {id}, HTTPS :443)", server=server_id, id=group_id))
 
     cert = await certs.issue(name, names, cf_token, job.log)
     ssl_name = f"multicdn-{name}-{cert.not_after:%Y%m%d}"
     ssl_id = await gcore.upload_certificate(gc_token, ssl_name, cert.fullchain, cert.privkey)
-    job.log(f"Certificado subido a Gcore como {ssl_name} (id {ssl_id})")
+    job.log(tr("Certificate uploaded to Gcore as {name} (id {id})", name=ssl_name, id=ssl_id))
 
     secret = origin_secret(state.secrets)
     payload = gcore.resource_payload(primary, secondary, group_id, ssl_id, secret)
     resource_id = await gcore.ensure_resource(gc_token, payload)
     state.events.set_value(f"origin_header_gcore:{name}", fingerprint(secret))
-    job.log(f"Recurso CDN listo (id {resource_id}): {', '.join(names)} · caché solo si el origen la pide · WebSockets · cabecera X-Origin-Auth")
+    job.log(tr("CDN resource ready (id {id}): {hosts} · cache only if the origin asks for it · WebSockets · "
+               "X-Origin-Auth header", id=resource_id, hosts=", ".join(names)))
 
     previous_ssl = domain.gcore_ssl_id
     state.store.set_gcore(name, resource_id, ssl_id, cert.not_after.isoformat(), target, names)
@@ -142,11 +146,11 @@ async def _prepare(state, name: str, job: Job, renewal: bool = False) -> None:
     if previous_ssl and previous_ssl != ssl_id:
         try:
             await gcore.delete_certificate(gc_token, previous_ssl)
-            job.log(f"Certificado anterior (id {previous_ssl}) borrado de Gcore")
+            job.log(tr("Previous certificate (id {id}) deleted from Gcore", id=previous_ssl))
         except Exception as exc:  # no es crítico: queda huérfano pero sin uso
-            job.log(f"No se pudo borrar el certificado anterior (id {previous_ssl}): {exc}", "warn")
+            job.log(tr("Could not delete the previous certificate (id {id}): {error}", id=previous_ssl, error=exc), "warn")
 
-    job.log("Comprobando el borde de Gcore (puede tardar unos minutos en propagarse)…")
+    job.log(tr("Checking the Gcore edge (it may take a few minutes to propagate)…"))
     for n in names:
         try:
             ok, msg = await gcore.probe_edge(target, n)
@@ -155,14 +159,14 @@ async def _prepare(state, name: str, job: Job, renewal: bool = False) -> None:
         job.log(msg, "ok" if ok else "warn")
 
     if renewal:
-        summary = f"Certificado renovado en Gcore, válido hasta {cert.not_after:%d/%m/%Y}"
+        summary = tn("Certificate renewed on Gcore, valid until {date}", date=f"{cert.not_after:%d/%m/%Y}")
     elif existed:  # recurso ya existente: configuración y cabecera secreta al día, mismo DNS
-        summary = f"Actualizado en Gcore: recurso {resource_id}, certificado hasta {cert.not_after:%d/%m/%Y}"
+        summary = tn("Updated on Gcore: resource {id}, certificate until {date}", id=resource_id, date=f"{cert.not_after:%d/%m/%Y}")
     else:
-        summary = f"Preparado en Gcore: recurso {resource_id}, certificado hasta {cert.not_after:%d/%m/%Y}"
+        summary = tn("Prepared on Gcore: resource {id}, certificate until {date}", id=resource_id, date=f"{cert.not_after:%d/%m/%Y}")
     state.events.add(actor="auto", kind="config", domain=name, summary=summary,
-                     signals=[f"destino {target}", f"origen multicdn-{server_id}"])
-    job.log("Listo. El DNS público no se ha tocado: el dominio sigue sirviéndose por Cloudflare.", "ok")
+                     signals=[tn("target {target}", target=target), tn("origin multicdn-{server}", server=server_id)])
+    job.log(tr("Done. Public DNS was not touched: the domain is still served through Cloudflare."), "ok")
 
 
 def due_for_renewal(domain, now: datetime | None = None) -> bool:
@@ -190,10 +194,12 @@ def cert_expiry_alerts(state, now: datetime | None = None) -> list[str]:
         key, mark = f"cert_alert:{name}", f"{domain.cert_not_after}:{level}"
         if state.events.get_value(key) == mark:
             continue
-        when = f"caducó el {not_after:%d/%m/%Y}" if level == 0 else f"caduca el {not_after:%d/%m/%Y} (en {days} días)"
+        date = f"{not_after:%d/%m/%Y}"
+        when = tn("expired on {date}", date=date) if level == 0 \
+            else tnn("expires on {date} (in {n} day)", "expires on {date} (in {n} days)", days, date=date)
         state.events.add(actor="auto", kind="alert", domain=name,
-                         summary=f"Certificado de Gcore sin renovar: {when}. Revisa la renovación en la ficha del dominio "
-                                 "(Respaldo Gcore); sin él, el cambio a Gcore fallaría")
+                         summary=tn("Gcore certificate not renewed: {when}. Check the renewal on the domain page "
+                                    "(Gcore backup); without it, switching to Gcore would fail", when=when))
         state.events.set_value(key, mark)
         warned.append(name)
     return warned
@@ -213,7 +219,7 @@ async def renew_due_certificates(state) -> list[str]:
         if not due_for_renewal(domain):
             continue
         job = state.jobs[name] = Job(domain=name)
-        job.log("Renovación automática: el certificado caduca en menos de 30 días")
+        job.log(tr("Automatic renewal: the certificate expires in less than 30 days"))
         await prepare_domain(state, name, job, renewal=True)
         renewed.append(name)
     return renewed

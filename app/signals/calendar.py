@@ -18,6 +18,8 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 
+from ..i18n import tn
+
 SOURCE = "https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard"
 COMPETITIONS = {"esp.1": "LaLiga", "esp.2": "LaLiga Hypermotion"}
 SKIP_STATUS = {"STATUS_POSTPONED", "STATUS_CANCELED", "STATUS_ABANDONED", "STATUS_FORFEIT"}
@@ -99,7 +101,7 @@ async def _football_data(client: httpx.AsyncClient, token: str, now: datetime) -
     r = await client.get(FD_SOURCE, headers={"X-Auth-Token": token}, timeout=20, params={
         "dateFrom": f"{now - timedelta(days=1):%Y-%m-%d}", "dateTo": f"{now + timedelta(days=DAYS_AHEAD):%Y-%m-%d}"})
     if r.status_code in (401, 403):
-        raise RuntimeError(f"football-data.org rechazó la clave (HTTP {r.status_code})")
+        raise RuntimeError(tn("football-data.org rejected the key (HTTP {status})", status=r.status_code))
     r.raise_for_status()
     return parse_football_data(r.json())
 

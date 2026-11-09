@@ -1,0 +1,21 @@
+{
+  "(done)": "(hecho)",
+  "(pending)": "(pendiente)",
+  "Add your origin server": "Añade tu servidor de origen",
+  "An API token with Zone · Read and DNS · Edit on your zones.": "Un token API con Zona · Leer y DNS · Editar en tus zonas.",
+  "An API token with the Administrators or Engineers role.": "Un token API con el rol Administrators o Engineers.",
+  "Connect Cloudflare": "Conecta Cloudflare",
+  "Connect Gcore": "Conecta Gcore",
+  "Getting started": "Primeros pasos",
+  "Go live": "Activa los cambios reales",
+  "Import your domains": "Importa tus dominios",
+  "Its IP is stored encrypted and never published in DNS.": "Su IP se guarda cifrada y nunca se publica en el DNS.",
+  "Origin, certificate and CDN resource, ready before any block.": "Origen, certificado y recurso CDN, listos antes de cualquier bloqueo.",
+  "Pick the Cloudflare zones and which hostnames switch.": "Elige las zonas de Cloudflare y qué hostnames conmutan.",
+  "Prepare a domain on Gcore": "Prepara un dominio en Gcore",
+  "Set MULTICDN_DRY_RUN=false in the server's .env and restart: until then every change is simulated.": "Pon MULTICDN_DRY_RUN=false en el .env del servidor y reinicia: hasta entonces todo cambio se simula.",
+  "Set up alerts": "Configura los avisos",
+  "Step by step, with the exact permissions and commands: <a href=\"https://github.com/Pepebits/multi-cdn/blob/main/deploy/README.md\" rel=\"external\">deployment guide</a>. This card disappears when every step is done.": "Paso a paso, con los permisos y comandos exactos: <a href=\"https://github.com/Pepebits/multi-cdn/blob/main/deploy/README.md\" rel=\"external\">guía de despliegue</a> (en inglés). Esta tarjeta desaparece cuando todos los pasos están hechos.",
+  "Telegram or email, plus the external heartbeat.": "Telegram o email, y el latido externo.",
+  "{done} of {total} done": "{done} de {total} hechos"
+}

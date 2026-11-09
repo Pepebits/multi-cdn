@@ -1,42 +1,42 @@
 #!/usr/bin/env bash
-# Instala o actualiza el panel en el VPS con Docker. Ejecútalo desde la raíz del repo.
-#   deploy/install.sh            primera instalación o actualización (git pull antes)
+# Installs or updates the panel on the server with Docker. Run it from the repository root.
+#   deploy/install.sh            first install, or update (after git pull)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 say() { echo "==> $*"; }
-docker compose version >/dev/null 2>&1 || { echo "Falta Docker con el plugin compose"; exit 1; }
+docker compose version >/dev/null 2>&1 || { echo "Docker with the compose plugin is required"; exit 1; }
 
-# Configuración y clave maestra: .env en la carpeta del repo, salvo que MULTICDN_ENV_FILE indique otra ruta.
+# Settings and master key: .env in the repository folder, unless MULTICDN_ENV_FILE points elsewhere.
 ENV_FILE=${MULTICDN_ENV_FILE:-.env}
 if [[ ! -f $ENV_FILE ]]; then
-  say "Creando $ENV_FILE con una clave maestra nueva"
+  say "Creating $ENV_FILE with a new master key"
   key=$(openssl rand -base64 32 | tr '+/' '-_')
   mkdir -p "$(dirname "$ENV_FILE")"
   (umask 077; sed "s|^MULTICDN_SECRET_KEY=.*|MULTICDN_SECRET_KEY=$key|" .env.example > "$ENV_FILE")
-  echo "    Guarda esta clave también fuera del VPS (gestor de contraseñas): sin ella no se puede restaurar."
+  echo "    Save this key outside the server too (password manager): without it, nothing can be restored."
   echo "    MULTICDN_SECRET_KEY=$key"
-  echo "    Revisa $ENV_FILE (ORIGIN_VPS1_IPV4, MULTICDN_ACME_EMAIL) y vuelve a ejecutar este script."
+  echo "    Edit $ENV_FILE (ORIGIN_VPS1_IPV4, MULTICDN_ACME_EMAIL) and run this script again."
   exit 0
 fi
-grep -q '^MULTICDN_SECRET_KEY=.\+' "$ENV_FILE" || { echo "MULTICDN_SECRET_KEY está vacía en $ENV_FILE"; exit 1; }
+grep -q '^MULTICDN_SECRET_KEY=.\+' "$ENV_FILE" || { echo "MULTICDN_SECRET_KEY is empty in $ENV_FILE"; exit 1; }
 if [[ -f data/.secret_key ]]; then
-  echo "Hay una clave en data/.secret_key: pásala a MULTICDN_SECRET_KEY en $ENV_FILE y bórrala de data/ (una sola fuente de la clave)."
+  echo "There is a key in data/.secret_key: move it to MULTICDN_SECRET_KEY in $ENV_FILE and delete it from data/ (one source for the key)."
   exit 1
 fi
 
-say "Preparando data/ para el usuario del contenedor (uid 10001)"
+say "Preparing data/ for the container user (uid 10001)"
 mkdir -p data
 sudo chown -R 10001:10001 data
 sudo chmod 700 data
 
-say "Construyendo y arrancando"
+say "Building and starting"
 docker compose up -d --build
 
-say "Esperando a que el panel responda"
+say "Waiting for the panel to answer"
 for _ in $(seq 1 30); do
   if curl -fsS http://127.0.0.1:8765/healthz >/dev/null 2>&1; then
-    say "Panel en marcha en 127.0.0.1:8765"
+    say "Panel running on 127.0.0.1:8765"
     break
   fi
   sleep 2
@@ -45,12 +45,10 @@ curl -fsS http://127.0.0.1:8765/healthz >/dev/null || { docker compose logs --ta
 
 cat <<'TXT'
 
-Siguientes pasos (solo la primera vez):
-  1. Usuario del panel:   docker compose exec panel python -m app.cli crear-usuario <usuario>
-  2. Acceso (el panel solo escucha en 127.0.0.1:8765; ver «Acceso al panel» en deploy/README.md):
-       túnel SSH desde tu máquina:  ssh -N -L 8765:127.0.0.1:8765 <usuario>@<IP del VPS>
-                                    y abre http://localhost:8765
-       o Tailscale en el VPS:       sudo tailscale serve --bg 8765
-  3. Entra y configura el TOTP.
-Para actualizar más adelante: git pull && deploy/install.sh
+Next steps (first time only), see deploy/README.md:
+  2. Create your user:    docker compose exec panel python -m app.cli create-user <user>
+  3. Open the panel (it only listens on 127.0.0.1:8765), from your computer:
+       ssh -N -L 8765:127.0.0.1:8765 <user>@<server>   and open http://localhost:8765
+  4. Continue in the panel: Settings → Accounts.
+To update later: git pull && deploy/install.sh
 TXT

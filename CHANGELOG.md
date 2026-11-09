@@ -6,7 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-11-09
+## [Unreleased]
+
+### Added
+- **English interface**, with Spanish kept: each browser gets its preferred language and can
+  switch in the footer. History entries, alerts and terminal output follow a separate setting
+  (Settings → Operation); installs that already have history keep Spanish.
+- **Getting started checklist** on the overview, with links to each pending step.
+- English command names for the CLI (`create-user`, `status`, `switch`, `origin-secrets`…); the
+  Spanish names keep working.
+- Icons on headings, buttons and notices across the panel.
+
+### Changed
+- Step-by-step deployment guide in English (`deploy/README.md`), from an empty server to live
+  failover.
+
+ - 2026-11-09
 
 First release: a private panel and controller that keeps sites reachable in Spain
 during the court-ordered blocks of Cloudflare IPs, by moving DNS to a second CDN

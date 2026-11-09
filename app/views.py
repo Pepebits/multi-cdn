@@ -6,28 +6,40 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from .config import Domain, Inventory
+from .i18n import N_, tr, trn
 from .signals.dnscheck import Resolution
 from .signals.hayahora import ISPS, FeedSnapshot
 
-PRIORITY_LABEL = {"critical": "Crítica", "medium": "Media", "low": "Baja"}
-POLICY_LABEL = {"preventive": "preventiva", "reactive": "reactiva", "manual": "manual"}
+PRIORITY_LABEL = {"critical": N_("Critical"), "medium": N_("Medium"), "low": N_("Low")}
+POLICY_LABEL = {"preventive": N_("preventive"), "reactive": N_("reactive"), "manual": N_("manual")}
 
 # estado -> (texto, tono). El tono mapea a colores del DESIGN.md.
 STATUS = {
     "cloudflare": ("Cloudflare", "ok"),
-    "gcore": ("Gcore activo", "backup"),
-    "origin": ("Origen expuesto", "danger"),
-    "mixed": ("Mixto", "warn"),
-    "unknown": ("Sin datos", "neutral"),
+    "gcore": (N_("Gcore active"), "backup"),
+    "origin": (N_("Origin exposed"), "danger"),
+    "mixed": (N_("Mixed"), "warn"),
+    "unknown": (N_("No data"), "neutral"),
 }
 
 PROVIDER_LABEL = {
     "cloudflare": "Cloudflare",
     "gcore": "Gcore",
-    "origin": "Origen directo",
-    "other": "Otro",
-    "unresolved": "Sin resolver",
+    "origin": N_("Direct origin"),
+    "other": N_("Other"),
+    "unresolved": N_("Unresolved"),
 }
+
+
+class Alert(str):
+    """Texto de un aviso del dominio; `level` (error | warn) da el tono en la plantilla."""
+
+    level: str = "warn"
+
+    def __new__(cls, text: str, level: str = "warn"):
+        obj = super().__new__(cls, text)
+        obj.level = level
+        return obj
 
 
 @dataclass
@@ -73,13 +85,13 @@ class DomainView:
 
 def _dns_text(res: Resolution | None, provider: str) -> str:
     if res is None or provider == "unresolved":
-        return "sin resolver"
+        return tr("unresolved")
     if provider == "cloudflare":
         return "Cloudflare proxied"
     if res.cname:
         return f"CNAME → {res.cname.rstrip('.')}"
     if provider == "origin":
-        return "A → IP de origen (proxy desactivado)"
+        return tr("A → origin IP (proxy off)")
     return "A → " + ", ".join(res.ips)
 
 
@@ -97,7 +109,7 @@ def build_domain(
         if provider == "cloudflare" and res:
             cf_ips.update(res.ips)
         tunnel = h.origin_kind == "tunnel"
-        label = PROVIDER_LABEL.get(provider, provider)
+        label = tr(PROVIDER_LABEL.get(provider, provider))
         dns_text = _dns_text(res, provider)
         if tunnel and provider == "cloudflare":
             label, dns_text = "Cloudflare Tunnel", "CNAME → Cloudflare Tunnel (proxied)"
@@ -150,24 +162,28 @@ def build_domain(
     alerts = []
     for h in hosts:
         if h.provider == "origin":
-            alerts.append(f"{h.name} resuelve a la IP de origen: el servidor está expuesto sin CDN.")
+            alerts.append(Alert(tr("{host} resolves to the origin IP: the server is exposed without a CDN.",
+                                   host=h.name), "error"))
     tunneled = [h.name for h in hosts if h.origin_kind == "tunnel"]
     if tunneled:
-        alerts.append(
-            f"{', '.join(tunneled)} se sirve{'n' if len(tunneled) > 1 else ''} por Cloudflare Tunnel: no hay IP de origen "
-            "a la que Gcore pueda conectarse. Para usar Gcore de respaldo hace falta exponer ese origen por IP "
-            "(con firewall limitado a Gcore y cabecera secreta) o un segundo conector."
-        )
+        alerts.append(Alert(trn(
+            "{hosts} is served through Cloudflare Tunnel: there is no origin IP Gcore can connect to. To use "
+            "Gcore as backup, expose that origin by IP (with a firewall limited to Gcore and a secret header) "
+            "or add a second connector.",
+            "{hosts} are served through Cloudflare Tunnel: there is no origin IP Gcore can connect to. To use "
+            "Gcore as backup, expose that origin by IP (with a firewall limited to Gcore and a secret header) "
+            "or add a second connector.",
+            len(tunneled), hosts=", ".join(tunneled))))
     if watched and not monitored:
-        alerts.append("Sus IPs de Cloudflare no están en el feed: no hay datos de bloqueo por operadora.")
+        alerts.append(Alert(tr("Its Cloudflare IPs are not in the feed: there is no block data per ISP.")))
 
     return DomainView(
         name=name,
         priority=domain.priority,
-        priority_label=PRIORITY_LABEL[domain.priority],
-        policy_label=POLICY_LABEL[domain.policy],
+        priority_label=tr(PRIORITY_LABEL[domain.priority]),
+        policy_label=tr(POLICY_LABEL[domain.policy]),
         status=status,
-        status_label=label,
+        status_label=tr(label),
         status_tone=tone,
         hosts=hosts,
         cf_ips=sorted(cf_ips),

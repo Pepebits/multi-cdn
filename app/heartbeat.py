@@ -12,6 +12,8 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 
+from .i18n import tn
+
 INTERVAL = 300
 DNS_MAX = timedelta(minutes=5)
 CF_MAX = timedelta(minutes=15)
@@ -36,15 +38,15 @@ def health(state, now: datetime | None = None) -> tuple[bool, list[str]]:
     now = now or datetime.now(UTC)
     problems, notes = [], []
     if state.dns_checked_at is None or now - state.dns_checked_at > DNS_MAX:
-        problems.append("la comprobación del DNS lleva más de 5 min parada")
+        problems.append(tn("the DNS check has been stopped for more than 5 min"))
     needs_cf = any(d.cloudflare_credential and d.zone_id for d in state.inventory.domains.values())
     if needs_cf and (state.cf_sync_at is None or now - state.cf_sync_at > CF_MAX):
-        problems.append("la lectura de Cloudflare lleva más de 15 min parada")
+        problems.append(tn("reading Cloudflare has been stopped for more than 15 min"))
     if state.feed is None or now - state.feed.fetched_at > FEED_WARN:
-        notes.append("feed de bloqueos sin datos recientes")
+        notes.append(tn("block feed without recent data"))
     if state.calendar_error:
-        notes.append("calendario de partidos no disponible")
-    notes.append("modo simulación" if state.dry_run else "modo real")
+        notes.append(tn("match calendar not available"))
+    notes.append(tn("dry run mode") if state.dry_run else tn("live mode"))
     return not problems, problems + notes
 
 

@@ -1,39 +1,39 @@
 {% extends "base.html" %}
-{% block title %}Importar desde Cloudflare{% endblock %}
-{% block crumb %}{{ m.crumbs('Importar', [('Dominios', '/dominios')]) }}{% endblock %}
-{% block heading %}Importar desde Cloudflare{% endblock %}
+{% block title %}{{ _('Import from Cloudflare') }}{% endblock %}
+{% block crumb %}{{ m.crumbs(_('Import'), [(_('Domains'), '/dominios')]) }}{% endblock %}
+{% block heading %}{{ _('Import from Cloudflare') }}{% endblock %}
 
 {% block content %}
-{% if load_error %}<p class="notice notice--error" role="alert">No se pudo leer la cuenta de Cloudflare: {{ load_error }}</p>{% endif %}
+{% if load_error %}<p class="notice notice--error" role="alert">{{ m.icon('alert') }} {{ _('Could not read the Cloudflare account: {error}', error=load_error) }}</p>{% endif %}
 
 <section class="card" aria-labelledby="zonas">
-  <div class="card__head"><h2 id="zonas">1. Credencial y zona</h2></div>
+  <div class="card__head"><h2 id="zonas">{{ m.icon('key') }} {{ _('1. Credential and zone') }}</h2></div>
   <form class="card__body form-inline" method="get" action="/dominios/importar">
     <div>
-      <label for="cuenta">Credencial de Cloudflare</label>
+      <label for="cuenta">{{ _('Cloudflare credential') }}</label>
       <select id="cuenta" name="cuenta">
         {% for c in cf_creds %}<option value="{{ c.id }}" {% if c.id == cuenta %}selected{% endif %}>{{ c.label }} ({{ c.hint }})</option>{% endfor %}
       </select>
     </div>
     <div>
-      <label for="zone">Zona de la cuenta</label>
+      <label for="zone">{{ _('Account zone') }}</label>
       <select id="zone" name="zone">
         {% for z in zones %}<option value="{{ z.id }}" {% if zone and zone.id == z.id %}selected{% endif %}>{{ z.name }} ({{ z.status }})</option>{% endfor %}
       </select>
     </div>
-    <div class="form-actions"><button class="btn" type="submit">Ver zonas y registros</button></div>
+    <div class="form-actions"><button class="btn" type="submit">{{ _('Show zones and records') }}</button></div>
   </form>
 </section>
 
 {% if zone %}
 <section class="card" aria-labelledby="registros">
-  <div class="card__head"><h2 id="registros">2. Registros web de {{ zone.name }}</h2></div>
+  <div class="card__head"><h2 id="registros">{{ m.icon('list') }} {{ _('2. Web records of {zone}', zone=zone.name) }}</h2></div>
   <form method="post" action="/dominios/importar">{{ csrf_field() }}
     <input type="hidden" name="zone_id" value="{{ zone.id }}">
     <input type="hidden" name="cuenta" value="{{ cuenta }}">
     <fieldset class="card__body plain">
-      <legend class="visually-hidden">Registros a vigilar</legend>
-      <p class="help" style="margin-top:0">Se preseleccionan los registros con proxy de Cloudflare. El contenido de los registros no se muestra porque puede ser la IP de origen. Los marcados como <strong>Cloudflare Tunnel</strong> no tienen IP de origen: Gcore no podrá usarlos de respaldo sin publicar el origen por IP.</p>
+      <legend class="visually-hidden">{{ _('Records to watch') }}</legend>
+      <p class="help" style="margin-top:0">{{ m.icon('info') }} {{ _m('Records proxied by Cloudflare are preselected. The content of the records is not shown because it may be the origin IP. The ones marked as <strong>Cloudflare Tunnel</strong> have no origin IP: Gcore will not be able to use them as backup without publishing the origin by IP.') }}</p>
       <ul class="checklist">
         {% for r in records %}
         <li>
@@ -42,29 +42,29 @@
             <span class="mono">{{ r.name }}</span>
             <span class="pill pill--neutral">{{ r.type }}</span>
             {% if r.origin_kind == 'tunnel' %}<span class="pill pill--backup">Cloudflare Tunnel</span>{% endif %}
-            {% if r.proxied %}<span class="pill pill--free">Proxied</span>{% else %}<span class="pill pill--blocked">Sin proxy</span>{% endif %}
-            {% if r.name in existing %}<span class="pill pill--nodata">Ya inventariado</span>{% endif %}
+            {% if r.proxied %}<span class="pill pill--free">Proxied</span>{% else %}<span class="pill pill--blocked">{{ _('Not proxied') }}</span>{% endif %}
+            {% if r.name in existing %}<span class="pill pill--nodata">{{ _('Already in the inventory') }}</span>{% endif %}
           </label>
         </li>
         {% else %}
-        <li>La zona no tiene registros A, AAAA ni CNAME.</li>
+        <li>{{ _('The zone has no A, AAAA or CNAME records.') }}</li>
         {% endfor %}
       </ul>
     </fieldset>
     <div class="card__body form-grid">
       <div>
-        <label for="server">Servidor de origen</label>
+        <label for="server">{{ _('Origin server') }}</label>
         <select id="server" name="server">{% for sid in servers %}<option>{{ sid }}</option>{% endfor %}</select>
       </div>
       <div>
-        <label for="priority">Prioridad</label>
-        <select id="priority" name="priority"><option value="critical">Crítica</option><option value="medium" selected>Media</option><option value="low">Baja</option></select>
+        <label for="priority">{{ _('Priority') }}</label>
+        <select id="priority" name="priority"><option value="critical">{{ _('Critical') }}</option><option value="medium" selected>{{ _('Medium') }}</option><option value="low">{{ _('Low') }}</option></select>
       </div>
       <div>
-        <label for="policy">Política</label>
-        <select id="policy" name="policy"><option value="preventive">Preventiva</option><option value="reactive" selected>Reactiva</option><option value="manual">Manual</option></select>
+        <label for="policy">{{ _('Policy') }}</label>
+        <select id="policy" name="policy"><option value="preventive">{{ _('Preventive') }}</option><option value="reactive" selected>{{ _('Reactive') }}</option><option value="manual">{{ _('Manual') }}</option></select>
       </div>
-      <div class="form-actions"><button class="btn btn--primary" type="submit">Importar seleccionados</button></div>
+      <div class="form-actions"><button class="btn btn--primary" type="submit">{{ m.icon('upload') }}{{ _('Import selected') }}</button></div>
     </div>
   </form>
 </section>

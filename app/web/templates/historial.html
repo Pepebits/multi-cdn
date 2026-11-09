@@ -1,33 +1,33 @@
 {% extends "base.html" %}
-{% block title %}Historial{% endblock %}
-{% block crumb %}{{ m.crumbs('Historial') }}{% endblock %}
-{% block heading %}Historial{% endblock %}
+{% block title %}{{ _("History") }}{% endblock %}
+{% block crumb %}{{ m.crumbs(_('History')) }}{% endblock %}
+{% block heading %}{{ _("History") }}{% endblock %}
 
 {% block content %}
-<p class="muted" style="margin:0">Cada decisión, quién la tomó y qué cambió en DNS.</p>
+<p class="muted" style="margin:0">{{ _("Every decision, who made it and what changed in DNS.") }}</p>
 
-<form class="card card__body filters" method="get" action="/historial" role="search" aria-label="Filtrar historial">
+<form class="card card__body filters" method="get" action="/historial" role="search" aria-label="{{ _('Filter history') }}">
   <div>
-    <label for="f-dominio">Dominio</label>
+    <label for="f-dominio">{{ _("Domain") }}</label>
     <select id="f-dominio" name="dominio">
-      <option value="">Todos</option>
+      <option value="">{{ _("All domains") }}</option>
       {% for n in domain_names %}<option value="{{ n }}" {% if n == f_domain %}selected{% endif %}>{{ n }}</option>{% endfor %}
     </select>
   </div>
   <div>
-    <label for="f-actor">Actor</label>
+    <label for="f-actor">{{ _("Actor") }}</label>
     <select id="f-actor" name="actor">
-      <option value="">Todos</option>
-      <option value="auto" {% if f_actor == 'auto' %}selected{% endif %}>Automático</option>
-      <option value="manual" {% if f_actor == 'manual' %}selected{% endif %}>Manual</option>
+      <option value="">{{ _("Any actor") }}</option>
+      <option value="auto" {% if f_actor == 'auto' %}selected{% endif %}>{{ _('Automatic') }}</option>
+      <option value="manual" {% if f_actor == 'manual' %}selected{% endif %}>{{ _('Manual') }}</option>
     </select>
   </div>
-  <button class="btn btn--primary" type="submit">Filtrar</button>
+  <button class="btn btn--primary" type="submit">{{ m.icon('list') }} {{ _("Filter") }}</button>
 </form>
 
 <section class="card" aria-labelledby="eventos">
-  <div class="card__head"><h2 id="eventos">Eventos</h2><span class="mono muted">{{ events|length }} mostrados</span></div>
+  <div class="card__head"><h2 id="eventos">{{ m.icon('history') }} {{ _("Events") }}</h2><span class="mono muted">{{ _("{n} shown", n=events|length) }}</span></div>
   {% if events %}<ul class="timeline">{% for e in events %}{{ m.event_row(e) }}{% endfor %}</ul>
-  {% else %}<p class="card__body muted" style="margin:0">No hay eventos con estos filtros.</p>{% endif %}
+  {% else %}<p class="card__body muted" style="margin:0">{{ m.icon('info') }} {{ _("No events match these filters.") }}</p>{% endif %}
 </section>
 {% endblock %}

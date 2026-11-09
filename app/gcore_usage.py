@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 
 import httpx
 
+from .i18n import tn
 from .providers import gcore
 
 THRESHOLDS = (70, 90, 100)
@@ -57,7 +58,7 @@ async def refresh_usage(state, now: datetime | None = None) -> None:
         token = state.creds.secret(cred.id)
         try:
             if not token:
-                raise RuntimeError("no se puede descifrar la credencial")
+                raise RuntimeError(tn("the credential cannot be decrypted"))
             t = await gcore.traffic(token, month_start(now), now)
             u.total, u.sent, u.upstream, u.by_resource = t["total_bytes"], t["sent_bytes"], t["upstream_bytes"], t["by_resource"]
             limits = await gcore.account_limits(token)
@@ -78,12 +79,13 @@ def _alert(state, u: Usage) -> None:
     level = max((t for t in THRESHOLDS if u.percent >= t), default=0)
     if level > sent_level:
         state.events.add(actor="auto", kind="alert",
-                         summary=f"Tráfico de Gcore («{u.label}») al {u.percent:.0f} % de la cuota del mes: "
-                                 f"{human(u.total)} de {u.quota_gb} GB")
+                         summary=tn("Gcore traffic («{label}») at {percent} % of the monthly quota: {used} of {quota} GB",
+                                    label=u.label, percent=f"{u.percent:.0f}", used=human(u.total), quota=u.quota_gb))
         state.events.set_value(key, f"{u.month}:{level}")
     if u.max_resources and u.resources is not None and u.resources >= u.max_resources - 2:
         rkey = f"gcore_resources_alert:{u.credential_id}"
         if state.events.get_value(rkey) != str(u.resources):
             state.events.add(actor="auto", kind="alert",
-                             summary=f"Gcore («{u.label}»): {u.resources} de {u.max_resources} recursos CDN usados")
+                             summary=tn("Gcore («{label}»): {used} of {max} CDN resources used", label=u.label,
+                                        used=u.resources, max=u.max_resources))
             state.events.set_value(rkey, str(u.resources))

@@ -1,11 +1,11 @@
 {% import "_macros.html" as m %}
 <!doctype html>
-<html lang="es">
+<html lang="{{ ui_lang() }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
-  <meta name="description" content="Acceso al panel privado Multi-CDN.">
+  <meta name="description" content="{{ _('Sign-in to the private Multi-CDN panel.') }}">
   <meta name="color-scheme" content="light dark">
   <title>{% block title %}{% endblock %} · Multi-CDN</title>
   <link rel="icon" type="image/svg+xml" href="{{ asset('brand/multicdn-icon.svg') }}">
@@ -24,12 +24,13 @@
   <section class="card auth__card" aria-labelledby="auth-title">
     <div class="card__head"><h1 id="auth-title">{% block heading %}{% endblock %}</h1></div>
     <div class="card__body stack-gap">
-      {% if error %}<p class="notice notice--error" role="alert" style="margin:0">{{ error }}</p>{% endif %}
+      {% if error %}<p class="notice notice--error" role="alert" style="margin:0">{{ m.icon('alert') }} {{ error }}</p>{% endif %}
       {% block content %}{% endblock %}
     </div>
   </section>
-  <p class="auth__foot">Panel privado · acceso por túnel SSH o red privada</p>
+  <p class="auth__foot">{{ _("Private panel · access via SSH tunnel or private network") }}</p>
   <p class="auth__sign">© {{ current_year() }} Multi-CDN · {{ m.pepebits_signature() }}</p>
+  <div class="auth__lang">{% include "_lang_switch.html" %}</div>
 </main>
 </body>
 </html>

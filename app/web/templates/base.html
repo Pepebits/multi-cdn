@@ -1,11 +1,11 @@
 {%- import "_macros.html" as m -%}
 <!doctype html>
-<html lang="es">
+<html lang="{{ ui_lang() }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
-  <meta name="description" content="Panel privado del controlador Multi-CDN (Cloudflare + Gcore).">
+  <meta name="description" content="{{ _('Private panel of the Multi-CDN controller (Cloudflare + Gcore).') }}">
   <meta name="theme-color" content="#1c1b1b">
   <meta name="color-scheme" content="light dark">
   <script src="{{ asset('js/theme-init.js') }}"></script>
@@ -17,36 +17,36 @@
   <link rel="stylesheet" href="{{ asset('css/panel.css') }}">
 </head>
 <body data-state-version="{{ state_version }}">
-<a class="skip-link" href="#contenido">Saltar al contenido</a>
+<a class="skip-link" href="#contenido">{{ _("Skip to content") }}</a>
 <div class="update-toast" id="update-toast" role="status" hidden>
-  <span>Hay datos nuevos.</span>
-  <button class="btn btn--primary btn--sm-plain" type="button" id="update-now">Actualizar</button>
+  <span>{{ _("There is new data.") }}</span>
+  <button class="btn btn--primary btn--sm-plain" type="button" id="update-now">{{ _("Refresh") }}</button>
 </div>
 <div class="layout">
-  <nav class="sidebar" aria-label="Navegación principal">
+  <nav class="sidebar" aria-label="{{ _('Main navigation') }}">
     <div>
       <a class="brand" href="/">
         <img src="{{ asset('brand/multicdn-icon.svg') }}" alt="" width="36" height="36">
         <span><strong>Multi-CDN</strong><span>Cloudflare + Gcore</span></span>
       </a>
       <ul class="nav">
-        <li><a href="/" {% if active == 'resumen' %}aria-current="page"{% endif %}>{{ m.icon('grid') }}Resumen</a></li>
-        <li><a href="/dominios" {% if active == 'dominios' %}aria-current="page"{% endif %}>{{ m.icon('globe') }}Dominios</a></li>
-        <li><a href="/estadisticas" {% if active == 'estadisticas' %}aria-current="page"{% endif %}>{{ m.icon('chart') }}Estadísticas</a></li>
-        <li><a href="/historial" {% if active == 'historial' %}aria-current="page"{% endif %}>{{ m.icon('history') }}Historial</a></li>
-        <li><a href="/ajustes" {% if active == 'ajustes' %}aria-current="page"{% endif %}>{{ m.icon('gear') }}Ajustes</a></li>
+        <li><a href="/" {% if active == 'resumen' %}aria-current="page"{% endif %}>{{ m.icon('grid') }}{{ _('Overview') }}</a></li>
+        <li><a href="/dominios" {% if active == 'dominios' %}aria-current="page"{% endif %}>{{ m.icon('globe') }}{{ _('Domains') }}</a></li>
+        <li><a href="/estadisticas" {% if active == 'estadisticas' %}aria-current="page"{% endif %}>{{ m.icon('chart') }}{{ _('Statistics') }}</a></li>
+        <li><a href="/historial" {% if active == 'historial' %}aria-current="page"{% endif %}>{{ m.icon('history') }}{{ _('History') }}</a></li>
+        <li><a href="/ajustes" {% if active == 'ajustes' %}aria-current="page"{% endif %}>{{ m.icon('gear') }}{{ _('Settings') }}</a></li>
       </ul>
     </div>
     <div class="side-foot">
       {% if user %}
       <form method="post" action="/logout" class="side-user">
         {{ csrf_field() }}
-        <span>Sesión: <strong>{{ user.username }}</strong></span>
-        <button class="btn btn--sm-plain" type="submit">Cerrar sesión</button>
+        <span>{{ _("Session:") }} <strong>{{ user.username }}</strong></span>
+        <button class="btn btn--sm-plain" type="submit">{{ m.icon('logout') }} {{ _("Sign out") }}</button>
       </form>
       {% endif %}
       <p style="margin:0" title="{{ access.help }}"><span class="dot dot--{{ access.tone }}" aria-hidden="true"></span>{{ access.label }}</p>
-      <p style="margin:4px 0 0">{% if dry_run %}Modo simulación: el DNS no se modifica{% else %}Cambios DNS reales activados{% endif %}</p>
+      <p style="margin:4px 0 0">{% if dry_run %}{{ _("Dry run: DNS is not modified") }}{% else %}{{ _("Live DNS changes enabled") }}{% endif %}</p>
     </div>
   </nav>
 
@@ -54,39 +54,41 @@
     {% if mass_block %}
     <div class="banner banner--warn" role="status">
       <span class="live" aria-hidden="true"></span>
-      <span>Bloqueo masivo en curso:</span>
-      <span class="mono">{{ blocked_cf_ips }} IPs de Cloudflare</span>
-      <span>bloqueadas en 3 o más operadoras según el feed.</span>
+      {{ m.icon('alert') }}
+      <span>{{ _("Mass block in progress:") }}</span>
+      <span class="mono">{{ _("{n} Cloudflare IPs", n=blocked_cf_ips) }}</span>
+      <span>{{ _("blocked at 3 or more ISPs according to the feed.") }}</span>
     </div>
     {% endif %}
     {% block banner %}{% endblock %}
 
     <header class="topbar">
       <div>
-        <nav class="crumb" aria-label="Ruta">{% block crumb %}{% endblock %}</nav>
+        <nav class="crumb" aria-label="{{ _('Breadcrumb') }}">{% block crumb %}{% endblock %}</nav>
         <h1>{% block heading %}{% endblock %}</h1>
       </div>
       <div class="meta">
-        <span class="pill pill--neutral">{% if dry_run %}Simulación{% else %}Producción{% endif %}</span>
-        <span class="pill pill--neutral">DNS comprobado {{ dns_checked_at|hhmm }}</span>
+        <span class="pill pill--neutral">{% if dry_run %}{{ _("Dry run") }}{% else %}{{ _("Production") }}{% endif %}</span>
+        <span class="pill pill--neutral">{{ _("DNS checked {time}", time=dns_checked_at|hhmm) }}</span>
       </div>
     </header>
 
     <main id="contenido" class="content" tabindex="-1">
-      {% if flash_ok %}<p class="notice notice--ok" role="status">{{ flash_ok }}</p>{% endif %}
-      {% if flash_error %}<p class="notice notice--error" role="alert">{{ flash_error }}</p>{% endif %}
+      {% if flash_ok %}<p class="notice notice--ok" role="status">{{ m.icon('check') }} {{ flash_ok }}</p>{% endif %}
+      {% if flash_error %}<p class="notice notice--error" role="alert">{{ m.icon('alert') }} {{ flash_error }}</p>{% endif %}
       {% block content %}{% endblock %}
     </main>
 
     <footer class="footer">
-      <span title="Datos de bloqueo de hayahora.futbol, fuente no oficial. Todas las horas del panel están en UTC.">Feed hayahora (no oficial): {% if feed_error %}no disponible{% elif feed %}actualizado {{ feed.last_update|hhmm }}{% else %}cargando{% endif %}</span>
+      <span title="{{ _('Block data from hayahora.futbol, an unofficial source. All times in the panel are in UTC.') }}">{% if feed_error %}{{ _("hayahora feed (unofficial): unavailable") }}{% elif feed %}{{ _("hayahora feed (unofficial): updated {time}", time=feed.last_update|hhmm) }}{% else %}{{ _("hayahora feed (unofficial): loading") }}{% endif %}</span>
       <div class="footer__controls">
-      <button class="autorefresh" type="button" id="autorefresh" aria-pressed="true">Actualización automática</button>
-      <div class="theme-switch" role="group" aria-label="Tema de color">
-        <button type="button" data-theme-choice="auto" aria-pressed="true" aria-label="Tema automático (según el sistema)" title="Automático">{{ m.icon('auto') }}</button>
-        <button type="button" data-theme-choice="light" aria-pressed="false" aria-label="Tema claro" title="Claro">{{ m.icon('sun') }}</button>
-        <button type="button" data-theme-choice="dark" aria-pressed="false" aria-label="Tema oscuro" title="Oscuro">{{ m.icon('moon') }}</button>
+      <button class="autorefresh" type="button" id="autorefresh" aria-pressed="true">{{ _("Auto refresh") }}</button>
+      <div class="theme-switch" role="group" aria-label="{{ _('Color theme') }}">
+        <button type="button" data-theme-choice="auto" aria-pressed="true" aria-label="{{ _('Automatic theme (follows the system)') }}" title="{{ _('Automatic') }}">{{ m.icon('auto') }}</button>
+        <button type="button" data-theme-choice="light" aria-pressed="false" aria-label="{{ _('Light theme') }}" title="{{ _('Light') }}">{{ m.icon('sun') }}</button>
+        <button type="button" data-theme-choice="dark" aria-pressed="false" aria-label="{{ _('Dark theme') }}" title="{{ _('Dark') }}">{{ m.icon('moon') }}</button>
       </div>
+      {% include "_lang_switch.html" %}
       </div>
     </footer>
     <div class="site-sign">

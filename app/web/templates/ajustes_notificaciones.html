@@ -1,26 +1,26 @@
 {% extends "base.html" %}
-{% block title %}Notificaciones{% endblock %}
-{% block crumb %}{{ m.crumbs('Notificaciones', [('Ajustes', '/ajustes/cuentas')]) }}{% endblock %}
-{% block heading %}Ajustes{% endblock %}
+{% block title %}{{ _("Notifications") }}{% endblock %}
+{% block crumb %}{{ m.crumbs(_('Notifications'), [(_('Settings'), '/ajustes/cuentas')]) }}{% endblock %}
+{% block heading %}{{ _("Settings") }}{% endblock %}
 
 {% macro field(f, type='password') -%}
 <div class="field">
-  <label for="v-{{ f.name }}">{{ f.label }}</label>
+  <label for="v-{{ f.name }}">{{ _(f.label) }}</label>
   <div class="field__status">
     {% if f.configured %}
-      <span class="pill pill--free">Configurado</span>
+      <span class="pill pill--free">{{ _("Configured") }}</span>
       <span class="mono">{{ f.hint }}</span>
-      <span class="muted">{% if f.source == 'entorno' %}desde variable de entorno{% else %}guardado {{ f.updated_at|dt }}{% endif %}</span>
+      <span class="muted">{% if f.source == 'entorno' %}{{ _("from an environment variable") }}{% else %}{{ _("saved {when}", when=f.updated_at|dt) }}{% endif %}</span>
       {% if f.source == 'panel' %}
-      <button class="btn btn--danger btn--sm" type="submit" formaction="/ajustes/notificaciones/{{ f.name }}/eliminar" formnovalidate>Eliminar<span class="visually-hidden"> {{ f.label }}</span></button>
+      <button class="btn btn--danger btn--sm" type="submit" formaction="/ajustes/notificaciones/{{ f.name }}/eliminar" formnovalidate>{{ _("Delete") }}<span class="visually-hidden"> {{ _(f.label) }}</span></button>
       {% endif %}
     {% else %}
-      <span class="pill pill--nodata">Sin configurar</span>
+      <span class="pill pill--nodata">{{ _("Not configured") }}</span>
     {% endif %}
   </div>
   <input id="v-{{ f.name }}" type="{{ type }}" name="{{ f.name }}" autocomplete="off" spellcheck="false"
-         placeholder="{{ 'Escribe para reemplazar' if f.configured else '' }}" aria-describedby="h-{{ f.name }}">
-  <p id="h-{{ f.name }}" class="help">{{ f.help }}{% if f.configured %} Déjalo vacío para conservar el actual.{% endif %}</p>
+         placeholder="{{ _('Type to replace') if f.configured else '' }}" aria-describedby="h-{{ f.name }}">
+  <p id="h-{{ f.name }}" class="help">{{ _(f.help) }}{% if f.configured %} {{ _("Leave it empty to keep the current one.") }}{% endif %}</p>
 </div>
 {%- endmacro %}
 
@@ -29,15 +29,15 @@
 
 {% for canal, title, a, b in [('telegram', 'Telegram', fields.telegram_token, fields.telegram_chat_id), ('email', 'Email', fields.smtp_url, fields.alert_email_to)] %}
 <section class="card" aria-labelledby="canal-{{ canal }}">
-  <div class="card__head"><h2 id="canal-{{ canal }}">{{ title }}</h2></div>
+  <div class="card__head"><h2 id="canal-{{ canal }}">{{ m.icon('bell') }} {{ title }}</h2></div>
   <form method="post" action="/ajustes/notificaciones/canal/{{ canal }}">{{ csrf_field() }}
     <div class="card__body form-grid form-grid--2">
       {{ field(a) }}
       {{ field(b, 'text') }}
     </div>
     <div class="card__foot actions-end">
-      <button class="btn btn--ok" type="submit" formaction="/ajustes/notificaciones/probar/{{ canal }}" formnovalidate>{{ 'Enviar mensaje de prueba' if canal == 'telegram' else 'Probar conexión SMTP' }}</button>
-      <button class="btn btn--primary" type="submit">Guardar {{ title }}</button>
+      <button class="btn btn--ok" type="submit" formaction="/ajustes/notificaciones/probar/{{ canal }}" formnovalidate>{{ m.icon('play') }} {{ _('Send a test message') if canal == 'telegram' else _('Test SMTP connection') }}</button>
+      <button class="btn btn--primary" type="submit">{{ _("Save {channel}", channel=title) }}</button>
     </div>
   </form>
 </section>
@@ -45,22 +45,22 @@
 
 <section class="card" aria-labelledby="latido">
   <div class="card__head">
-    <h2 id="latido">Aviso si el panel deja de funcionar</h2>
-    {% if not fields.heartbeat_url.configured %}<span class="pill pill--nodata">Sin configurar</span>
-    {% elif beat and beat.result == 'ok' and beat.ok %}<span class="pill pill--free">Funcionando</span>
-    {% elif beat %}<span class="pill pill--blocked">Revisar</span>
-    {% else %}<span class="pill pill--neutral">Pendiente</span>{% endif %}
+    <h2 id="latido">{{ m.icon('pulse') }} {{ _("Alert if the panel stops working") }}</h2>
+    {% if not fields.heartbeat_url.configured %}<span class="pill pill--nodata">{{ _("Not configured") }}</span>
+    {% elif beat and beat.result == 'ok' and beat.ok %}<span class="pill pill--free">{{ _("Working") }}</span>
+    {% elif beat %}<span class="pill pill--blocked">{{ _("Needs review") }}</span>
+    {% else %}<span class="pill pill--neutral">{{ _("Pending") }}</span>{% endif %}
   </div>
   <form method="post" action="/ajustes/notificaciones/latido">{{ csrf_field() }}
     <div class="card__body stack-gap">
-      <p style="margin:0">Cada 5 min el panel avisa a un servicio externo de que sigue funcionando. Si deja de hacerlo (panel colgado, VPS caído) o alguna de sus tareas se para, ese servicio te avisa por email o Telegram. Crea un chequeo en healthchecks.io con <strong>periodo 5 min y margen 10 min</strong> y pega aquí su URL de ping.</p>
+      <p style="margin:0">{{ _m("Every 5 min the panel tells an external service that it is still working. If it stops doing so (panel hung, VPS down) or one of its tasks stops, that service alerts you by email or Telegram. Create a check on healthchecks.io with <strong>period 5 min and grace 10 min</strong> and paste its ping URL here.") }}</p>
       {{ field(fields.heartbeat_url, 'password') }}
-      {% if beat %}<p class="help" style="margin:0">Último aviso: {{ beat.at|dt }} · {{ 'en orden' if beat.ok else 'fallo comunicado' }} · {{ 'enviado' if beat.result == 'ok' else 'no enviado (' ~ beat.result ~ ')' }} · {{ beat.detail }}</p>
-      {% else %}<p class="help" style="margin:0">Ahora mismo: {{ 'en orden' if beat_health[0] else 'con fallos' }} · {{ beat_health[1]|join('; ') }}</p>{% endif %}
+      {% if beat %}<p class="help" style="margin:0">{{ _("Last heartbeat: {when}", when=beat.at|dt) }} · {{ _('all good') if beat.ok else _('failure reported') }} · {{ _('sent') if beat.result == 'ok' else _('not sent ({result})', result=beat.result) }} · {{ beat.detail }}</p>
+      {% else %}<p class="help" style="margin:0">{{ _("Right now:") }} {{ _('all good') if beat_health[0] else _('with failures') }} · {{ beat_health[1]|join('; ') }}</p>{% endif %}
     </div>
     <div class="card__foot actions-end">
-      {% if fields.heartbeat_url.configured %}<button class="btn btn--ok" type="submit" formaction="/ajustes/notificaciones/latido/probar" formnovalidate>Avisar ahora</button>{% endif %}
-      <button class="btn btn--primary" type="submit">Guardar y avisar</button>
+      {% if fields.heartbeat_url.configured %}<button class="btn btn--ok" type="submit" formaction="/ajustes/notificaciones/latido/probar" formnovalidate>{{ m.icon('play') }} {{ _("Send heartbeat now") }}</button>{% endif %}
+      <button class="btn btn--primary" type="submit">{{ _("Save and send heartbeat") }}</button>
     </div>
   </form>
 </section>

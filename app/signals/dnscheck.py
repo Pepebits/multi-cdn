@@ -54,7 +54,7 @@ async def resolve(hostname: str, cf_ranges, origin_ips: set[str]) -> Resolution:
     try:
         answer = await resolver.resolve(hostname, "A")
     except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
-        return Resolution(hostname, (), None, "unresolved", "sin registro A")
+        return Resolution(hostname, (), None, "unresolved", "no A record")
     except dns.exception.DNSException as exc:
         return Resolution(hostname, (), None, "unresolved", type(exc).__name__)
     ips = tuple(sorted(r.address for r in answer))

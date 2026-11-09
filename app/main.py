@@ -20,17 +20,18 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
-from . import heartbeat, notify, origin_health
+from . import heartbeat, i18n, notify, origin_health
 from .auth import AuthStore, totp_uri
 from .gcore_setup import RENEW_BEFORE, Job, prepare_domain, renew_and_check
 from .gcore_usage import refresh_usage
 from .gcore_usage import human as human_bytes
+from .i18n import N_, tn, tnn, tr
 from .notifier import Notifier
 from .config import Domain, Inventory, load_dotenv, load_inventory
 from .credentials import PROVIDERS, CredentialStore
 from .db import EventStore
 from .engine import failover
-from .engine.failover import DNS_BEFORE, EngineStore, SwitchFailed
+from .engine.failover import EngineStore, SwitchFailed
 from .inventory_store import InventoryStore, origin_key
 from .providers import cloudflare as cf
 from .providers import gcore
@@ -111,9 +112,9 @@ async def refresh_feed(state: State) -> None:
         state.feed_error = None
     except Exception as exc:  # el feed no es oficial: nunca debe tumbar el controlador
         state.feed_error = f"{type(exc).__name__}: {exc}"
-        log.warning("feed hayahora no disponible: %s", state.feed_error)
+        log.warning("hayahora feed unavailable: %s", state.feed_error)
         if not was_down:
-            state.events.add(actor="auto", kind="alert", summary=f"Feed de bloqueos no disponible ({type(exc).__name__})")
+            state.events.add(actor="auto", kind="alert", summary=tn("Block feed unavailable ({error})", error=type(exc).__name__))
         return
     check_block_transitions(state)
     await run_engine(state)
@@ -128,13 +129,15 @@ async def refresh_calendar(state: State) -> None:
         state.calendar_error = None
         for source, result in state.calendar.sources.items():
             if result != "ok" and previous.get(source, "ok") == "ok":
-                state.events.add(actor="auto", kind="alert", summary=f"Calendario: {source} no responde ({result[:120]}); se usa la otra fuente")
+                state.events.add(actor="auto", kind="alert", summary=tn("Calendar: {source} is not responding ({result}); using the other source",
+                                                                                 source=source, result=result[:120]))
     except Exception as exc:  # fuente no oficial: si cae se sigue con el feed de bloqueos
         state.calendar_error = f"{type(exc).__name__}: {exc}"
-        log.warning("calendario de partidos no disponible: %s", state.calendar_error)
+        log.warning("match calendar unavailable: %s", state.calendar_error)
         if not was_down:
             state.events.add(actor="auto", kind="alert",
-                             summary=f"Calendario de partidos no disponible ({type(exc).__name__}): la política preventiva solo usa el feed")
+                             summary=tn("Match calendar unavailable ({error}): the preventive policy only uses the feed",
+                                        error=type(exc).__name__))
 
 
 async def run_engine(state: State) -> None:
@@ -148,14 +151,15 @@ async def run_engine(state: State) -> None:
         await failover.evaluate(state, on_switched=recheck)
 
 
-BLOCK_START, BLOCK_END = "IPs de Cloudflare bloqueadas", "Fin del bloqueo"
+# Start of the block alerts in every language they may have been stored in (see restore_block_state).
+BLOCK_START, BLOCK_END = ("Cloudflare IPs blocked", "IPs de Cloudflare bloqueadas"), ("Block ended", "Fin del bloqueo")
 
 
 def restore_block_state(state: State) -> None:
     """Tras un reinicio, recupera del historial qué dominios ya tienen el aviso de bloqueo enviado."""
     for name in state.inventory.domains:
         last = next((e for e in state.events.list(domain=name, limit=200)
-                     if e.kind == "alert" and e.summary.startswith((BLOCK_START, BLOCK_END))), None)
+                     if e.kind == "alert" and e.summary.startswith(BLOCK_START + BLOCK_END)), None)
         if last and last.summary.startswith(BLOCK_START):
             state.blocked_domains.add(name)
 
@@ -174,18 +178,28 @@ def check_block_transitions(state: State) -> None:
         is_auto = auto and failover.eligible(cfg) and cfg.gcore_resource_id
         if blocked and d.name not in state.blocked_domains:
             state.blocked_domains.add(d.name)
-            on_cf = "sigue en Cloudflare: el cambio automático lo pasa a Gcore" if is_auto else "sigue en Cloudflare: considera pasar a Gcore"
-            where = {"cloudflare": on_cf, "gcore": "ya se sirve por Gcore"}.get(d.status, f"estado actual: {d.status_label.lower()}")
+            if d.status == "cloudflare":
+                where = (tn("still on Cloudflare: the automatic switch moves it to Gcore") if is_auto
+                         else tn("still on Cloudflare: consider switching to Gcore"))
+            elif d.status == "gcore":
+                where = tn("already served by Gcore")
+            else:
+                where = tn("current status: {status}", status=d.status_label.lower())
             state.events.add(actor="auto", kind="alert", domain=d.name,
-                             summary=f"{BLOCK_START} en {d.blocked_count} operadora{'s' if d.blocked_count != 1 else ''}; {where}",
-                             signals=[f"{r.name}: bloqueada" for r in d.isp_rows if r.state == "blocked"])
+                             summary=tnn("Cloudflare IPs blocked at {n} ISP; {where}", "Cloudflare IPs blocked at {n} ISPs; {where}",
+                                         d.blocked_count, where=where),
+                             signals=[tn("{isp}: blocked", isp=r.name) for r in d.isp_rows if r.state == "blocked"])
         elif not blocked and d.name in state.blocked_domains:
             state.blocked_domains.discard(d.name)
-            extra = ""
-            if d.status not in ("cloudflare", "unknown"):
+            if d.status in ("cloudflare", "unknown"):
+                summary = tn("Block ended on its Cloudflare IPs")
+            elif is_auto:
                 mins = int(failover.RETURN_AFTER[cfg.priority].total_seconds() // 60)
-                extra = f"; vuelta automática a Cloudflare tras {mins} min sin bloqueos" if is_auto else "; ya se puede volver a Cloudflare"
-            state.events.add(actor="auto", kind="alert", domain=d.name, summary=f"{BLOCK_END} de sus IPs de Cloudflare{extra}")
+                summary = tn("Block ended on its Cloudflare IPs; automatic return to Cloudflare after {mins} min without blocks",
+                             mins=mins)
+            else:
+                summary = tn("Block ended on its Cloudflare IPs; it can now return to Cloudflare")
+            state.events.add(actor="auto", kind="alert", domain=d.name, summary=summary)
 
 
 async def refresh_dns(state: State) -> None:
@@ -208,8 +222,8 @@ async def refresh_dns(state: State) -> None:
             domain = next((n for n, d in state.inventory.domains.items() if any(h.name == res.hostname for h in d.hostnames)), None)
             state.events.add(
                 actor="auto", kind="alert", domain=domain,
-                summary=f"{res.hostname} resuelve a la IP de origen (proxy de Cloudflare desactivado)",
-                signals=["DNS público: registro A sin proxy"],
+                summary=tn("{hostname} resolves to the origin IP (Cloudflare proxy disabled)", hostname=res.hostname),
+                signals=[tn("Public DNS: A record without proxy")],
             )
         elif not exposed:
             state.exposure_alerted.discard(res.hostname)
@@ -259,13 +273,13 @@ async def check_firewall(state: State) -> None:
 async def daily_backup(state: State) -> None:
     from .backup import backup
     path = await asyncio.to_thread(backup)
-    log.info("copia de seguridad: %s", path)
+    log.info("backup: %s", path)
 
 
 async def prune_events(state: State) -> None:
     deleted = state.events.prune()
     if deleted:
-        log.info("retención: %s eventos antiguos eliminados", deleted)
+        log.info("retention: %s old events deleted", deleted)
 
 
 async def _delayed_loop(delay: int, interval: int, fn, *args) -> None:
@@ -289,13 +303,14 @@ async def lifespan(app: FastAPI):
     creds = CredentialStore(secrets)
     for provider, env in (("cloudflare", "CLOUDFLARE_API_TOKEN"), ("gcore", "GCORE_API_TOKEN")):
         if os.environ.get(env) and not creds.list(provider):
-            creds.add(provider, "Importada del entorno", os.environ[env])
+            creds.add(provider, tn("Imported from the environment"), os.environ[env])
     if store.is_empty():
         # Primer arranque: importar inventory.yaml (o el ejemplo) si existe.
         with suppress(FileNotFoundError):
             store.import_inventory(load_inventory())
     events = EventStore(db_path)
     events.listeners.append(Notifier(secrets))
+    load_notify_lang(events)
     state = State(
         store=store, secrets=secrets, creds=creds, auth=AuthStore(secrets), events=events,
         dry_run_env=os.environ.get("MULTICDN_DRY_RUN", "true").lower() != "false",
@@ -327,7 +342,7 @@ async def lifespan(app: FastAPI):
 
 
 SESSION_COOKIE = "mcdn_session"
-PUBLIC_PREFIXES = ("/login", "/static/", "/healthz")
+PUBLIC_PREFIXES = ("/login", "/static/", "/healthz", "/lang/")
 current_csrf: ContextVar[str] = ContextVar("current_csrf", default="")
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
        "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; "
@@ -342,13 +357,34 @@ async def csrf_protect(request: Request) -> None:
     session = getattr(request.state, "session", None)
     token = str(form.get("csrf", ""))
     if session is None or not token or not hmac.compare_digest(token, session.csrf):
-        raise HTTPException(403, "Token CSRF no válido: recarga la página e inténtalo de nuevo")
+        raise HTTPException(403, tr("Invalid CSRF token: reload the page and try again"))
 
 
 app = FastAPI(title="Multi-CDN", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None,
               dependencies=[Depends(csrf_protect)])
 app.mount("/static", StaticFiles(directory=WEB / "static"), name="static")
 templates = Jinja2Templates(directory=WEB / "templates")
+i18n.install(templates.env)
+
+
+@app.get("/lang/{lang}")
+def set_language(lang: str, next: str = "/"):
+    """Footer language selector: remembered in this browser for a year."""
+    response = RedirectResponse(_safe_next(next), status_code=303)
+    if code := i18n.normalize(lang):
+        response.set_cookie(i18n.COOKIE, code, max_age=365 * 86400, httponly=True, samesite="lax",
+                            secure=os.environ.get("MULTICDN_COOKIE_SECURE", "").lower() == "true")
+    return response
+
+
+def load_notify_lang(events: EventStore) -> None:
+    """Language of history and alerts. Installs from before it existed wrote in Spanish: they
+    keep Spanish until changed in Settings → Operation."""
+    lang = events.get_value("notify_lang")
+    if lang is None and events.conn.execute("SELECT 1 FROM events LIMIT 1").fetchone():
+        lang = "es"
+        events.set_value("notify_lang", lang)
+    i18n.set_notify(lang)
 
 
 def _safe_next(value: str | None) -> str:
@@ -358,12 +394,13 @@ def _safe_next(value: str | None) -> str:
 @app.middleware("http")
 async def security(request: Request, call_next):
     """Origen de los POST, sesión obligatoria fuera de /login y cabeceras de seguridad."""
+    i18n.set_ui(i18n.pick(request.cookies.get(i18n.COOKIE), request.headers.get("accept-language")))
     if request.method == "POST":
         source = request.headers.get("origin") or request.headers.get("referer")
         if source and urlparse(source).netloc != request.url.netloc:
-            return PlainTextResponse("Origen no permitido", status_code=403)
+            return PlainTextResponse(tr("Origin not allowed"), status_code=403)
         if not source and os.environ.get("MULTICDN_OFFLINE") != "1":
-            return PlainTextResponse("Falta la cabecera Origin", status_code=403)
+            return PlainTextResponse(tr("Missing Origin header"), status_code=403)
     state: State = request.app.state.mc
     # El sondeo automático (/api/) no renueva la sesión: la inactividad sigue contando.
     session = state.auth.get_session(request.cookies.get(SESSION_COOKIE), touch=not request.url.path.startswith("/api/"))
@@ -372,11 +409,11 @@ async def security(request: Request, call_next):
     path = request.url.path
     if request.state.session is None and not path.startswith(PUBLIC_PREFIXES):
         if path.startswith("/api/"):
-            return JSONResponse({"error": "sesión caducada"}, status_code=401)
+            return JSONResponse({"error": tr("session expired")}, status_code=401)
         if request.method == "GET":
             target = path + (f"?{request.url.query}" if request.url.query else "")
             return RedirectResponse(f"/login?{urlencode({'next': target})}", status_code=303)
-        return PlainTextResponse("Sesión no válida o caducada", status_code=401)
+        return PlainTextResponse(tr("Invalid or expired session"), status_code=401)
     if request.state.session:
         current_csrf.set(request.state.session.csrf)
     response: Response = await call_next(request)
@@ -444,13 +481,13 @@ def access_channel(request: Request) -> dict:
     canal está cifrado, pero sí si el panel se ha publicado con un nombre que no debería)."""
     host = (request.headers.get("host") or "").rsplit(":", 1)[0].strip("[]").lower()
     if request.headers.get("tailscale-user-login") or host.endswith(".ts.net"):
-        return {"tone": "ok", "label": "Acceso por Tailscale",
-                "help": "La petición llega por tailscale serve (nombre *.ts.net o identidad de Tailscale)."}
+        return {"tone": "ok", "label": tr("Access through Tailscale"),
+                "help": tr("The request comes through tailscale serve (*.ts.net name or Tailscale identity).")}
     if host in ("localhost", "127.0.0.1", "::1"):
-        return {"tone": "ok", "label": "Acceso por túnel SSH o local",
-                "help": "Se ha entrado por localhost: un túnel SSH o el propio servidor."}
-    return {"tone": "warn", "label": f"Acceso por {host or 'dirección desconocida'}: comprueba que no está expuesto",
-            "help": "El panel debería escuchar solo en 127.0.0.1 y usarse por túnel SSH o red privada."}
+        return {"tone": "ok", "label": tr("Access through an SSH tunnel or locally"),
+                "help": tr("Accessed through localhost: an SSH tunnel or the server itself.")}
+    return {"tone": "warn", "label": tr("Access through {host}: check that it is not exposed", host=host or tr("unknown address")),
+            "help": tr("The panel should listen only on 127.0.0.1 and be used through an SSH tunnel or a private network.")}
 
 
 def _common(request: Request, active: str, **extra) -> dict:
@@ -505,10 +542,29 @@ async def _after_inventory_change(state: State) -> None:
 
 # ---------------------------------------------------------------- Resumen
 
+def getting_started(s: State, domains) -> list[dict]:
+    """Setup checklist on the overview, in the order of deploy/README.md. The template holds
+    the texts; this only says which steps are done."""
+    sec = s.secrets
+    return [
+        {"key": "cloudflare", "done": bool(s.creds.list("cloudflare")), "href": "/ajustes/cuentas"},
+        {"key": "gcore", "done": bool(s.creds.list("gcore")), "href": "/ajustes/cuentas"},
+        {"key": "origin", "done": bool(s.inventory.origin_ips), "href": "/ajustes/servidores"},
+        {"key": "domains", "done": any(d.cloudflare_credential for d in s.inventory.domains.values()),
+         "href": "/dominios/importar"},
+        {"key": "prepare", "done": any(d.gcore_ready for d in domains), "href": "/dominios"},
+        {"key": "alerts", "done": bool((sec.get("telegram_token") and sec.get("telegram_chat_id"))
+                                       or (sec.get("smtp_url") and sec.get("alert_email_to"))),
+         "href": "/ajustes/notificaciones"},
+        {"key": "live", "done": not s.dry_run, "href": None},
+    ]
+
+
 @app.get("/", response_class=HTMLResponse)
 async def resumen(request: Request):
     s = _state(request)
     domains = s.views()
+    steps = getting_started(s, domains)
     return templates.TemplateResponse(request, "resumen.html", _common(
         request, "resumen",
         domains=domains,
@@ -522,6 +578,7 @@ async def resumen(request: Request):
         match_now=s.calendar.active(datetime.now(UTC), failover.MATCH_LEAD["critical"]) if s.calendar else None,
         match_next=s.calendar.upcoming(datetime.now(UTC)) if s.calendar else None,
         calendar_error=s.calendar_error,
+        steps=steps if not all(st["done"] for st in steps) else None,
     ))
 
 
@@ -553,9 +610,9 @@ async def crear_dominio(
             s.store.upsert_hostname(domain, h, server=server)
     except ValueError as exc:
         return _back(url, error=str(exc))
-    s.events.add(actor=_actor(request), kind="config", domain=domain, summary=f"Dominio añadido con {len(hosts)} hostnames")
+    s.events.add(actor=_actor(request), kind="config", domain=domain, summary=tn("Domain added with {n} hostnames", n=len(hosts)))
     await _after_inventory_change(s)
-    return _back(request.url_for("dominio", name=domain), ok="Dominio añadido")
+    return _back(request.url_for("dominio", name=domain), ok=tr("Domain added"))
 
 
 @app.get("/dominios/importar", response_class=HTMLResponse)
@@ -563,7 +620,7 @@ async def importar(request: Request, cuenta: int | None = None, zone: str | None
     s = _state(request)
     cf_creds = s.creds.list("cloudflare")
     if not cf_creds:
-        return _back(request.url_for("ajustes_cuentas"), error="Añade primero una credencial de Cloudflare")
+        return _back(request.url_for("ajustes_cuentas"), error=tr("Add a Cloudflare credential first"))
     if cuenta is None or cuenta not in {c.id for c in cf_creds}:
         cuenta = cf_creds[0].id
     token = s.creds.secret(cuenta)
@@ -589,18 +646,18 @@ async def importar_guardar(request: Request):
         cuenta = int(str(form.get("cuenta", "")))
         s.creds.get(cuenta)
     except ValueError:
-        return _back(request.url_for("dominios"), error="Credencial de Cloudflare no válida")
+        return _back(request.url_for("dominios"), error=tr("Invalid Cloudflare credential"))
     token = s.creds.secret(cuenta)
     zone_id = str(form.get("zone_id", ""))
     if not token or not zone_id:
-        return _back(request.url_for("dominios"), error="Falta la credencial o la zona")
+        return _back(request.url_for("dominios"), error=tr("The credential or the zone is missing"))
     zones = {z["id"]: z for z in await cf.list_zones(token)}
     if zone_id not in zones:
-        return _back(request.url_for("importar"), error="Zona no encontrada en la cuenta")
+        return _back(request.url_for("importar"), error=tr("Zone not found in the account"))
     records = {r["id"]: r for r in await cf.list_web_records(token, zone_id)}
     chosen = [records[rid] for rid in form.getlist("record") if rid in records]
     if not chosen:
-        return _back(request.url_for("importar"), cuenta=cuenta, zone=zone_id, error="Selecciona al menos un registro")
+        return _back(request.url_for("importar"), cuenta=cuenta, zone=zone_id, error=tr("Select at least one record"))
     domain = zones[zone_id]["name"]
     try:
         s.store.upsert_domain(domain, policy=str(form.get("policy", "reactive")),
@@ -613,24 +670,24 @@ async def importar_guardar(request: Request):
     except ValueError as exc:
         return _back(request.url_for("importar"), cuenta=cuenta, zone=zone_id, error=str(exc))
     s.events.add(actor=_actor(request), kind="config", domain=domain,
-                 summary=f"Importados {len(chosen)} hostnames desde Cloudflare")
+                 summary=tn("Imported {n} hostnames from Cloudflare", n=len(chosen)))
     await _after_inventory_change(s)
-    return _back(request.url_for("dominio", name=domain), ok=f"Importados {len(chosen)} hostnames desde Cloudflare")
+    return _back(request.url_for("dominio", name=domain), ok=tr("Imported {n} hostnames from Cloudflare", n=len(chosen)))
 
 
 @app.get("/dominios/{name}", response_class=HTMLResponse)
 async def dominio(request: Request, name: str):
     s = _state(request)
     if name not in s.inventory.domains:
-        raise HTTPException(404, "Dominio no inventariado")
+        raise HTTPException(404, tr("Domain not in the inventory"))
     view = build_domain(name, s.inventory.domains[name], s.resolutions, s.feed, s.engine.get(name).cf_ips)
     if name in s.cf_sync_errors:
-        view.alerts.append(f"No se pudieron leer sus registros en Cloudflare: {s.cf_sync_errors[name]}")
+        view.alerts.append(tr("Could not read its records on Cloudflare: {error}", error=s.cf_sync_errors[name]))
     return templates.TemplateResponse(request, "dominio.html", _common(
         request, "dominios", d=view, cfg=s.inventory.domains[name],
         servers=list(s.inventory.servers), events=s.events.list(domain=name, limit=10),
         cf_creds=s.creds.list("cloudflare"), gc_creds=s.creds.list("gcore"), job=s.jobs.get(name),
-        auto=failover.describe(s, name), maintenance_options=MAINTENANCE_OPTIONS,
+        auto=failover.describe(s, name), maintenance_options={k: tr(v) for k, v in MAINTENANCE_OPTIONS.items()},
         origin_header=origin_header_view(s, name),
         inventory_servers={sid: bool(srv.origin_ipv4) for sid, srv in s.inventory.servers.items()},
         renew_from=(datetime.fromisoformat(s.inventory.domains[name].cert_not_after) - RENEW_BEFORE
@@ -646,11 +703,11 @@ async def hostname_quitar(request: Request, name: str, host: str):
     if domain is None or host not in {h.name for h in domain.hostnames}:
         raise HTTPException(404)
     if len(domain.hostnames) == 1:
-        return _back(url, error="Es el último hostname: elimina el dominio completo si ya no quieres vigilarlo")
+        return _back(url, error=tr("It is the last hostname: delete the whole domain if you no longer want to monitor it"))
     s.store.delete_hostname(host)
-    s.events.add(actor=_actor(request), kind="config", domain=name, summary=f"{host} quitado del inventario (DNS sin cambios)")
+    s.events.add(actor=_actor(request), kind="config", domain=name, summary=tn("{host} removed from the inventory (DNS unchanged)", host=host))
     await _after_inventory_change(s)
-    return _back(url, ok=f"{host} quitado del inventario. Su DNS no se ha modificado.")
+    return _back(url, ok=tr("{host} removed from the inventory. Its DNS has not been changed.", host=host))
 
 
 @app.post("/dominios/{name}/configuracion")
@@ -667,14 +724,14 @@ async def dominio_config(
         for provider, raw in (("cloudflare", cloudflare_credential), ("gcore", gcore_credential)):
             ids[provider] = int(raw) if raw else None
             if ids[provider] is not None and s.creds.get(ids[provider]).provider != provider:
-                raise ValueError("credencial de proveedor incorrecto")
+                raise ValueError(tr("credential of the wrong provider"))
         s.store.upsert_domain(name, policy=policy, priority=priority, zone_id=zone_id.strip() or None)
         s.store.set_credentials(name, ids["cloudflare"], ids["gcore"])
     except ValueError as exc:
         return _back(url, error=str(exc))
-    s.events.add(actor=_actor(request), kind="config", domain=name, summary=f"Prioridad {priority}, política {policy}")
+    s.events.add(actor=_actor(request), kind="config", domain=name, summary=tn("Priority {priority}, policy {policy}", priority=priority, policy=policy))
     await _after_inventory_change(s)
-    return _back(url, ok="Configuración guardada")
+    return _back(url, ok=tr("Settings saved"))
 
 
 @app.post("/dominios/{name}/hostnames")
@@ -694,9 +751,9 @@ async def hostnames_guardar(request: Request, name: str):
             s.store.upsert_hostname(name, new, server=str(form.get("new_server")))
     except ValueError as exc:
         return _back(url, error=str(exc))
-    s.events.add(actor=_actor(request), kind="config", domain=name, summary="Hostnames actualizados")
+    s.events.add(actor=_actor(request), kind="config", domain=name, summary=tn("Hostnames updated"))
     await _after_inventory_change(s)
-    return _back(url, ok="Hostnames guardados")
+    return _back(url, ok=tr("Hostnames saved"))
 
 
 def origin_header_view(s: State, name: str) -> dict:
@@ -708,13 +765,13 @@ def origin_header_view(s: State, name: str) -> dict:
         applied = s.events.get_value(f"origin_header_{cdn}:{name}")
         current = fingerprint(origin_secret(s.secrets, cdn))
         if cdn == "gcore" and not domain.gcore_resource_id:
-            out[cdn] = ("nodata", "Sin preparar")
+            out[cdn] = ("nodata", tr("Not prepared"))
         elif not applied:
-            out[cdn] = ("blocked", "Sin aplicar")
+            out[cdn] = ("blocked", tr("Not applied"))
         elif applied != current:
-            out[cdn] = ("blocked", "Secreto antiguo")
+            out[cdn] = ("blocked", tr("Old secret"))
         else:
-            out[cdn] = ("free", "Al día")
+            out[cdn] = ("free", tr("Up to date"))
     return out
 
 
@@ -728,16 +785,33 @@ async def origen_cloudflare(request: Request, name: str):
     url = request.url_for("dominio", name=name)
     token = s.creds.secret(domain.cloudflare_credential)
     if not token or not domain.zone_id:
-        return _back(url, "cabecera", error="Asigna una credencial y la zona de Cloudflare al dominio")
+        return _back(url, "cabecera", error=tr("Assign a Cloudflare credential and zone to the domain"))
     secret = origin_secret(s.secrets, "cloudflare")
     try:
         outcome = await cf.ensure_origin_header(token, domain.zone_id, secret)
     except (RuntimeError, httpx.HTTPError) as exc:
-        s.events.add(actor=_actor(request), kind="error", domain=name, summary=f"Cabecera secreta en Cloudflare: {exc}")
-        return _back(url, "cabecera", error=f"No se pudo aplicar en Cloudflare: {exc}")
+        s.events.add(actor=_actor(request), kind="error", domain=name, summary=tn("Secret header on Cloudflare: {error}", error=exc))
+        return _back(url, "cabecera", error=tr("Could not apply it on Cloudflare: {error}", error=exc))
     s.events.set_value(f"origin_header_cloudflare:{name}", fingerprint(secret))
-    s.events.add(actor=_actor(request), kind="config", domain=name, summary=f"Cabecera secreta en Cloudflare: regla {outcome}")
-    return _back(url, "cabecera", ok=f"Regla de Cloudflare {outcome}: las peticiones hacia el origen llevan la cabecera secreta")
+    if outcome in ORIGIN_RULE_EVENT:  # cloudflare.py returns Spanish codes
+        summary, msg = tn(ORIGIN_RULE_EVENT[outcome]), tr(ORIGIN_RULE_FLASH[outcome])
+    else:
+        summary = tn("Secret header on Cloudflare: rule {outcome}", outcome=outcome)
+        msg = tr("Cloudflare rule {outcome}: requests to the origin carry the secret header", outcome=outcome)
+    s.events.add(actor=_actor(request), kind="config", domain=name, summary=summary)
+    return _back(url, "cabecera", ok=msg)
+
+
+ORIGIN_RULE_EVENT = {
+    "creada": N_("Secret header on Cloudflare: rule created"),
+    "actualizada": N_("Secret header on Cloudflare: rule updated"),
+    "sin cambios": N_("Secret header on Cloudflare: rule unchanged"),
+}
+ORIGIN_RULE_FLASH = {
+    "creada": N_("Cloudflare rule created: requests to the origin carry the secret header"),
+    "actualizada": N_("Cloudflare rule updated: requests to the origin carry the secret header"),
+    "sin cambios": N_("Cloudflare rule unchanged: requests to the origin carry the secret header"),
+}
 
 
 @app.post("/dominios/{name}/gcore/preparar")
@@ -747,9 +821,9 @@ async def gcore_preparar(request: Request, name: str):
         raise HTTPException(404)
     job = s.jobs.get(name)
     if job and not job.done:
-        return _back(request.url_for("dominio", name=name), error="Ya hay una preparación en curso")
+        return _back(request.url_for("dominio", name=name), error=tr("A preparation is already in progress"))
     job = s.jobs[name] = Job(domain=name)
-    s.events.add(actor=_actor(request), kind="config", domain=name, summary="Preparación en Gcore iniciada")
+    s.events.add(actor=_actor(request), kind="config", domain=name, summary=tn("Gcore preparation started"))
     asyncio.create_task(prepare_domain(s, name, job))
     return RedirectResponse(str(request.url_for("dominio", name=name)) + "#gcore", status_code=303)
 
@@ -764,11 +838,11 @@ async def dominio_eliminar(request: Request, name: str, confirm: str = Form(""),
         raise HTTPException(404)
     back = request.url_for("dominio", name=name)
     if confirm.strip() != name:
-        return _back(back, error="Escribe el nombre del dominio para eliminarlo")
+        return _back(back, error=tr("Type the domain name to delete it"))
     if dns_action not in ("cloudflare", "gcore", "none"):
-        return _back(back, error="Opción no válida")
+        return _back(back, error=tr("Invalid option"))
     if dns_action == "gcore" and delete_gcore:
-        return _back(back, error="No puedes dejarlo en Gcore y borrar a la vez su recurso de Gcore")
+        return _back(back, error=tr("You cannot leave it on Gcore and delete its Gcore resource at the same time"))
 
     client = s.cloudflare_for(domain)
     diff, changes = [], []
@@ -781,29 +855,41 @@ async def dominio_eliminar(request: Request, name: str, confirm: str = Form(""),
                 changes.append((h, cf.plan_restore(h, str(origin) if origin else None), provider))
             elif dns_action == "gcore" and provider != "gcore" and h.failover:
                 if not h.gcore_target:
-                    raise ValueError(f"{h.name} no tiene destino Gcore")
+                    raise ValueError(tn("{hostname} has no Gcore target", hostname=h.name))
                 changes.append((h, plan_to_gcore(h.name, h.gcore_target), provider))
         for h, change, provider in changes:
             await client.apply(domain.zone_id, h.cloudflare_record_id, change)
-            diff.append([h.name, DNS_BEFORE.get(provider, provider), change.describe()])
+            diff.append([h.name, failover.dns_before(provider), change.describe()])
         if delete_gcore and domain.gcore_resource_id:
             token = s.creds.secret(domain.gcore_credential)
             if not token:
-                raise ValueError("No hay credencial de Gcore para borrar el recurso")
+                raise ValueError(tn("There is no Gcore credential to delete the resource"))
             await gcore.delete_resource(token, domain.gcore_resource_id)
     except (OriginExposureError, ValueError, RuntimeError, httpx.HTTPError) as exc:
-        s.events.add(actor=_actor(request), kind="error", domain=name, summary=f"No se eliminó: {exc}")
-        return _back(back, error=f"No se ha eliminado: {exc}")
+        s.events.add(actor=_actor(request), kind="error", domain=name, summary=tn("Not deleted: {error}", error=exc))
+        return _back(back, error=tr("It has not been deleted: {error}", error=exc))
 
     s.store.delete_domain(name)
     s.engine.forget(name)
-    where = {"cloudflare": "en Cloudflare", "gcore": "en Gcore", "none": "con el DNS sin cambios"}[dns_action]
-    extra = " · recurso de Gcore borrado" if delete_gcore and domain.gcore_resource_id else ""
+    where = DELETE_WHERE[dns_action]
+    gcore_deleted = bool(delete_gcore and domain.gcore_resource_id)
+
+    def outcome(t):
+        return t(where) + (" · " + t(GCORE_DELETED) if gcore_deleted else "")
+
     s.events.add(actor=_actor(request), kind="config", domain=name, transition=None,
-                 summary=f"Eliminado del inventario; queda {where}{extra}", dns_diff=diff, simulated=client.dry_run and bool(diff))
+                 summary=tn("Removed from the inventory; {outcome}", outcome=outcome(tn)),
+                 dns_diff=diff, simulated=client.dry_run and bool(diff))
     await _after_inventory_change(s)
-    note = " (cambios DNS simulados)" if client.dry_run and diff else ""
-    return _back(request.url_for("dominios"), ok=f"{name} eliminado del inventario; queda {where}{extra}{note}")
+    if client.dry_run and diff:
+        msg = tr("{domain} removed from the inventory; {outcome} (simulated DNS changes)", domain=name, outcome=outcome(tr))
+    else:
+        msg = tr("{domain} removed from the inventory; {outcome}", domain=name, outcome=outcome(tr))
+    return _back(request.url_for("dominios"), ok=msg)
+
+
+GCORE_DELETED = N_("Gcore resource deleted")
+DELETE_WHERE = {"cloudflare": N_("it stays on Cloudflare"), "gcore": N_("it stays on Gcore"), "none": N_("its DNS stays unchanged")}
 
 
 @app.post("/dominios/{name}/volver")
@@ -811,37 +897,41 @@ async def volver_cloudflare(request: Request, name: str, confirm: str = Form("")
     """Restaura en Cloudflare (con proxy) los hostnames que no estén ya en Cloudflare."""
     s = _state(request)
     if name not in s.inventory.domains:
-        raise HTTPException(404, "Dominio no inventariado")
+        raise HTTPException(404, tr("Domain not in the inventory"))
     url = request.url_for("dominio", name=name)
     if confirm.strip() != name:
-        return _back(url, error="Escribe el nombre del dominio para confirmar")
+        return _back(url, error=tr("Type the domain name to confirm"))
     try:
         diff, simulated = await failover.return_to_cloudflare(s, name, force_all=s.dry_run and s.engine.get(name).sim_backup is True)
     except SwitchFailed as exc:
-        s.events.add(actor=_actor(request), kind="error", domain=name, summary=f"Vuelta a Cloudflare fallida: {exc}", dns_diff=exc.diff)
-        return _back(url, error=f"No se pudo volver a Cloudflare: {exc}")
+        s.events.add(actor=_actor(request), kind="error", domain=name, summary=tn("Return to Cloudflare failed: {error}", error=exc), dns_diff=exc.diff)
+        return _back(url, error=tr("Could not return to Cloudflare: {error}", error=exc))
     if not diff:
-        return _back(url, ok="Todos los hostnames ya estaban en Cloudflare")
+        return _back(url, ok=tr("All hostnames were already on Cloudflare"))
     s.engine.manual_change(name, to_backup=False, simulated=simulated)
     s.events.add(actor=_actor(request), kind="switch", domain=name, transition="GCORE → CF",
-                 summary="Vuelta manual a Cloudflare desde el panel", dns_diff=diff, simulated=simulated)
+                 summary=tn("Manual return to Cloudflare from the panel"), dns_diff=diff, simulated=simulated)
     await _after_inventory_change(s)
     if not simulated and os.environ.get("MULTICDN_OFFLINE") != "1":
         asyncio.create_task(recheck_dns_soon(s))
-    msg = "Vuelta simulada (modo dry-run): no se ha tocado el DNS" if simulated else "Vuelta a Cloudflare aplicada; puede tardar unos minutos en propagarse"
-    return _back(url, ok=msg + ". El cambio automático de este dominio queda en pausa 1 h")
+    if simulated:
+        msg = tr("Simulated return (dry run): DNS was not touched. Automatic switching for this domain is paused for 1 h")
+    else:
+        msg = tr("Return to Cloudflare applied; it may take a few minutes to propagate. "
+                 "Automatic switching for this domain is paused for 1 h")
+    return _back(url, ok=msg)
 
 
 @app.post("/dominios/{name}/cambiar")
 async def cambiar(request: Request, name: str, target: str = Form(...), confirm: str = Form("")):
     s = _state(request)
     if name not in s.inventory.domains:
-        raise HTTPException(404, "Dominio no inventariado")
+        raise HTTPException(404, tr("Domain not in the inventory"))
     url = request.url_for("dominio", name=name)
     if confirm.strip() != name:
-        return _back(url, error="Escribe el nombre del dominio para confirmar")
+        return _back(url, error=tr("Type the domain name to confirm"))
     if target != "gcore":
-        return _back(url, error="Destino no disponible todavía")
+        return _back(url, error=tr("Target not available yet"))
     try:
         diff, simulated = await failover.switch_to_gcore(s, name)
     except SwitchFailed as exc:
@@ -850,15 +940,19 @@ async def cambiar(request: Request, name: str, target: str = Form(...), confirm:
         return _back(url, error=str(exc))
     s.engine.manual_change(name, to_backup=True, simulated=simulated)
     s.events.add(actor=_actor(request), kind="switch", domain=name, transition="CF → GCORE",
-                 summary="Cambio manual a Gcore desde el panel", dns_diff=diff, simulated=simulated)
+                 summary=tn("Manual switch to Gcore from the panel"), dns_diff=diff, simulated=simulated)
     await _after_inventory_change(s)
     if not simulated and os.environ.get("MULTICDN_OFFLINE") != "1":
         asyncio.create_task(recheck_dns_soon(s))
-    msg = "Cambio simulado (modo dry-run): no se ha tocado el DNS" if simulated else "Cambio a Gcore aplicado; puede tardar unos minutos en propagarse"
-    return _back(url, ok=msg + ". El cambio automático de este dominio queda en pausa 1 h")
+    if simulated:
+        msg = tr("Simulated switch (dry run): DNS was not touched. Automatic switching for this domain is paused for 1 h")
+    else:
+        msg = tr("Switch to Gcore applied; it may take a few minutes to propagate. "
+                 "Automatic switching for this domain is paused for 1 h")
+    return _back(url, ok=msg)
 
 
-MAINTENANCE_OPTIONS = {1: "1 h", 6: "6 h", 24: "24 h", 168: "7 días", 0: "hasta reanudarlo"}
+MAINTENANCE_OPTIONS = {1: "1 h", 6: "6 h", 24: "24 h", 168: N_("7 days"), 0: N_("until resumed")}
 
 
 @app.post("/dominios/{name}/automatico/mantenimiento")
@@ -868,12 +962,12 @@ async def automatico_mantenimiento(request: Request, name: str, horas: int = For
         raise HTTPException(404)
     url = request.url_for("dominio", name=name)
     if horas not in MAINTENANCE_OPTIONS:
-        return _back(url, error="Duración no válida")
+        return _back(url, error=tr("Invalid duration"))
     until = datetime.now(UTC) + timedelta(hours=horas) if horas else None
     s.engine.maintenance(name, until)
     s.events.add(actor=_actor(request), kind="config", domain=name,
-                 summary=f"Mantenimiento: cambio automático en pausa {MAINTENANCE_OPTIONS[horas]}")
-    return _back(url, ok=f"Cambio automático en pausa {MAINTENANCE_OPTIONS[horas]}. Los avisos siguen llegando.")
+                 summary=tn("Maintenance: automatic switching paused ({duration})", duration=tn(MAINTENANCE_OPTIONS[horas])))
+    return _back(url, ok=tr("Automatic switching paused ({duration}). Alerts keep coming.", duration=tr(MAINTENANCE_OPTIONS[horas])))
 
 
 @app.post("/dominios/{name}/automatico/reanudar")
@@ -882,9 +976,9 @@ async def automatico_reanudar(request: Request, name: str):
     if name not in s.inventory.domains:
         raise HTTPException(404)
     s.engine.resume(name)
-    s.events.add(actor=_actor(request), kind="config", domain=name, summary="Cambio automático reanudado")
+    s.events.add(actor=_actor(request), kind="config", domain=name, summary=tn("Automatic switching resumed"))
     asyncio.create_task(run_engine(s))
-    return _back(request.url_for("dominio", name=name), ok="Cambio automático reanudado")
+    return _back(request.url_for("dominio", name=name), ok=tr("Automatic switching resumed"))
 
 
 # ---------------------------------------------------------------- Historial
@@ -903,7 +997,7 @@ async def historial(request: Request, dominio: str | None = None, actor: str | N
 # ---------------------------------------------------------------- Estadísticas
 
 STATS_CACHE_TTL = timedelta(minutes=30)
-CDN_LABEL = {"cloudflare": "Cloudflare", "gcore": "Gcore", "mixed": "Mixto", "unknown": "Sin datos"}
+CDN_LABEL = {"cloudflare": "Cloudflare", "gcore": "Gcore", "mixed": N_("Mixed"), "unknown": N_("No data")}
 
 
 async def _cached(state: State, key, factory):
@@ -925,9 +1019,9 @@ async def _stats_matches(s: State, start: datetime, end: datetime) -> tuple[list
             past = await _cached(s, ("fd", start.date()), lambda: match_calendar.fetch_past_laliga(s.client, token, start, end))
             matches = match_calendar.merge(matches, past)
         except (httpx.HTTPError, ValueError, KeyError) as exc:
-            note = f"sin partidos pasados ({type(exc).__name__})"
+            note = tr("no past matches ({error})", error=type(exc).__name__)
     elif not token:
-        note = "partidos pasados no disponibles: añade la clave de football-data.org"
+        note = tr("past matches not available: add the football-data.org key")
     return [m for m in matches if m.kickoff + match_calendar.MATCH_LENGTH > start and m.kickoff < end], note
 
 
@@ -946,7 +1040,7 @@ async def _stats_traffic(s: State, start: datetime, end: datetime) -> tuple[dict
     names = {d.gcore_resource_id: n for n, d in s.inventory.domains.items() if d.gcore_resource_id}
     out: dict[str, dict] = {}
     for rid, rows in by_resource.items():
-        name = names.get(rid, "otros recursos")
+        name = names.get(rid) or tr("other resources")
         for day, value in rows:
             out.setdefault(name, {})
             out[name][day.date()] = out[name].get(day.date(), 0) + value
@@ -989,10 +1083,11 @@ async def estadisticas(request: Request, dias: int = 7):
                              "match": match})
         rows.append({
             "name": name,
-            "segments": [(g.start, g.end, g.kind, f"{CDN_LABEL[g.kind]}: {g.start:%d/%m %H:%M}–{g.end:%d/%m %H:%M} UTC "
+            "segments": [(g.start, g.end, g.kind, f"{tr(CDN_LABEL[g.kind])}: {g.start:%d/%m %H:%M}–{g.end:%d/%m %H:%M} UTC "
                                                   f"({stats.fmt_duration(g.end - g.start)})") for g in segs],
-            "blocks": [(max(iv.start, start), iv.end or now, f"IPs bloqueadas: {iv.start:%d/%m %H:%M}–"
-                        f"{(iv.end or now):%d/%m %H:%M} UTC · hasta {iv.max_isps} operadoras") for iv in ivs],
+            "blocks": [(max(iv.start, start), iv.end or now,
+                        tr("Blocked IPs: {start}–{end} UTC · up to {n} ISPs", start=f"{iv.start:%d/%m %H:%M}",
+                           end=f"{(iv.end or now):%d/%m %H:%M}", n=iv.max_isps)) for iv in ivs],
             "has_ips": bool(known.get(name)),
         })
     episodes.sort(key=lambda e: e["start"], reverse=True)
@@ -1013,7 +1108,7 @@ async def estadisticas(request: Request, dias: int = 7):
         timeline=charts.timeline(rows, start, end) if rows else None, rows=rows,
         traffic=charts.columns(day_list, tseries, start, end, fmt=human_bytes) if tseries else None,
         tseries=tseries, day_list=day_list, traffic_error=traffic_error,
-        episodes=episodes, matches=matches, match_note=match_note, feed_note=None if s.feed else "feed de bloqueos aún sin leer",
+        episodes=episodes, matches=matches, match_note=match_note, feed_note=None if s.feed else tr("block feed not read yet"),
     ))
 
 
@@ -1036,17 +1131,17 @@ async def ajustes(request: Request):
 async def _check_credential(s: State, cred_id: int) -> tuple[bool, str]:
     cred, secret = s.creds.get(cred_id), s.creds.secret(cred_id)
     if not secret:
-        ok, msg, scope = False, "No se puede descifrar: ¿ha cambiado la clave maestra?", None
+        ok, msg, scope = False, tn("Cannot decrypt it: has the master key changed?"), None
     elif cred.provider == "cloudflare":
         ok, msg = await cf.verify_token(secret)
         scope = None
         if ok:
             zones = await cf.list_zones(secret)
-            scope = ", ".join(z["name"] for z in zones) or "ninguna zona"
-            msg = f"Token activo · acceso a {len(zones)} zona(s)"
+            scope = ", ".join(z["name"] for z in zones) or tn("no zone")
+            msg = tn("Token active · access to {n} zone(s)", n=len(zones))
             assigned = [z["name"] for z in zones if z["name"] in s.inventory.domains and s.store.assign_zone(z["name"], z["id"], cred_id)]
             if assigned:
-                msg += f" · asignada a {', '.join(assigned)}"
+                msg = tn("Token active · access to {n} zone(s) · assigned to {domains}", n=len(zones), domains=", ".join(assigned))
                 s.reload()
                 await refresh_cloudflare(s)
     else:
@@ -1075,12 +1170,14 @@ async def cuenta_crear(request: Request, provider: str = Form(...), label: str =
         cred_id = s.creds.add(provider, label, secret)
     except ValueError as exc:
         return _back(url, error=str(exc))
-    s.events.add(actor=_actor(request), kind="config", summary=f"Credencial de {PROVIDERS[provider]} añadida: {label.strip()}")
+    s.events.add(actor=_actor(request), kind="config", summary=tn("{provider} credential added: {label}", provider=PROVIDERS[provider], label=label.strip()))
     try:
         ok, msg = await _check_credential(s, cred_id)
     except httpx.HTTPError as exc:
-        ok, msg = False, f"Guardada, pero no se pudo verificar: {type(exc).__name__}"
-    return _back(url, **({"ok": f"«{label.strip()}» guardada. {msg}"} if ok else {"error": f"«{label.strip()}» guardada, pero la verificación falló: {msg}"}))
+        ok, msg = False, tr("Saved, but it could not be verified: {error}", error=type(exc).__name__)
+    if ok:
+        return _back(url, ok=tr('"{label}" saved. {msg}', label=label.strip(), msg=msg))
+    return _back(url, error=tr('"{label}" saved, but the verification failed: {msg}', label=label.strip(), msg=msg))
 
 
 @app.post("/ajustes/cuentas/{cred_id}/probar")
@@ -1098,13 +1195,13 @@ async def cuenta_rotar(request: Request, cred_id: int, secret: str = Form("")):
     s = _state(request)
     url = request.url_for("ajustes_cuentas")
     if not secret.strip():
-        return _back(url, error="Introduce la nueva credencial")
+        return _back(url, error=tr("Enter the new credential"))
     try:
         s.creds.rotate(cred_id, secret)
         cred = s.creds.get(cred_id)
     except ValueError as exc:
         return _back(url, error=str(exc))
-    s.events.add(actor=_actor(request), kind="config", summary=f"Credencial rotada: {cred.label}")
+    s.events.add(actor=_actor(request), kind="config", summary=tn("Credential rotated: {label}", label=cred.label))
     return await cuenta_probar(request, cred_id)
 
 
@@ -1117,8 +1214,8 @@ async def cuenta_eliminar(request: Request, cred_id: int):
         s.creds.delete(cred_id)
     except ValueError as exc:
         return _back(url, error=str(exc))
-    s.events.add(actor=_actor(request), kind="config", summary=f"Credencial eliminada: {label}")
-    return _back(url, ok=f"«{label}» eliminada")
+    s.events.add(actor=_actor(request), kind="config", summary=tn("Credential deleted: {label}", label=label))
+    return _back(url, ok=tr('"{label}" deleted', label=label))
 
 
 # ---- Notificaciones
@@ -1147,12 +1244,13 @@ async def canal_guardar(request: Request, canal: str):
         value = str(form.get(name, "")).strip()
         if value:
             s.secrets.set(name, value)
-            saved.append(CREDENTIALS[name][0])
+            saved.append(CREDENTIALS[name][0])  # translated at use: tr()/tn() below
     url = request.url_for("ajustes_notificaciones")
     if not saved:
-        return _back(url, error="No has escrito ningún valor nuevo")
-    s.events.add(actor=_actor(request), kind="config", summary=f"Notificaciones: {', '.join(saved)} actualizado")
-    return _back(url, ok=f"Guardado: {', '.join(saved)}")
+        return _back(url, error=tr("You have not entered any new value"))
+    s.events.add(actor=_actor(request), kind="config",
+                 summary=tn("Notifications: {fields} updated", fields=", ".join(tn(x) for x in saved)))
+    return _back(url, ok=tr("Saved: {fields}", fields=", ".join(tr(x) for x in saved)))
 
 
 @app.post("/ajustes/notificaciones/latido")
@@ -1161,9 +1259,9 @@ async def latido_guardar(request: Request, heartbeat_url: str = Form("")):
     url = request.url_for("ajustes_notificaciones")
     value = heartbeat_url.strip()
     if not heartbeat.valid_url(value):
-        return _back(url, error="Pega la URL de ping completa (https://hc-ping.com/…)")
+        return _back(url, error=tr("Paste the full ping URL (https://hc-ping.com/…)"))
     s.secrets.set("heartbeat_url", value)
-    s.events.add(actor=_actor(request), kind="config", summary="Aviso externo: URL actualizada")
+    s.events.add(actor=_actor(request), kind="config", summary=tn("External heartbeat: URL updated"))
     return await latido_probar(request)
 
 
@@ -1173,10 +1271,12 @@ async def latido_probar(request: Request):
     url = request.url_for("ajustes_notificaciones")
     b = await heartbeat.beat(s)
     if b is None:
-        return _back(url, error="Falta la URL de aviso externo")
+        return _back(url, error=tr("The external heartbeat URL is missing"))
     if b.result != "ok":
-        return _back(url, error=f"No se pudo avisar: {b.result}")
-    return _back(url, ok="Aviso enviado: " + ("todo en orden" if b.ok else f"fallo comunicado ({b.detail})"))
+        return _back(url, error=tr("Could not send the heartbeat: {result}", result=b.result))
+    if b.ok:
+        return _back(url, ok=tr("Heartbeat sent: all good"))
+    return _back(url, ok=tr("Heartbeat sent: failure reported ({detail})", detail=b.detail))
 
 
 @app.post("/ajustes/notificaciones/{name}")
@@ -1188,9 +1288,9 @@ async def notificacion_guardar(request: Request, name: str, value: str = Form(""
     try:
         s.secrets.set(name, value)
     except ValueError:
-        return _back(url, error="Introduce un valor")
-    s.events.add(actor=_actor(request), kind="config", summary=f"Notificaciones: {CREDENTIALS[name][0]} actualizado")
-    return _back(url, ok=f"{CREDENTIALS[name][0]} guardado")
+        return _back(url, error=tr("Enter a value"))
+    s.events.add(actor=_actor(request), kind="config", summary=tn("Notifications: {fields} updated", fields=tn(CREDENTIALS[name][0])))
+    return _back(url, ok=tr("{field} saved", field=tr(CREDENTIALS[name][0])))
 
 
 @app.post("/ajustes/notificaciones/{name}/eliminar")
@@ -1199,8 +1299,8 @@ async def notificacion_eliminar(request: Request, name: str):
     if name not in CREDENTIALS:
         raise HTTPException(404)
     s.secrets.delete(name)
-    s.events.add(actor=_actor(request), kind="config", summary=f"Notificaciones: {CREDENTIALS[name][0]} eliminado")
-    return _back(request.url_for("ajustes_notificaciones"), ok=f"{CREDENTIALS[name][0]} eliminado")
+    s.events.add(actor=_actor(request), kind="config", summary=tn("Notifications: {field} deleted", field=tn(CREDENTIALS[name][0])))
+    return _back(request.url_for("ajustes_notificaciones"), ok=tr("{field} deleted", field=tr(CREDENTIALS[name][0])))
 
 
 @app.post("/ajustes/notificaciones/probar/{canal}")
@@ -1209,14 +1309,14 @@ async def notificacion_probar(request: Request, canal: str):
     try:
         if canal == "telegram":
             token = s.secrets.get("telegram_token")
-            ok, msg = await notify.verify_telegram(token, s.secrets.get("telegram_chat_id")) if token else (False, "Falta el token del bot")
+            ok, msg = await notify.verify_telegram(token, s.secrets.get("telegram_chat_id")) if token else (False, tr("The bot token is missing"))
         elif canal == "email":
             smtp = s.secrets.get("smtp_url")
-            ok, msg = await notify.verify_smtp(smtp) if smtp else (False, "Falta el servidor SMTP")
+            ok, msg = await notify.verify_smtp(smtp) if smtp else (False, tr("The SMTP server is missing"))
         else:
             raise HTTPException(404)
     except httpx.HTTPError as exc:
-        ok, msg = False, f"Error de red: {type(exc).__name__}"
+        ok, msg = False, tr("Network error: {error}", error=type(exc).__name__)
     return _back(request.url_for("ajustes_notificaciones"), **({"ok": msg} if ok else {"error": msg}))
 
 
@@ -1243,7 +1343,7 @@ async def ajustes_operacion(request: Request):
         ev_stats=s.events.stats(), ev_days=s.events.get_setting("events_max_days"),
         ev_rows=s.events.get_setting("events_max_rows"), auto_on=failover.auto_enabled(s),
         quota_gb=s.events.get_setting("gcore_quota_gb"), calendar=s.calendar, calendar_error=s.calendar_error,
-        fd=s.secrets.status("football_data_token"), now=datetime.now(UTC)))
+        fd=s.secrets.status("football_data_token"), now=datetime.now(UTC), notify_lang=i18n.notify_lang()))
 
 
 @app.post("/ajustes/operacion/automatico")
@@ -1252,8 +1352,24 @@ async def automatico_global(request: Request, enabled: str = Form("")):
     on = enabled == "1"
     s.events.set_setting("auto_switch", int(on))
     s.events.add(actor=_actor(request), kind="config",
-                 summary="Cambio automático de CDN " + ("activado" if on else "desactivado para todos los dominios"))
-    return _back(request.url_for("ajustes_operacion"), ok="Cambio automático " + ("activado" if on else "desactivado"))
+                 summary=tn("Automatic CDN switching enabled") if on else tn("Automatic CDN switching disabled for all domains"))
+    return _back(request.url_for("ajustes_operacion"),
+                 ok=tr("Automatic switching enabled") if on else tr("Automatic switching disabled"))
+
+
+@app.post("/ajustes/operacion/idioma")
+async def idioma_guardar(request: Request, lang: str = Form("")):
+    """Language of history, alerts and terminal output (what is stored or sent)."""
+    s = _state(request)
+    url = request.url_for("ajustes_operacion")
+    code = i18n.normalize(lang)
+    if code is None:
+        return _back(url, "idioma", error=tr("Language not available"))
+    s.events.set_value("notify_lang", code)
+    i18n.set_notify(code)
+    s.events.add(actor=_actor(request), kind="config",
+                 summary=tn("Language of history and alerts: {language}", language=i18n.LANGS[code]))
+    return _back(url, "idioma", ok=tr("Language of history and alerts saved: {language}", language=i18n.LANGS[code]))
 
 
 @app.post("/ajustes/operacion/cuota")
@@ -1263,11 +1379,11 @@ async def cuota_guardar(request: Request, gcore_quota_gb: int = Form(...)):
     try:
         s.events.set_setting("gcore_quota_gb", gcore_quota_gb)
     except ValueError as exc:
-        return _back(url, error=f"Cuota: {exc}")
-    s.events.add(actor=_actor(request), kind="config", summary=f"Cuota mensual de Gcore: {gcore_quota_gb} GB")
+        return _back(url, error=tr("Quota: {error}", error=exc))
+    s.events.add(actor=_actor(request), kind="config", summary=tn("Gcore monthly quota: {gb} GB", gb=gcore_quota_gb))
     if os.environ.get("MULTICDN_OFFLINE") != "1":
         asyncio.create_task(refresh_usage(s))
-    return _back(url, ok=f"Cuota guardada: {gcore_quota_gb} GB al mes")
+    return _back(url, ok=tr("Quota saved: {gb} GB per month", gb=gcore_quota_gb))
 
 
 @app.post("/ajustes/operacion/football-data")
@@ -1275,23 +1391,23 @@ async def football_data_guardar(request: Request, token: str = Form("")):
     s = _state(request)
     url = request.url_for("ajustes_operacion")
     if not token.strip():
-        return _back(url, error="Introduce la clave")
+        return _back(url, error=tr("Enter the key"))
     s.secrets.set("football_data_token", token)
-    s.events.add(actor=_actor(request), kind="config", summary="Clave de football-data.org guardada")
+    s.events.add(actor=_actor(request), kind="config", summary=tn("football-data.org key saved"))
     await refresh_calendar(s)
     result = s.calendar.sources.get("football-data.org") if s.calendar else s.calendar_error
     if result == "ok":
-        return _back(url, ok=f"Clave guardada y verificada · {len(s.calendar.matches)} partidos en el calendario")
-    return _back(url, error=f"Clave guardada, pero football-data.org no responde bien: {result}")
+        return _back(url, ok=tr("Key saved and verified · {n} matches in the calendar", n=len(s.calendar.matches)))
+    return _back(url, error=tr("Key saved, but football-data.org is not responding properly: {result}", result=result))
 
 
 @app.post("/ajustes/operacion/football-data/eliminar")
 async def football_data_eliminar(request: Request):
     s = _state(request)
     s.secrets.delete("football_data_token")
-    s.events.add(actor=_actor(request), kind="config", summary="Clave de football-data.org eliminada")
+    s.events.add(actor=_actor(request), kind="config", summary=tn("football-data.org key deleted"))
     await refresh_calendar(s)
-    return _back(request.url_for("ajustes_operacion"), ok="Clave de football-data.org eliminada")
+    return _back(request.url_for("ajustes_operacion"), ok=tr("football-data.org key deleted"))
 
 
 @app.post("/ajustes/operacion/retencion")
@@ -1302,11 +1418,11 @@ async def retencion_guardar(request: Request, events_max_days: int = Form(...), 
         s.events.set_setting("events_max_days", events_max_days)
         s.events.set_setting("events_max_rows", events_max_rows)
     except ValueError as exc:
-        return _back(url, error=f"Retención: {exc}")
+        return _back(url, error=tr("Retention: {error}", error=exc))
     deleted = s.events.prune()
     s.events.add(actor=_actor(request), kind="config",
-                 summary=f"Retención del historial: {events_max_days} días, máximo {events_max_rows} eventos")
-    return _back(url, ok=f"Retención guardada · {deleted} eventos antiguos eliminados")
+                 summary=tn("History retention: {days} days, at most {rows} events", days=events_max_days, rows=events_max_rows))
+    return _back(url, ok=tr("Retention saved · {n} old events deleted", n=deleted))
 
 
 @app.post("/ajustes/servidores")
@@ -1316,10 +1432,10 @@ async def servidor_guardar(request: Request, server_id: str = Form(...), origin_
     try:
         s.store.upsert_server(server_id.strip().lower(), origin_ipv4.strip() or None, private_address.strip() or None)
     except ValueError as exc:
-        return _back(request.url_for("ajustes_servidores"), error=f"Servidor: {exc}")
-    s.events.add(actor=_actor(request), kind="config", summary=f"Servidor {server_id} guardado")
+        return _back(request.url_for("ajustes_servidores"), error=tr("Server: {error}", error=exc))
+    s.events.add(actor=_actor(request), kind="config", summary=tn("Server {server} saved", server=server_id))
     await _after_inventory_change(s)
-    return _back(request.url_for("ajustes_servidores"), ok=f"Servidor {server_id} guardado")
+    return _back(request.url_for("ajustes_servidores"), ok=tr("Server {server} saved", server=server_id))
 
 
 @app.post("/ajustes/servidores/{server_id}/editar")
@@ -1338,11 +1454,12 @@ async def servidor_editar(request: Request, server_id: str, new_id: str = Form(.
             s.secrets.delete(origin_key(target))
             s.store.upsert_server(target, None, private_address.strip() or None)
     except ValueError as exc:
-        return _back(url, error=f"Servidor: {exc}")
+        return _back(url, error=tr("Server: {error}", error=exc))
     s.events.add(actor=_actor(request), kind="config",
-                 summary=f"Servidor {server_id} actualizado" + (f" (ahora {target})" if target != server_id else ""))
+                 summary=(tn("Server {server} updated (now {new})", server=server_id, new=target) if target != server_id
+                          else tn("Server {server} updated", server=server_id)))
     await _after_inventory_change(s)
-    return _back(url, ok=f"Servidor {target} guardado")
+    return _back(url, ok=tr("Server {server} saved", server=target))
 
 
 @app.post("/ajustes/servidores/{server_id}/eliminar")
@@ -1353,7 +1470,7 @@ async def servidor_eliminar(request: Request, server_id: str):
     except ValueError as exc:
         return _back(request.url_for("ajustes_servidores"), error=str(exc))
     await _after_inventory_change(s)
-    return _back(request.url_for("ajustes_servidores"), ok=f"Servidor {server_id} eliminado")
+    return _back(request.url_for("ajustes_servidores"), ok=tr("Server {server} deleted", server=server_id))
 
 
 @app.get("/ajustes/inventario.yaml")
@@ -1389,7 +1506,7 @@ def _auth_page(request: Request, template: str, **ctx) -> HTMLResponse:
     return templates.TemplateResponse(request, template, {"request": request, "next": _safe_next(request.query_params.get("next"))} | ctx)
 
 
-LOCK_MSG = "Demasiados intentos fallidos. Espera unos minutos antes de volver a intentarlo."
+LOCK_MSG = N_("Too many failed attempts. Wait a few minutes before trying again.")
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -1405,15 +1522,16 @@ async def login_post(request: Request, username: str = Form(""), password: str =
     s = _state(request)
     keys = (f"u:{username.strip().lower()}", f"ip:{_client_ip(request)}")
     if s.auth.locked(*keys):
-        return _auth_page(request, "login.html", has_users=True, error=LOCK_MSG, username=username)
+        return _auth_page(request, "login.html", has_users=True, error=tr(LOCK_MSG), username=username)
     user = s.auth.check_password(username, password)
     if user is None:
         s.auth.register_failure(*keys)
-        s.events.add(actor="auto", kind="auth", summary=f"Contraseña incorrecta para «{username.strip()[:40]}» desde {_client_ip(request)}")
+        s.events.add(actor="auto", kind="auth", summary=tn('Wrong password for "{user}" from {ip}', user=username.strip()[:40], ip=_client_ip(request)))
         if s.auth.locked(*keys):
             s.events.add(actor="auto", kind="auth",
-                         summary=f"Acceso bloqueado por intentos fallidos («{username.strip()[:40]}» desde {_client_ip(request)})")
-        return _auth_page(request, "login.html", has_users=True, error="Usuario o contraseña incorrectos.", username=username)
+                         summary=tn('Access blocked after failed attempts ("{user}" from {ip})',
+                                    user=username.strip()[:40], ip=_client_ip(request)))
+        return _auth_page(request, "login.html", has_users=True, error=tr("Incorrect username or password."), username=username)
     stage = "pending" if user.totp_enabled else "enroll"
     token = s.auth.create_session(user.id, stage, _client_ip(request), request.headers.get("user-agent"))
     target = "/login/codigo" if stage == "pending" else "/login/alta"
@@ -1427,7 +1545,7 @@ def _finish_login(request: Request, user_id: int, username: str, next_url: str) 
         s.auth.delete_session(pending.id_hash)  # nuevo identificador tras autenticar
     token = s.auth.create_session(user_id, "full", _client_ip(request), request.headers.get("user-agent"))
     s.auth.register_success(f"u:{username}", f"ip:{_client_ip(request)}")
-    s.events.add(actor=username, kind="auth", summary=f"Inicio de sesión desde {_client_ip(request)}")
+    s.events.add(actor=username, kind="auth", summary=tn("Signed in from {ip}", ip=_client_ip(request)))
     return _with_session(RedirectResponse(_safe_next(next_url), status_code=303), request, token)
 
 
@@ -1444,12 +1562,12 @@ async def login_codigo_post(request: Request, code: str = Form(""), next: str = 
     s = _state(request)
     pending = request.state.pending
     if not pending or pending.stage != "pending":
-        return RedirectResponse("/login?error=La+sesión+ha+caducado", status_code=303)
+        return RedirectResponse(f"/login?{urlencode({'error': tr('The session has expired')})}", status_code=303)
     user = pending.user
     keys = (f"u:{user.username}", f"ip:{_client_ip(request)}")
     if s.auth.locked(*keys):
         s.auth.delete_session(pending.id_hash)
-        return _with_session(RedirectResponse(f"/login?{urlencode({'error': LOCK_MSG})}", status_code=303), request, None)
+        return _with_session(RedirectResponse(f"/login?{urlencode({'error': tr(LOCK_MSG)})}", status_code=303), request, None)
     code = code.strip()
     used_recovery = False
     ok = s.auth.check_totp(user.id, code)
@@ -1457,14 +1575,15 @@ async def login_codigo_post(request: Request, code: str = Form(""), next: str = 
         ok = used_recovery = s.auth.use_recovery_code(user.id, code)
     if not ok:
         s.auth.register_failure(*keys)
-        s.events.add(actor="auto", kind="auth", summary=f"Código incorrecto para {user.username} desde {_client_ip(request)}")
+        s.events.add(actor="auto", kind="auth", summary=tn("Wrong code for {user} from {ip}", user=user.username, ip=_client_ip(request)))
         if s.auth.locked(*keys):
             s.events.add(actor="auto", kind="auth",
-                         summary=f"Acceso bloqueado por intentos fallidos ({user.username} desde {_client_ip(request)})")
-        return _auth_page(request, "login_codigo.html", username=user.username, error="Código incorrecto o ya usado.")
+                         summary=tn("Access blocked after failed attempts ({user} from {ip})",
+                                    user=user.username, ip=_client_ip(request)))
+        return _auth_page(request, "login_codigo.html", username=user.username, error=tr("Wrong or already used code."))
     if used_recovery:
         s.events.add(actor=user.username, kind="auth",
-                     summary=f"Acceso con código de recuperación (quedan {s.auth.recovery_left(user.id)})")
+                     summary=tn("Signed in with a recovery code ({n} left)", n=s.auth.recovery_left(user.id)))
     return _finish_login(request, user.id, user.username, next)
 
 
@@ -1491,14 +1610,14 @@ async def login_alta_post(request: Request, code: str = Form(""), next: str = Fo
         return RedirectResponse("/login", status_code=303)
     user = pending.user
     if not s.auth.check_totp(user.id, code):
-        return RedirectResponse(f"/login/alta?{urlencode({'error': 'Código incorrecto: revisa la hora del móvil', 'next': _safe_next(next)})}",
+        return RedirectResponse(f"/login/alta?{urlencode({'error': tr('Wrong code: check the clock of your phone'), 'next': _safe_next(next)})}",
                                 status_code=303)
     s.auth.enable_totp(user.id)
     codes = s.auth.new_recovery_codes(user.id)
-    s.events.add(actor=user.username, kind="auth", summary="TOTP activado")
+    s.events.add(actor=user.username, kind="auth", summary=tn("TOTP enabled"))
     s.auth.delete_session(pending.id_hash)
     token = s.auth.create_session(user.id, "full", _client_ip(request), request.headers.get("user-agent"))
-    s.events.add(actor=user.username, kind="auth", summary=f"Inicio de sesión desde {_client_ip(request)}")
+    s.events.add(actor=user.username, kind="auth", summary=tn("Signed in from {ip}", ip=_client_ip(request)))
     response = _auth_page(request, "login_recuperacion.html", codes=codes, next=_safe_next(next))
     return _with_session(response, request, token)
 
@@ -1508,7 +1627,7 @@ async def logout(request: Request):
     s = _state(request)
     if request.state.session:
         s.auth.delete_session(request.state.session.id_hash)
-        s.events.add(actor=request.state.session.user.username, kind="auth", summary="Cierre de sesión")
+        s.events.add(actor=request.state.session.user.username, kind="auth", summary=tn("Signed out"))
     return _with_session(RedirectResponse("/login", status_code=303), request, None)
 
 
@@ -1528,18 +1647,23 @@ async def cuenta_password(request: Request, current: str = Form(""), code: str =
     me = request.state.session
     url = request.url_for("ajustes_cuenta")
     if s.auth.check_password(me.user.username, current) is None or not s.auth.check_totp(me.user.id, code):
-        s.events.add(actor=me.user.username, kind="auth", summary="Cambio de contraseña rechazado: credenciales incorrectas")
-        return _back(url, error="La contraseña actual o el código no son correctos")
+        s.events.add(actor=me.user.username, kind="auth", summary=tn("Password change rejected: wrong credentials"))
+        return _back(url, error=tr("The current password or the code is not correct"))
     if new != new2:
-        return _back(url, error="Las contraseñas nuevas no coinciden")
+        return _back(url, error=tr("The new passwords do not match"))
     try:
         s.auth.set_password(me.user.id, new)
     except ValueError as exc:
         return _back(url, error=str(exc))
     closed = s.auth.close_sessions(me.user.id, except_hash=me.id_hash)
-    s.events.add(actor=me.user.username, kind="auth", summary=f"Contraseña cambiada; {closed} sesiones cerradas")
-    detail = {0: "No tenías otras sesiones abiertas.", 1: "Se ha cerrado tu otra sesión."}.get(closed, f"Se han cerrado tus otras {closed} sesiones.")
-    return _back(url, ok=f"Contraseña cambiada. {detail}")
+    s.events.add(actor=me.user.username, kind="auth", summary=tn("Password changed; {n} sessions closed", n=closed))
+    if closed == 0:
+        msg = tr("Password changed. You had no other sessions open.")
+    elif closed == 1:
+        msg = tr("Password changed. Your other session has been closed.")
+    else:
+        msg = tr("Password changed. Your other {n} sessions have been closed.", n=closed)
+    return _back(url, ok=msg)
 
 
 @app.post("/ajustes/cuenta/recuperacion")
@@ -1547,9 +1671,9 @@ async def cuenta_recuperacion(request: Request, code: str = Form("")):
     s = _state(request)
     me = request.state.session
     if not s.auth.check_totp(me.user.id, code):
-        return _back(request.url_for("ajustes_cuenta"), error="Código TOTP incorrecto")
+        return _back(request.url_for("ajustes_cuenta"), error=tr("Wrong TOTP code"))
     codes = s.auth.new_recovery_codes(me.user.id)
-    s.events.add(actor=me.user.username, kind="auth", summary="Códigos de recuperación regenerados")
+    s.events.add(actor=me.user.username, kind="auth", summary=tn("Recovery codes regenerated"))
     return _auth_page(request, "login_recuperacion.html", codes=codes, next="/ajustes/cuenta")
 
 
@@ -1559,10 +1683,10 @@ async def cuenta_cerrar_sesion(request: Request, id_hash: str):
     me = request.state.session
     if any(x.id_hash == id_hash for x in s.auth.list_sessions(me.user.id)):
         s.auth.delete_session(id_hash)
-        s.events.add(actor=me.user.username, kind="auth", summary="Sesión cerrada desde Mi cuenta")
+        s.events.add(actor=me.user.username, kind="auth", summary=tn("Session closed from My account"))
     if id_hash == me.id_hash:
         return _with_session(RedirectResponse("/login", status_code=303), request, None)
-    return _back(request.url_for("ajustes_cuenta"), ok="Sesión cerrada")
+    return _back(request.url_for("ajustes_cuenta"), ok=tr("Session closed"))
 
 
 @app.get("/api/estado")

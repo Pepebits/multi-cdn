@@ -13,6 +13,8 @@ import ssl
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from .i18n import tn
+
 INTERVAL = 120
 FAILS_TO_ALERT = 2
 
@@ -33,16 +35,16 @@ async def probe(ip: str, hostname: str, headers: dict[str, str], timeout: float 
     try:
         reader, writer = await asyncio.wait_for(asyncio.open_connection(ip, 443, ssl=ctx, server_hostname=hostname), timeout)
     except ssl.SSLCertVerificationError as exc:
-        return False, f"certificado no válido en el origen ({exc.verify_message})"
+        return False, tn("invalid certificate at the origin ({error})", error=exc.verify_message)
     except (ssl.SSLError, OSError, asyncio.TimeoutError) as exc:
-        return False, f"no conecta ({type(exc).__name__})"
+        return False, tn("cannot connect ({error})", error=type(exc).__name__)
     extra = "".join(f"{k}: {v}\r\n" for k, v in headers.items())
     writer.write(f"HEAD / HTTP/1.1\r\nHost: {hostname}\r\nUser-Agent: multicdn-health\r\n{extra}Connection: close\r\n\r\n".encode())
     try:
         await writer.drain()
         status = (await asyncio.wait_for(reader.readline(), timeout)).decode(errors="replace").split()
     except (OSError, asyncio.TimeoutError) as exc:
-        return False, f"sin respuesta ({type(exc).__name__})"
+        return False, tn("no response ({error})", error=type(exc).__name__)
     finally:
         writer.close()
     code = status[1] if len(status) > 1 else "?"
@@ -74,10 +76,12 @@ async def check(state, now: datetime | None = None, prober=probe) -> None:
         if not ok and cur.fails >= FAILS_TO_ALERT and not cur.alerted:
             cur.alerted = True
             state.events.add(actor="auto", kind="alert",
-                             summary=f"El origen {server} no responde ({hostname}: {detail}); el problema no es el CDN")
+                             summary=tn("Origin {server} is not responding ({host}: {detail}); the problem is not the CDN",
+                                        server=server, host=hostname, detail=detail))
         elif ok and cur.alerted:
             cur.alerted = False
-            state.events.add(actor="auto", kind="alert", summary=f"El origen {server} responde de nuevo ({hostname}: {detail})")
+            state.events.add(actor="auto", kind="alert", summary=tn("Origin {server} is responding again ({host}: {detail})", server=server, host=hostname,
+                                        detail=detail))
         state.origin_health[server] = cur
 
 
@@ -87,5 +91,5 @@ def down_note(state, domain_name: str) -> str:
     for h in domain.hostnames if domain else []:
         health = state.origin_health.get(h.server)
         if health and not health.ok:
-            return f" (el origen {h.server} tampoco responde directamente: {health.detail})"
+            return tn(" (origin {server} does not respond directly either: {detail})", server=h.server, detail=health.detail)
     return ""

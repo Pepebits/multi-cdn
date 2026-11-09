@@ -11,6 +11,8 @@ from typing import Any, Literal
 import yaml
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
+from .i18n import tr
+
 _ENV_REF = re.compile(r"\$\{([A-Z0-9_]+)\}")
 
 Policy = Literal["preventive", "reactive", "manual"]
@@ -46,7 +48,7 @@ def normalize_private_address(value: str | None) -> str | None:
     except ValueError:
         if _HOST.match(value):
             return value
-    raise ValueError(f"dirección privada no válida: {value!r} (nombre de host o IP)")
+    raise ValueError(tr("invalid private address: {value} (hostname or IP)", value=repr(value)))
 
 
 class Server(BaseModel):
@@ -100,9 +102,9 @@ class Inventory(BaseModel):
         for domain_name, domain in self.domains.items():
             for host in domain.hostnames:
                 if host.server not in self.servers:
-                    raise ValueError(f"{host.name}: servidor desconocido '{host.server}'")
+                    raise ValueError(tr("{host}: unknown server '{server}'", host=host.name, server=host.server))
                 if host.name != domain_name and not host.name.endswith("." + domain_name):
-                    raise ValueError(f"{host.name} no pertenece a la zona {domain_name}")
+                    raise ValueError(tr("{host} does not belong to the zone {zone}", host=host.name, zone=domain_name))
         return self
 
     @property

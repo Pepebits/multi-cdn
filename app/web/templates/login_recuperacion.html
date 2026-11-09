@@ -1,10 +1,10 @@
 {% extends "auth_base.html" %}
-{% block title %}Códigos de recuperación{% endblock %}
-{% block heading %}Guarda tus códigos de recuperación{% endblock %}
+{% block title %}{{ _("Recovery codes") }}{% endblock %}
+{% block heading %}{{ _("Save your recovery codes") }}{% endblock %}
 {% block content %}
-<p style="margin:0">Cada código sirve <strong>una sola vez</strong> para entrar si pierdes el móvil. Guárdalos en tu gestor de contraseñas: <strong>no se volverán a mostrar</strong>.</p>
-<ul class="codes" aria-label="Códigos de recuperación">
+<p style="margin:0">{{ _m("Each code works <strong>only once</strong> to sign in if you lose your phone. Store them in your password manager: <strong>they will not be shown again</strong>.") }}</p>
+<ul class="codes" aria-label="{{ _('Recovery codes') }}">
   {% for c in codes %}<li class="mono">{{ c }}</li>{% endfor %}
 </ul>
-<div class="actions-end"><a class="btn btn--primary" href="{{ next }}">Ya los he guardado, continuar</a></div>
+<div class="actions-end"><a class="btn btn--primary" href="{{ next }}">{{ _("I have saved them, continue") }}</a></div>
 {% endblock %}

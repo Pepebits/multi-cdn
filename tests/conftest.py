@@ -47,6 +47,11 @@ def login(client: TestClient, username: str = USER, password: str = PASSWORD) ->
 def no_developer_env(monkeypatch):
     """Los tests nunca leen el .env del desarrollador (ni su IP de origen ni sus tokens)."""
     monkeypatch.setenv("MULTICDN_DOTENV", "/nonexistent/.env")
+    # Existing tests assert the Spanish texts, which also checks the Spanish catalog; test_i18n
+    # covers English and the language choice.
+    monkeypatch.setenv("MULTICDN_LANG", "es")
+    from app import i18n
+    i18n.set_notify(None)
 
 
 @pytest.fixture

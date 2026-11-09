@@ -1,107 +1,140 @@
 {% extends "base.html" %}
-{% block title %}Resumen{% endblock %}
-{% block crumb %}{{ m.crumbs('Resumen') }}{% endblock %}
-{% block heading %}Resumen{% endblock %}
+{% block title %}{{ _("Overview") }}{% endblock %}
+{% block crumb %}{{ m.crumbs(_('Overview')) }}{% endblock %}
+{% block heading %}{{ _("Overview") }}{% endblock %}
 
 {% block banner %}
 {% for d in exposed %}
 <div class="banner banner--danger" role="alert">
   <span class="live" aria-hidden="true"></span>
-  <strong>{{ d.name }}: origen expuesto.</strong>
-  <span>Un hostname resuelve directamente a la IP del servidor. Reactiva el proxy de Cloudflare o pasa a Gcore.</span>
+  {{ m.icon('alert') }}
+  <strong>{{ _("{domain}: origin exposed.", domain=d.name) }}</strong>
+  <span>{{ _("A hostname resolves directly to the server IP. Re-enable the Cloudflare proxy or switch to Gcore.") }}</span>
 </div>
 {% endfor %}
 {% endblock %}
 
 {% block content %}
+{% if steps %}
+{% set texts = {
+  'cloudflare': (_("Connect Cloudflare"), _("An API token with Zone · Read and DNS · Edit on your zones.")),
+  'gcore': (_("Connect Gcore"), _("An API token with the Administrators or Engineers role.")),
+  'origin': (_("Add your origin server"), _("Its IP is stored encrypted and never published in DNS.")),
+  'domains': (_("Import your domains"), _("Pick the Cloudflare zones and which hostnames switch.")),
+  'prepare': (_("Prepare a domain on Gcore"), _("Origin, certificate and CDN resource, ready before any block.")),
+  'alerts': (_("Set up alerts"), _("Telegram or email, plus the external heartbeat.")),
+  'live': (_("Go live"), _("Set MULTICDN_DRY_RUN=false in the server's .env and restart: until then every change is simulated.")),
+} %}
+{% set done = steps|selectattr('done')|list|length %}
+<section class="card setup" aria-labelledby="setup-title">
+  <div class="card__head">
+    <h2 id="setup-title">{{ m.icon('flag') }} {{ _("Getting started") }}</h2>
+    <span class="mono">{{ _("{done} of {total} done", done=done, total=steps|length) }}</span>
+  </div>
+  <ol class="setup__steps">
+    {% for st in steps %}
+    {% set title, help = texts[st.key] %}
+    <li class="setup__step{% if st.done %} setup__step--done{% endif %}">
+      <span class="setup__mark" aria-hidden="true">{% if st.done %}{{ m.icon('check') }}{% else %}{{ loop.index }}{% endif %}</span>
+      <span class="setup__text">
+        {% if st.href and not st.done %}<a href="{{ st.href }}"><strong>{{ title }}</strong></a>{% else %}<strong>{{ title }}</strong>{% endif %}
+        <span class="visually-hidden">{{ _("(done)") if st.done else _("(pending)") }}</span>
+        <span class="muted">{{ help }}</span>
+      </span>
+    </li>
+    {% endfor %}
+  </ol>
+  <p class="card__body help" style="margin:0">{{ m.icon('info') }} {{ _m('Step by step, with the exact permissions and commands: <a href="https://github.com/Pepebits/multi-cdn/blob/main/deploy/README.md" rel="external">deployment guide</a>. This card disappears when every step is done.') }}</p>
+</section>
+{% endif %}
 <section aria-labelledby="estado-general">
-  <h2 id="estado-general" class="visually-hidden">Estado general</h2>
+  <h2 id="estado-general" class="visually-hidden">{{ _("Overall status") }}</h2>
   <div class="stats">
     <div class="card stat">
-      <p class="stat__label">Feed de bloqueos</p>
+      <p class="stat__label">{{ m.icon('pulse') }} {{ _("Block feed") }}</p>
       {% if feed_error %}
-        <p class="stat__value stat__value--danger">Caído</p>
+        <p class="stat__value stat__value--danger">{{ _("Down") }}</p>
         <p class="stat__note">{{ feed_error }}</p>
       {% elif feed %}
-        <p class="stat__value">{{ 'Retrasado' if feed_stale else 'Al día' }}</p>
-        <p class="stat__note">Último dato {{ feed.last_update|hhmm }}</p>
+        <p class="stat__value">{{ _('Delayed') if feed_stale else _('Up to date') }}</p>
+        <p class="stat__note">{{ _("Last data {time}", time=feed.last_update|hhmm) }}</p>
       {% else %}
-        <p class="stat__value">—</p><p class="stat__note">Cargando…</p>
+        <p class="stat__value">—</p><p class="stat__note">{{ _("Loading…") }}</p>
       {% endif %}
     </div>
     <div class="card stat">
-      <p class="stat__label">IPs de Cloudflare bloqueadas</p>
+      <p class="stat__label">{{ m.icon('shield') }} {{ _("Blocked Cloudflare IPs") }}</p>
       <p class="stat__value {% if blocked_cf_ips %}stat__value--danger{% endif %}">{{ blocked_cf_ips if blocked_cf_ips is not none else '—' }}</p>
-      <p class="stat__note">En 3 o más operadoras, ahora mismo</p>
+      <p class="stat__note">{{ _("At 3 or more ISPs, right now") }}</p>
     </div>
     <div class="card stat">
-      <p class="stat__label">Partidos</p>
+      <p class="stat__label">{{ m.icon('calendar') }} {{ _("Matches") }}</p>
       {% if match_now %}
-        <p class="stat__value">En juego</p>
+        <p class="stat__value">{{ _("In play") }}</p>
         <p class="stat__note">{{ match_now.name }} · {{ match_now.kickoff|hhmm }}</p>
       {% elif match_next %}
         <p class="stat__value">{{ match_next.kickoff.strftime('%d/%m %H:%M') }}</p>
-        <p class="stat__note">Próximo: {{ match_next.name }} (UTC)</p>
+        <p class="stat__note">{{ _("Next: {match} (UTC)", match=match_next.name) }}</p>
       {% elif calendar_error %}
-        <p class="stat__value stat__value--danger">Sin calendario</p>
+        <p class="stat__value stat__value--danger">{{ _("No calendar") }}</p>
         <p class="stat__note">{{ calendar_error }}</p>
       {% else %}
-        <p class="stat__value">—</p><p class="stat__note">Cargando…</p>
+        <p class="stat__value">—</p><p class="stat__note">{{ _("Loading…") }}</p>
       {% endif %}
     </div>
     <div class="card stat">
-      <p class="stat__label">Respaldo Gcore</p>
+      <p class="stat__label">{{ m.icon('cloud') }} {{ _("Gcore backup") }}</p>
       {% set u = usage[0] if usage else none %}
       {% if u and not u.error %}
-        <p class="stat__value {% if u.percent >= 90 %}stat__value--danger{% endif %}">{{ '%.1f'|format(u.percent)|replace('.', ',') }} %</p>
-        <div class="meter" role="img" aria-label="{{ '%.1f'|format(u.percent) }} % de la cuota mensual"><span style="width:{{ [u.percent, 100]|min }}%"></span></div>
-        <p class="stat__note">{{ u.total|bytes }} de {{ u.quota_gb }} GB este mes{% if u.max_resources %} · {{ u.resources }}/{{ u.max_resources }} recursos{% endif %}{% if usage|length > 1 %} · <a href="/ajustes/cuentas">{{ usage|length }} cuentas</a>{% endif %}</p>
+        <p class="stat__value {% if u.percent >= 90 %}stat__value--danger{% endif %}">{{ '%.1f'|format(u.percent)|replace('.', ',') if ui_lang() == 'es' else '%.1f'|format(u.percent) }} %</p>
+        <div class="meter" role="img" aria-label="{{ _('{percent} % of the monthly quota', percent='%.1f'|format(u.percent)) }}"><span style="width:{{ [u.percent, 100]|min }}%"></span></div>
+        <p class="stat__note">{{ _("{used} of {quota} GB this month", used=u.total|bytes, quota=u.quota_gb) }}{% if u.max_resources %} · {{ _("{used}/{max} resources", used=u.resources, max=u.max_resources) }}{% endif %}{% if usage|length > 1 %} · <a href="/ajustes/cuentas">{{ _("{n} accounts", n=usage|length) }}</a>{% endif %}</p>
       {% else %}
-        <p class="stat__value">{{ 'Configurado' if gcore_configured else 'Sin configurar' }}</p>
-        <p class="stat__note">{{ u.error if u and u.error else ('Recursos listos para conmutar' if gcore_configured else 'Prepara un dominio en Gcore') }}</p>
+        <p class="stat__value">{{ _('Configured') if gcore_configured else _('Not configured') }}</p>
+        <p class="stat__note">{{ u.error if u and u.error else (_('Resources ready to switch') if gcore_configured else _('Prepare a domain on Gcore')) }}</p>
       {% endif %}
     </div>
     {% for o in origin_health %}
     <div class="card stat">
-      <p class="stat__label">Origen {{ o.server }}</p>
-      <p class="stat__value {% if not o.ok %}stat__value--danger{% endif %}">{{ 'Responde' if o.ok else 'No responde' }}</p>
-      <p class="stat__note">Directo, sin CDN: {{ o.detail }} · {{ o.checked_at|hhmm }}</p>
+      <p class="stat__label">{{ m.icon('server') }} {{ _("Origin {server}", server=o.server) }}</p>
+      <p class="stat__value {% if not o.ok %}stat__value--danger{% endif %}">{{ _('Responding') if o.ok else _('Not responding') }}</p>
+      <p class="stat__note">{{ _("Direct, no CDN: {detail}", detail=o.detail) }} · {{ o.checked_at|hhmm }}</p>
     </div>
     {% else %}
     <div class="card stat">
-      <p class="stat__label">Origen</p>
-      <p class="stat__value">{{ 'Comprobando…' if origin_configured else 'Sin IP' }}</p>
-      <p class="stat__note">{{ 'Prueba directa al servidor cada 2 min' if origin_configured else 'Registra la IP en Ajustes → Servidores' }}</p>
+      <p class="stat__label">{{ m.icon('server') }} {{ _("Origin") }}</p>
+      <p class="stat__value">{{ _('Checking…') if origin_configured else _('No IP') }}</p>
+      <p class="stat__note">{{ _('Direct check of the server every 2 min') if origin_configured else _('Register the IP in Settings → Servers') }}</p>
     </div>
     {% endfor %}
   </div>
 </section>
 
 <section aria-labelledby="dominios">
-  <h2 id="dominios" style="margin-bottom:12px">Dominios</h2>
+  <h2 id="dominios" style="margin-bottom:12px">{{ m.icon('globe') }} {{ _("Domains") }}</h2>
   <div class="domains">
     {% for d in domains %}
     <article class="card domain" aria-labelledby="dom-{{ loop.index }}">
       <div class="domain__head">
         <div>
           <h3 id="dom-{{ loop.index }}"><a href="/dominios/{{ d.name }}">{{ d.name }}</a></h3>
-          <p class="mono muted" style="margin:4px 0 0">política {{ d.policy_label }}</p>
+          <p class="mono muted" style="margin:4px 0 0">{{ _("policy {policy}", policy=d.policy_label) }}</p>
         </div>
         {{ m.priority_tag(d) }}
       </div>
       <div class="domain__body">
         <div class="status tone-{{ d.status_tone }}">
           <span>{{ d.status_label }}</span>
-          <span class="status__count">{{ d.hosts|length }} hostname{{ 's' if d.hosts|length != 1 }}</span>
+          <span class="status__count">{{ _n("{n} hostname", "{n} hostnames", d.hosts|length) }}</span>
         </div>
         {{ m.change_badge(changes.get(d.name)) }}
         {% if d.alerts %}
         <ul class="alerts">
-          {% for a in d.alerts %}<li class="notice notice--{{ 'error' if 'expuesto' in a else 'warn' }}">{{ a }}</li>{% endfor %}
+          {% for a in d.alerts %}<li class="notice notice--{{ a.level if a.level is defined else ('error' if 'expuesto' in a else 'warn') }}">{{ m.icon('alert') }} {{ a }}</li>{% endfor %}
         </ul>
         {% endif %}
         <section class="isp" aria-labelledby="hosts-{{ loop.index }}">
-          <div class="isp__head"><h4 id="hosts-{{ loop.index }}" class="isp__title">Hostnames<span class="visually-hidden"> de {{ d.name }}</span></h4></div>
+          <div class="isp__head"><h4 id="hosts-{{ loop.index }}" class="isp__title">{{ _("Hostnames") }}<span class="visually-hidden"> {{ _("of {domain}", domain=d.name) }}</span></h4></div>
           <ul>
             {% for h in d.hosts %}
             <li><span class="mono">{{ h.name }}</span><span class="pill {{ 'pill--free' if h.provider == 'cloudflare' else ('pill--backup' if h.provider == 'gcore' else ('pill--blocked' if h.provider == 'origin' else 'pill--nodata')) }}">{{ h.provider_label }}</span></li>
@@ -111,7 +144,7 @@
         {{ m.isp_list(d, 'isp-' ~ loop.index) }}
       </div>
       <div class="domain__actions">
-        <a class="btn btn--primary" href="/dominios/{{ d.name }}">Ver detalle<span class="visually-hidden"> de {{ d.name }}</span></a>
+        <a class="btn btn--primary" href="/dominios/{{ d.name }}">{{ _("View details") }}<span class="visually-hidden"> {{ _("of {domain}", domain=d.name) }}</span></a>
       </div>
     </article>
     {% endfor %}
@@ -120,13 +153,13 @@
 
 <section class="card" aria-labelledby="ultimos">
   <div class="card__head">
-    <h2 id="ultimos">Últimos eventos</h2>
-    <a class="btn" href="/historial">Ver historial</a>
+    <h2 id="ultimos">{{ m.icon('history') }} {{ _("Latest events") }}</h2>
+    <a class="btn" href="/historial">{{ _("View history") }}</a>
   </div>
   {% if events %}
   <ul class="timeline">{% for e in events %}{{ m.event_row(e) }}{% endfor %}</ul>
   {% else %}
-  <p class="card__body muted" style="margin:0">Todavía no hay eventos registrados.</p>
+  <p class="card__body muted" style="margin:0">{{ m.icon('info') }} {{ _("No events recorded yet.") }}</p>
   {% endif %}
 </section>
 {% endblock %}

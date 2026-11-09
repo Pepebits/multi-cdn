@@ -9,9 +9,11 @@ from __future__ import annotations
 import math
 from datetime import datetime, timedelta
 
+from .i18n import N_, tr
+
 W = 960
 LEFT, RIGHT, TOP, BOTTOM = 52, 12, 14, 30
-DAYS = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"]
+DAYS = [N_("Mon"), N_("Tue"), N_("Wed"), N_("Thu"), N_("Fri"), N_("Sat"), N_("Sun")]
 
 
 def nice_max(value: float, ticks: int = 4) -> tuple[float, float]:
@@ -47,7 +49,7 @@ class Scale:
         out, t, i = [], first, 0
         while t < self.end:
             if i % every == 0:
-                label = f"{DAYS[t.weekday()]} {t.day}" if days <= 7 else f"{t.day}/{t.month}"
+                label = f"{tr(DAYS[t.weekday()])} {t.day}" if days <= 7 else f"{t.day}/{t.month}"
                 out.append({"x": self.x(t), "label": label})
             t += timedelta(days=1)
             i += 1

@@ -13,6 +13,8 @@ from dataclasses import dataclass
 
 import httpx
 
+from ..i18n import tn
+
 API = "https://api.cloudflare.com/client/v4"
 AUTO_TTL = 1
 TUNNEL_SUFFIX = ".cfargotunnel.com"
@@ -52,22 +54,22 @@ def _is_ip(value: str) -> bool:
 def guard(change: DnsChange, origin_ips: set[str]) -> None:
     if change.type in ("A", "AAAA"):
         if not change.proxied:
-            raise OriginExposureError(
-                f"{change.hostname}: un registro {change.type} sin proxy publicaría una IP; "
-                "solo se permite CNAME DNS Only hacia un CDN"
-            )
+            raise OriginExposureError(tn(
+                "{host}: an unproxied {type} record would publish an IP; only a DNS Only CNAME to a CDN "
+                "is allowed", host=change.hostname, type=change.type))
         return
     if change.type == "CNAME":
         if _is_ip(change.content) or change.content in origin_ips:
-            raise OriginExposureError(f"{change.hostname}: el CNAME apunta a una IP")
+            raise OriginExposureError(tn("{host}: the CNAME points to an IP", host=change.hostname))
         target = change.content.rstrip(".").lower()
         if not change.proxied and not target.endswith(BACKUP_CDN_SUFFIXES):
             # un CNAME sin proxy hacia cualquier otro nombre podría acabar resolviendo a la IP de origen
-            raise OriginExposureError(f"{change.hostname}: un CNAME sin proxy solo puede apuntar al CDN de respaldo")
+            raise OriginExposureError(tn("{host}: an unproxied CNAME can only point to the backup CDN",
+                                         host=change.hostname))
         if change.proxied and target.endswith(BACKUP_CDN_SUFFIXES):
-            raise OriginExposureError(f"{change.hostname}: el CNAME al CDN de respaldo debe ser DNS Only")
+            raise OriginExposureError(tn("{host}: the CNAME to the backup CDN must be DNS Only", host=change.hostname))
         return
-    raise OriginExposureError(f"{change.hostname}: tipo de registro no permitido ({change.type})")
+    raise OriginExposureError(tn("{host}: record type not allowed ({type})", host=change.hostname, type=change.type))
 
 
 def plan_to_gcore(hostname: str, target: str) -> DnsChange:
@@ -85,10 +87,10 @@ def plan_restore(host, origin_ip: str | None) -> DnsChange:
         return plan_to_tunnel(host.name, host.tunnel_target)
     if host.origin_kind == "cname":
         if not host.cname_target:
-            raise ValueError(f"{host.name}: no se conoce su CNAME original; sincroniza con Cloudflare antes")
+            raise ValueError(tn("{host}: its original CNAME is unknown; sync with Cloudflare first", host=host.name))
         return DnsChange(host.name, "CNAME", host.cname_target.rstrip("."), proxied=True, ttl=AUTO_TTL)
     if not origin_ip:
-        raise ValueError(f"{host.name}: falta la IP de origen del servidor para restaurar el registro A")
+        raise ValueError(tn("{host}: the server's origin IP is missing to restore the A record", host=host.name))
     return plan_to_cloudflare(host.name, origin_ip)
 
 
@@ -108,7 +110,7 @@ class CloudflareDNS:
         if self.dry_run:
             return "simulado"
         if not zone_id or not record_id:
-            raise ValueError(f"{change.hostname}: faltan zone_id o cloudflare_record_id en el inventario")
+            raise ValueError(tn("{host}: zone_id or cloudflare_record_id is missing in the inventory", host=change.hostname))
         async with httpx.AsyncClient(timeout=20) as client:
             r = await client.patch(
                 f"{API}/zones/{zone_id}/dns_records/{record_id}",
@@ -123,7 +125,7 @@ class CloudflareDNS:
             )
         body = r.json()
         if not body.get("success"):
-            raise RuntimeError(f"Cloudflare rechazó el cambio: {body.get('errors')}")
+            raise RuntimeError(tn("Cloudflare rejected the change: {errors}", errors=body.get("errors")))
         return "aplicado"
 
 
@@ -138,7 +140,7 @@ async def verify_token(token: str) -> tuple[bool, str]:
         r = await client.get(f"{API}/user/tokens/verify", headers=_headers(token))
     body = r.json()
     if body.get("success") and body.get("result", {}).get("status") == "active":
-        return True, "Token válido y activo"
+        return True, tn("Token valid and active")
     errors = "; ".join(e.get("message", "") for e in body.get("errors", [])) or f"HTTP {r.status_code}"
     return False, errors
 
@@ -195,7 +197,7 @@ _PHASE = "http_request_late_transform"
 def origin_rule(secret: str) -> dict:
     return {
         "ref": ORIGIN_RULE_REF,
-        "description": "multi-cdn: cabecera secreta hacia el origen",
+        "description": "multi-cdn: secret header to the origin",
         "expression": "true",
         "action": "rewrite",
         "action_parameters": {"headers": {ORIGIN_HEADER: {"operation": "set", "value": secret}}},
@@ -206,7 +208,7 @@ def origin_rule(secret: str) -> dict:
 def _cf_error(body: dict, status: int) -> str:
     msgs = "; ".join(e.get("message", "") for e in body.get("errors", [])) or f"HTTP {status}"
     if status == 403:
-        msgs += " (el token necesita el permiso Zona · Transform Rules · Editar)"
+        msgs += " " + tn("(the token needs the Zone · Transform Rules · Edit permission)")
     return msgs
 
 
@@ -221,7 +223,7 @@ async def ensure_origin_header(token: str, zone_id: str, secret: str) -> str:
         if r.status_code == 404:
             r = await c.put(f"{base}/phases/{_PHASE}/entrypoint", json={"rules": [rule]})
             if not r.json().get("success"):
-                raise RuntimeError(f"Cloudflare rechazó la regla: {_cf_error(r.json(), r.status_code)}")
+                raise RuntimeError(tn("Cloudflare rejected the rule: {error}", error=_cf_error(r.json(), r.status_code)))
             return "creada"
         body = r.json()
         if not body.get("success"):
@@ -239,7 +241,7 @@ async def ensure_origin_header(token: str, zone_id: str, secret: str) -> str:
             r = await c.patch(f"{base}/{ruleset['id']}/rules/{current['id']}", json=rule)
             outcome = "actualizada"
         if not r.json().get("success"):
-            raise RuntimeError(f"Cloudflare rechazó la regla: {_cf_error(r.json(), r.status_code)}")
+            raise RuntimeError(tn("Cloudflare rejected the rule: {error}", error=_cf_error(r.json(), r.status_code)))
         return outcome
 
 

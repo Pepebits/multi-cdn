@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from .i18n import tr, trn
 from .secrets_store import SecretStore, _hint
 
 PROVIDERS = {"cloudflare": "Cloudflare", "gcore": "Gcore"}
@@ -67,12 +68,12 @@ class CredentialStore:
 
     def add(self, provider: str, label: str, secret: str) -> int:
         if provider not in PROVIDERS:
-            raise ValueError("proveedor no soportado")
+            raise ValueError(tr("unsupported provider"))
         label, secret = label.strip(), secret.strip()
         if not label or not secret:
-            raise ValueError("indica un nombre y la credencial")
+            raise ValueError(tr("enter a name and the credential"))
         if self.conn.execute("SELECT 1 FROM provider_credentials WHERE provider=? AND label=?", (provider, label)).fetchone():
-            raise ValueError(f"ya existe una credencial de {PROVIDERS[provider]} llamada «{label}»")
+            raise ValueError(tr("a {provider} credential named «{label}» already exists", provider=PROVIDERS[provider], label=label))
         cur = self.conn.execute(
             "INSERT INTO provider_credentials (provider, label, hint, created_at) VALUES (?, ?, ?, ?)",
             (provider, label, _hint(secret), datetime.now(UTC).isoformat(timespec="seconds")),
@@ -101,7 +102,7 @@ class CredentialStore:
     def get(self, cred_id: int) -> Credential:
         row = self.conn.execute("SELECT * FROM provider_credentials WHERE id=?", (cred_id,)).fetchone()
         if not row:
-            raise ValueError("credencial no encontrada")
+            raise ValueError(tr("credential not found"))
         return self._row(row)
 
     def list(self, provider: str | None = None) -> list[Credential]:
@@ -117,7 +118,9 @@ class CredentialStore:
     def delete(self, cred_id: int) -> None:
         used = self.usage(cred_id)
         if used:
-            raise ValueError(f"la usan {len(used)} dominios: {', '.join(used)}. Asígnales otra antes de borrarla")
+            raise ValueError(trn("{n} domain uses it: {domains}. Assign it another one before deleting it",
+                                 "{n} domains use it: {domains}. Assign them another one before deleting it",
+                                 len(used), domains=", ".join(used)))
         self.conn.execute("DELETE FROM provider_credentials WHERE id=?", (cred_id,))
         self.secrets.delete(_key(cred_id))
 

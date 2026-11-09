@@ -15,16 +15,18 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
 
+from .i18n import N_, tr
+
 # Secretos sueltos: nombre -> (etiqueta, variable de entorno de respaldo, descripción).
 # Las credenciales de proveedores (Cloudflare, Gcore) van aparte: ver credentials.py.
 CREDENTIALS: dict[str, tuple[str, str, str]] = {
-    "telegram_token": ("Token del bot de Telegram", "TELEGRAM_BOT_TOKEN", "Bot creado con @BotFather."),
-    "telegram_chat_id": ("Chat ID de Telegram", "TELEGRAM_CHAT_ID", "Chat o grupo que recibe las alertas."),
-    "smtp_url": ("Servidor SMTP", "SMTP_URL", "Formato smtps://usuario:contraseña@host:465"),
-    "alert_email_to": ("Email de alertas", "ALERT_EMAIL_TO", "Destinatario de los avisos por correo."),
-    "football_data_token": ("Clave de football-data.org", "FOOTBALL_DATA_TOKEN", "Segunda fuente del calendario de LaLiga."),
-    "heartbeat_url": ("URL de aviso externo", "MULTICDN_HEARTBEAT_URL",
-                      "URL de ping de healthchecks.io (o compatible). Configura allí periodo 5 min y margen 10 min."),
+    "telegram_token": (N_("Telegram bot token"), "TELEGRAM_BOT_TOKEN", N_("Bot created with @BotFather.")),
+    "telegram_chat_id": (N_("Telegram chat ID"), "TELEGRAM_CHAT_ID", N_("Chat or group that receives the alerts.")),
+    "smtp_url": (N_("SMTP server"), "SMTP_URL", N_("Format smtps://user:password@host:465")),
+    "alert_email_to": (N_("Alert email"), "ALERT_EMAIL_TO", N_("Recipient of the email alerts.")),
+    "football_data_token": (N_("football-data.org key"), "FOOTBALL_DATA_TOKEN", N_("Second source for the LaLiga calendar.")),
+    "heartbeat_url": (N_("External heartbeat URL"), "MULTICDN_HEARTBEAT_URL",
+                      N_("Ping URL from healthchecks.io (or compatible). Set its period to 5 min and grace to 10 min there.")),
 }
 
 SCHEMA = """
@@ -79,7 +81,7 @@ class SecretStore:
     def set(self, name: str, value: str) -> None:
         value = value.strip()
         if not value:
-            raise ValueError("valor vacío")
+            raise ValueError(tr("empty value"))
         self.conn.execute(
             "INSERT INTO secrets (name, ciphertext, hint, updated_at) VALUES (?, ?, ?, ?)"
             " ON CONFLICT(name) DO UPDATE SET ciphertext=excluded.ciphertext, hint=excluded.hint, updated_at=excluded.updated_at",
@@ -108,6 +110,7 @@ class SecretStore:
 
     def status(self, name: str) -> SecretStatus:
         label, env, help_ = CREDENTIALS[name]
+        label, help_ = tr(label), tr(help_)
         row = self.conn.execute("SELECT hint, updated_at FROM secrets WHERE name = ?", (name,)).fetchone()
         if row:
             return SecretStatus(name, label, help_, True, "panel", row[0], datetime.fromisoformat(row[1]))

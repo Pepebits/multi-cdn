@@ -25,7 +25,7 @@ PROPAGATION_TIMEOUT = 120
 def _client() -> httpx.Client:
     token = os.environ.get("MULTICDN_ACME_CF_TOKEN")
     if not token:
-        sys.exit("acme_hook: falta MULTICDN_ACME_CF_TOKEN")
+        sys.exit("acme_hook: MULTICDN_ACME_CF_TOKEN is missing")
     return httpx.Client(base_url=API, headers={"Authorization": f"Bearer {token}"}, timeout=20)
 
 
@@ -33,7 +33,7 @@ def _check(r: httpx.Response) -> dict:
     body = r.json()
     if not body.get("success"):
         msgs = "; ".join(e.get("message", "") for e in body.get("errors", [])) or f"HTTP {r.status_code}"
-        sys.exit(f"acme_hook: Cloudflare rechazó la petición: {msgs}")
+        sys.exit(f"acme_hook: Cloudflare rejected the request: {msgs}")
     return body
 
 
@@ -42,7 +42,7 @@ def zone_for(c: httpx.Client, domain: str) -> dict:
     zones = _check(c.get("/zones", params={"per_page": 50}))["result"]
     matches = [z for z in zones if domain == z["name"] or domain.endswith("." + z["name"])]
     if not matches:
-        sys.exit(f"acme_hook: ninguna zona del token contiene {domain}")
+        sys.exit(f"acme_hook: no zone of the token contains {domain}")
     return max(matches, key=lambda z: len(z["name"]))
 
 
@@ -71,14 +71,14 @@ def auth(domain: str, value: str) -> None:
         zone = zone_for(c, domain)
         _check(c.post(f"/zones/{zone['id']}/dns_records",
                       json={"type": "TXT", "name": name, "content": value, "ttl": 60,
-                            "comment": "multi-cdn: reto ACME, se borra al terminar"}))
+                            "comment": "multi-cdn: ACME challenge, deleted when done"}))
     deadline = time.monotonic() + PROPAGATION_TIMEOUT
     while time.monotonic() < deadline:
         if _visible(name, value, zone.get("name_servers") or []):
             time.sleep(5)  # margen para el resto de servidores de la red de Cloudflare
             return
         time.sleep(5)
-    sys.exit(f"acme_hook: el TXT de {name} no se ve en los servidores de la zona tras {PROPAGATION_TIMEOUT} s")
+    sys.exit(f"acme_hook: the TXT of {name} is not visible on the zone's nameservers after {PROPAGATION_TIMEOUT} s")
 
 
 def cleanup(domain: str, value: str) -> None:
@@ -94,10 +94,10 @@ def cleanup(domain: str, value: str) -> None:
 
 def main(argv: list[str]) -> int:
     if len(argv) != 2 or argv[1] not in ("auth", "cleanup"):
-        sys.exit("uso: python -m app.acme_hook auth|cleanup")
+        sys.exit("usage: python -m app.acme_hook auth|cleanup")
     domain, value = os.environ.get("CERTBOT_DOMAIN", ""), os.environ.get("CERTBOT_VALIDATION", "")
     if not domain or not value:
-        sys.exit("acme_hook: faltan CERTBOT_DOMAIN o CERTBOT_VALIDATION (lo ejecuta certbot)")
+        sys.exit("acme_hook: CERTBOT_DOMAIN or CERTBOT_VALIDATION is missing (certbot runs it)")
     (auth if argv[1] == "auth" else cleanup)(domain, value)
     return 0
 

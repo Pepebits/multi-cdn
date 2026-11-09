@@ -54,5 +54,5 @@ def test_cleanup_deletes_only_its_own_value(monkeypatch):
 
 def test_main_requires_certbot_environment(monkeypatch):
     monkeypatch.delenv("CERTBOT_DOMAIN", raising=False)
-    with pytest.raises(SystemExit, match="lo ejecuta certbot"):
+    with pytest.raises(SystemExit, match="certbot runs it"):
         acme_hook.main(["x", "auth"])

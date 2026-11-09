@@ -8,26 +8,28 @@ from urllib.parse import unquote, urlparse
 
 import httpx
 
+from .i18n import tr
+
 
 async def verify_telegram(token: str, chat_id: str | None) -> tuple[bool, str]:
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.get(f"https://api.telegram.org/bot{token}/getMe")
         if r.status_code != 200 or not r.json().get("ok"):
-            return False, "Telegram rechazó el token del bot"
+            return False, tr("Telegram rejected the bot token")
         bot = r.json()["result"]["username"]
         if not chat_id:
-            return True, f"Bot @{bot} válido; falta el chat ID"
+            return True, tr("Bot @{bot} is valid; the chat ID is missing", bot=bot)
         r = await client.post(f"https://api.telegram.org/bot{token}/sendMessage",
-                              json={"chat_id": chat_id, "text": "Multi-CDN: prueba de notificación ✅"})
+                              json={"chat_id": chat_id, "text": tr("Multi-CDN: test notification ✅")})
     if r.status_code == 200 and r.json().get("ok"):
-        return True, f"Mensaje de prueba enviado por @{bot}"
-    return False, f"El bot @{bot} no pudo escribir en el chat {chat_id}"
+        return True, tr("Test message sent by @{bot}", bot=bot)
+    return False, tr("Bot @{bot} could not write to chat {chat}", bot=bot, chat=chat_id)
 
 
 def _smtp_check(url: str) -> tuple[bool, str]:
     u = urlparse(url)
     if u.scheme not in ("smtp", "smtps") or not u.hostname:
-        return False, "Usa smtp://… o smtps://usuario:contraseña@host:puerto"
+        return False, tr("Use smtp://… or smtps://user:password@host:port")
     port = u.port or (465 if u.scheme == "smtps" else 587)
     cls = smtplib.SMTP_SSL if u.scheme == "smtps" else smtplib.SMTP
     with cls(u.hostname, port, timeout=15) as s:
@@ -35,7 +37,7 @@ def _smtp_check(url: str) -> tuple[bool, str]:
             s.starttls()
         if u.username:
             s.login(unquote(u.username), unquote(u.password or ""))
-    return True, f"Conexión y autenticación correctas con {u.hostname}:{port}"
+    return True, tr("Connection and authentication OK with {host}:{port}", host=u.hostname, port=port)
 
 
 async def verify_smtp(url: str) -> tuple[bool, str]:

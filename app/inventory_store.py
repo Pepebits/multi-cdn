@@ -12,6 +12,7 @@ import re
 import yaml
 
 from .config import Domain, Hostname, Inventory, Server, normalize_private_address
+from .i18n import tr, trn
 from .secrets_store import SecretStore
 
 SCHEMA = """
@@ -44,7 +45,7 @@ def normalize_hostname(value: str) -> str:
     name = value.strip().lower().rstrip(".")
     labels = name.split(".")
     if len(labels) < 2 or not all(_LABEL.match(label) for label in labels):
-        raise ValueError(f"nombre no válido: {value!r}")
+        raise ValueError(tr("invalid name: {value}", value=repr(value)))
     return name
 
 
@@ -101,7 +102,7 @@ class InventoryStore:
     # ---------- servidores ----------
     def upsert_server(self, server_id: str, origin_ipv4: str | None, private_address: str | None) -> None:
         if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,31}", server_id):
-            raise ValueError("identificador de servidor no válido (minúsculas, números y guiones)")
+            raise ValueError(tr("invalid server identifier (lowercase letters, numbers and hyphens)"))
         if origin_ipv4:
             ipaddress.IPv4Address(origin_ipv4.strip())
         private_address = normalize_private_address(private_address)  # valida antes de guardar nada
@@ -117,11 +118,11 @@ class InventoryStore:
     def rename_server(self, old: str, new: str) -> None:
         new = new.strip().lower()
         if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,31}", new):
-            raise ValueError("identificador de servidor no válido (minúsculas, números y guiones)")
+            raise ValueError(tr("invalid server identifier (lowercase letters, numbers and hyphens)"))
         if new == old:
             return
         if self.conn.execute("SELECT 1 FROM servers WHERE id = ?", (new,)).fetchone():
-            raise ValueError(f"ya existe un servidor llamado {new}")
+            raise ValueError(tr("a server named {server} already exists", server=new))
         ip = self.secrets.get(origin_key(old))
         with self.conn:
             self.conn.execute("UPDATE servers SET id = ? WHERE id = ?", (new, old))
@@ -133,7 +134,8 @@ class InventoryStore:
     def delete_server(self, server_id: str) -> None:
         used = self.conn.execute("SELECT COUNT(*) FROM hostnames WHERE server = ?", (server_id,)).fetchone()[0]
         if used:
-            raise ValueError(f"el servidor {server_id} tiene {used} hostnames asignados")
+            raise ValueError(trn("the server {server} has {n} hostname assigned", "the server {server} has {n} hostnames assigned",
+                                 used, server=server_id))
         self.conn.execute("DELETE FROM servers WHERE id = ?", (server_id,))
         self.secrets.delete(origin_key(server_id))
         self.conn.commit()
@@ -173,9 +175,9 @@ class InventoryStore:
     ) -> None:
         hostname = normalize_hostname(hostname)
         if hostname != domain and not hostname.endswith("." + domain):
-            raise ValueError(f"{hostname} no pertenece a {domain}")
+            raise ValueError(tr("{host} does not belong to {domain}", host=hostname, domain=domain))
         if not self.conn.execute("SELECT 1 FROM servers WHERE id = ?", (server,)).fetchone():
-            raise ValueError(f"servidor desconocido: {server}")
+            raise ValueError(tr("unknown server: {server}", server=server))
         if gcore_target:
             gcore_target = normalize_hostname(gcore_target)
         self.conn.execute(

@@ -17,6 +17,8 @@ from pathlib import Path
 
 from cryptography import x509
 
+from .i18n import tn, tr
+
 CERTBOT = Path(sys.executable).parent / "certbot"
 
 
@@ -50,7 +52,7 @@ async def issue(cert_name: str, hostnames: list[str], cloudflare_token: str, log
     """Emite (o renueva si hace falta) un certificado que cubre `hostnames`."""
     existing = read_cert(cert_name)
     if existing and sorted(hostnames) == existing.names and (existing.not_after - datetime.now(UTC)).days > 30:
-        log(f"Certificado vigente hasta {existing.not_after:%d/%m/%Y}: se reutiliza")
+        log(tr("Certificate valid until {date}: reused", date=f"{existing.not_after:%d/%m/%Y}"))
         return existing
     base = _base_dir()
     for sub in ("config", "work", "logs"):
@@ -72,15 +74,15 @@ async def issue(cert_name: str, hostnames: list[str], cloudflare_token: str, log
     # El token va a los hooks por el entorno de este proceso: nunca a disco.
     env = os.environ | {"MULTICDN_ACME_CF_TOKEN": cloudflare_token,
                         "PYTHONPATH": str(Path(__file__).resolve().parent.parent)}
-    log(f"Solicitando certificado para {', '.join(hostnames)} (DNS-01 en Cloudflare, ~1 min)")
+    log(tr("Requesting a certificate for {hosts} (DNS-01 on Cloudflare, ~1 min)", hosts=", ".join(hostnames)))
     proc = await asyncio.create_subprocess_exec(*args, env=env, stdout=asyncio.subprocess.PIPE,
                                                 stderr=asyncio.subprocess.STDOUT)
     out, _ = await proc.communicate()
     if proc.returncode != 0:
         tail = "\n".join(out.decode(errors="replace").strip().splitlines()[-6:])
-        raise RuntimeError(f"certbot falló:\n{tail}")
+        raise RuntimeError(tn("certbot failed:\n{output}", output=tail))
     cert = read_cert(cert_name)
     if cert is None:
-        raise RuntimeError("certbot terminó pero no se encuentra el certificado")
-    log(f"Certificado emitido, válido hasta {cert.not_after:%d/%m/%Y}")
+        raise RuntimeError(tn("certbot finished but the certificate cannot be found"))
+    log(tr("Certificate issued, valid until {date}", date=f"{cert.not_after:%d/%m/%Y}"))
     return cert
