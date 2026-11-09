@@ -1,0 +1,29 @@
+# docker compose up -d --build
+# El panel queda en 127.0.0.1:8765 del VPS, sin publicar en Internet. Acceso por túnel SSH
+# (ssh -N -L 8765:127.0.0.1:8765 <usuario>@<IP>) o Tailscale (sudo tailscale serve --bg 8765).
+services:
+  panel:
+    # Imagen publicada; `docker compose up -d --build` la construye desde este repo en su lugar.
+    image: ghcr.io/pepebits/multi-cdn:latest
+    build: .
+    container_name: multicdn-panel
+    restart: unless-stopped
+    # Configuración y clave maestra: .env en esta carpeta. Para guardarlas en otro sitio, define
+    # MULTICDN_ENV_FILE (en el entorno o en este mismo .env) con la ruta que prefieras.
+    env_file:
+      - path: ${MULTICDN_ENV_FILE:-.env}
+    ports:
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - ./data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Notificaciones{% endblock %}
+{% block crumb %}{{ m.crumbs('Notificaciones', [('Ajustes', '/ajustes/cuentas')]) }}{% endblock %}
+{% block heading %}Ajustes{% endblock %}
+
+{% macro field(f, type='password') -%}
+<div class="field">
+  <label for="v-{{ f.name }}">{{ f.label }}</label>
+  <div class="field__status">
+    {% if f.configured %}
+      <span class="pill pill--free">Configurado</span>
+      <span class="mono">{{ f.hint }}</span>
+      <span class="muted">{% if f.source == 'entorno' %}desde variable de entorno{% else %}guardado {{ f.updated_at|dt }}{% endif %}</span>
+      {% if f.source == 'panel' %}
+      <button class="btn btn--danger btn--sm" type="submit" formaction="/ajustes/notificaciones/{{ f.name }}/eliminar" formnovalidate>Eliminar<span class="visually-hidden"> {{ f.label }}</span></button>
+      {% endif %}
+    {% else %}
+      <span class="pill pill--nodata">Sin configurar</span>
+    {% endif %}
+  </div>
+  <input id="v-{{ f.name }}" type="{{ type }}" name="{{ f.name }}" autocomplete="off" spellcheck="false"
+         placeholder="{{ 'Escribe para reemplazar' if f.configured else '' }}" aria-describedby="h-{{ f.name }}">
+  <p id="h-{{ f.name }}" class="help">{{ f.help }}{% if f.configured %} Déjalo vacío para conservar el actual.{% endif %}</p>
+</div>
+{%- endmacro %}
+
+{% block content %}
+{{ m.settings_tabs(tab) }}
+
+{% for canal, title, a, b in [('telegram', 'Telegram', fields.telegram_token, fields.telegram_chat_id), ('email', 'Email', fields.smtp_url, fields.alert_email_to)] %}
+<section class="card" aria-labelledby="canal-{{ canal }}">
+  <div class="card__head"><h2 id="canal-{{ canal }}">{{ title }}</h2></div>
+  <form method="post" action="/ajustes/notificaciones/canal/{{ canal }}">{{ csrf_field() }}
+    <div class="card__body form-grid form-grid--2">
+      {{ field(a) }}
+      {{ field(b, 'text') }}
+    </div>
+    <div class="card__foot actions-end">
+      <button class="btn btn--ok" type="submit" formaction="/ajustes/notificaciones/probar/{{ canal }}" formnovalidate>{{ 'Enviar mensaje de prueba' if canal == 'telegram' else 'Probar conexión SMTP' }}</button>
+      <button class="btn btn--primary" type="submit">Guardar {{ title }}</button>
+    </div>
+  </form>
+</section>
+{% endfor %}
+
+<section class="card" aria-labelledby="latido">
+  <div class="card__head">
+    <h2 id="latido">Aviso si el panel deja de funcionar</h2>
+    {% if not fields.heartbeat_url.configured %}<span class="pill pill--nodata">Sin configurar</span>
+    {% elif beat and beat.result == 'ok' and beat.ok %}<span class="pill pill--free">Funcionando</span>
+    {% elif beat %}<span class="pill pill--blocked">Revisar</span>
+    {% else %}<span class="pill pill--neutral">Pendiente</span>{% endif %}
+  </div>
+  <form method="post" action="/ajustes/notificaciones/latido">{{ csrf_field() }}
+    <div class="card__body stack-gap">
+      <p style="margin:0">Cada 5 min el panel avisa a un servicio externo de que sigue funcionando. Si deja de hacerlo (panel colgado, VPS caído) o alguna de sus tareas se para, ese servicio te avisa por email o Telegram. Crea un chequeo en healthchecks.io con <strong>periodo 5 min y margen 10 min</strong> y pega aquí su URL de ping.</p>
+      {{ field(fields.heartbeat_url, 'password') }}
+      {% if beat %}<p class="help" style="margin:0">Último aviso: {{ beat.at|dt }} · {{ 'en orden' if beat.ok else 'fallo comunicado' }} · {{ 'enviado' if beat.result == 'ok' else 'no enviado (' ~ beat.result ~ ')' }} · {{ beat.detail }}</p>
+      {% else %}<p class="help" style="margin:0">Ahora mismo: {{ 'en orden' if beat_health[0] else 'con fallos' }} · {{ beat_health[1]|join('; ') }}</p>{% endif %}
+    </div>
+    <div class="card__foot actions-end">
+      {% if fields.heartbeat_url.configured %}<button class="btn btn--ok" type="submit" formaction="/ajustes/notificaciones/latido/probar" formnovalidate>Avisar ahora</button>{% endif %}
+      <button class="btn btn--primary" type="submit">Guardar y avisar</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

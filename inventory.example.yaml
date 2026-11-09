@@ -1,0 +1,31 @@
+# Inventario de ejemplo. Copia a inventory.yaml (ignorado por git) y adapta.
+# Usa solo dominios example.* e IPs de documentación en este fichero.
+
+servers:
+  vps-1:
+    # Se resuelve desde el entorno; nunca escribas la IP aquí.
+    origin_ipv4: ${ORIGIN_VPS1_IPV4}
+    # Opcional: dirección en tu red privada (Tailscale, WireGuard…), si el panel corre en otro servidor.
+    private_address: vps-1.example-tailnet.ts.net
+
+domains:
+  example.com:
+    zone_id: "00000000000000000000000000000000"
+    policy: preventive      # preventive | reactive | manual
+    priority: critical      # critical | medium | low
+    hostnames:
+      - name: example.com
+        server: vps-1
+        backups: [gcore]
+        gcore_target: null  # p. ej. example-com.a.gcdn.co cuando exista el recurso
+      - name: www.example.com
+        server: vps-1
+        backups: [gcore]
+
+  example.net:
+    policy: reactive
+    priority: low
+    hostnames:
+      - name: example.net
+        server: vps-1
+        backups: [gcore]

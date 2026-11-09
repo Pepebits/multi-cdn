@@ -1,0 +1,18 @@
+{% extends "auth_base.html" %}
+{% block title %}Código de verificación{% endblock %}
+{% block heading %}Código de verificación{% endblock %}
+{% block content %}
+<p style="margin:0">Introduce el código de 6 dígitos de tu app de autenticación para <strong>{{ username }}</strong>.</p>
+<form method="post" action="/login/codigo" class="stack-gap">
+  <input type="hidden" name="next" value="{{ next }}">
+  <div>
+    <label for="code">Código</label>
+    <input id="code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}|[a-z0-9]{5}-[a-z0-9]{5}" required autofocus aria-describedby="code-help">
+    <p id="code-help" class="help">¿Sin el móvil? Usa uno de tus códigos de recuperación (formato <span class="mono">xxxxx-xxxxx</span>).</p>
+  </div>
+  <div class="actions-end">
+    <a class="btn" href="/login">Volver</a>
+    <button class="btn btn--primary" type="submit">Entrar</button>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Mi cuenta{% endblock %}
+{% block crumb %}{{ m.crumbs('Mi cuenta', [('Ajustes', '/ajustes/cuentas')]) }}{% endblock %}
+{% block heading %}Ajustes{% endblock %}
+
+{% block content %}
+{{ m.settings_tabs(tab) }}
+
+<section class="card" aria-labelledby="sesiones">
+  <div class="card__head"><h2 id="sesiones">Sesiones activas</h2><span class="mono muted">caducan tras 30 min sin uso o 12 h</span></div>
+  <ul class="checks" style="border:0">
+    {% for x in sessions %}
+    <li>
+      <span><strong>{{ 'Esta sesión' if x.id_hash == current_hash else 'Otra sesión' }}</strong>
+        <span class="help" style="display:block;margin:2px 0 0">Desde {{ x.ip or '—' }} · iniciada {{ x.created_at|dt }} · último uso {{ x.last_seen|dt }}</span>
+        <span class="help mono" style="display:block;margin:0">{{ (x.user_agent or '')[:90] }}</span></span>
+      <form method="post" action="/ajustes/cuenta/sesiones/{{ x.id_hash }}/cerrar">{{ csrf_field() }}
+        <button class="btn btn--danger btn--sm" type="submit">Cerrar<span class="visually-hidden"> {{ 'esta sesión' if x.id_hash == current_hash else 'la sesión desde ' ~ (x.ip or 'origen desconocido') }}</span></button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section class="card" aria-labelledby="password">
+  <div class="card__head"><h2 id="password">Cambiar contraseña</h2></div>
+  <form method="post" action="/ajustes/cuenta/password">{{ csrf_field() }}
+    <div class="card__body form-grid">
+      <div><label for="current">Contraseña actual</label><input id="current" type="password" name="current" autocomplete="current-password" required></div>
+      <div><label for="code-pw">Código TOTP</label><input id="code-pw" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" required></div>
+      <div><label for="new">Nueva contraseña</label><input id="new" type="password" name="new" autocomplete="new-password" minlength="12" required aria-describedby="new-help"><p id="new-help" class="help">Mínimo 12 caracteres. Se cerrarán tus otras sesiones.</p></div>
+      <div><label for="new2">Repite la nueva</label><input id="new2" type="password" name="new2" autocomplete="new-password" minlength="12" required></div>
+    </div>
+    <div class="card__foot actions-end"><button class="btn btn--primary" type="submit">Cambiar contraseña</button></div>
+  </form>
+</section>
+
+<section class="card" aria-labelledby="recuperacion">
+  <div class="card__head"><h2 id="recuperacion">Códigos de recuperación</h2><span class="mono muted">quedan {{ recovery_left }}</span></div>
+  <form class="card__body form-inline" method="post" action="/ajustes/cuenta/recuperacion">{{ csrf_field() }}
+    <div><label for="code-rc">Código TOTP</label><input id="code-rc" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" required></div>
+    <div class="form-actions"><button class="btn" type="submit">Generar códigos nuevos</button></div>
+  </form>
+  <p class="card__body help" style="margin:0;padding-top:0">Los anteriores dejan de valer. Si pierdes el móvil y los códigos, se recupera desde el servidor: <span class="mono">uv run python -m app.cli reiniciar-totp {{ user.username }}</span></p>
+</section>
+{% endblock %}

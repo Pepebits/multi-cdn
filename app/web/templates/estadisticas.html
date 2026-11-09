@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}Estadísticas{% endblock %}
+{% block crumb %}{{ m.crumbs('Estadísticas') }}{% endblock %}
+{% block heading %}Estadísticas{% endblock %}
+
+{% macro data_table(caption) -%}
+<details class="viz__data">
+  <summary>Ver datos<span class="visually-hidden">: {{ caption }}</span></summary>
+  <div class="table-wrap">{{ caller() }}</div>
+</details>
+{%- endmacro %}
+
+{% block content %}
+<nav class="periods" aria-label="Periodo">
+  <span class="periods__label">Periodo</span>
+  {% for p in periods %}<a class="periods__opt" href="/estadisticas?dias={{ p }}" {% if p == days %}aria-current="page"{% endif %}>{{ p }} días</a>{% endfor %}
+  <span class="mono muted">{{ start.strftime('%d/%m %H:%M') }} – {{ end.strftime('%d/%m %H:%M') }} UTC</span>
+</nav>
+
+<section aria-labelledby="cifras">
+  <h2 id="cifras" class="visually-hidden">Cifras del periodo</h2>
+  <div class="stats">
+    <div class="card stat">
+      <p class="stat__label">Bloqueo masivo</p>
+      <p class="stat__value">{{ '%.0f'|format(kpi.mass_hours) }} h</p>
+      <p class="stat__note">Con 50 o más IPs de Cloudflare bloqueadas en 3 operadoras o más</p>
+    </div>
+    <div class="card stat">
+      <p class="stat__label">Episodios de bloqueo</p>
+      <p class="stat__value">{{ kpi.episodes }}</p>
+      <p class="stat__note">IPs de Cloudflare de tus dominios bloqueadas en alguna operadora</p>
+    </div>
+    <div class="card stat">
+      <p class="stat__label">Tiempo en Gcore</p>
+      <p class="stat__value">{{ kpi.gcore_time }}</p>
+      <p class="stat__note">{{ kpi.switches.auto + kpi.switches.manual }} cambios reales: {{ kpi.switches.auto }} automáticos, {{ kpi.switches.manual }} manuales</p>
+    </div>
+    <div class="card stat">
+      <p class="stat__label">Tráfico de Gcore</p>
+      <p class="stat__value">{{ kpi.traffic }}</p>
+      <p class="stat__note">Servido + traído del origen, en el periodo</p>
+    </div>
+  </div>
+</section>
+
+<section class="card viz" aria-labelledby="g-masivo">
+  <div class="card__head">
+    <h2 id="g-masivo">IPs de Cloudflare bloqueadas</h2>
+    <span class="viz__key"><span class="key key--band" aria-hidden="true"></span>Partido</span>
+  </div>
+  <div class="card__body stack-gap">
+    <p class="help" style="margin:0">Máximo por tramo de IPs bloqueadas a la vez en 3 operadoras o más. Las franjas grises son partidos de LaLiga y LaLiga Hypermotion{% if match_note %} ({{ match_note }}){% endif %}.</p>
+    {% if mass %}
+    <div class="viz__frame">
+      <svg class="chart" viewBox="0 0 {{ mass.width }} {{ mass.height }}" role="img" aria-labelledby="g-masivo" aria-describedby="g-masivo-desc" data-chart>
+        <desc id="g-masivo-desc">Serie de {{ mass.hits|length }} tramos; máximo {{ mass.peak.label if mass.peak else 0 }} IPs. Los valores están en «Ver datos».</desc>
+        {% for b in mass.bands %}<rect class="c-band" x="{{ b.x }}" y="{{ 14 }}" width="{{ b.w }}" height="{{ mass.base - 14 }}"/>{% endfor %}
+        {% for t in mass.yticks %}<line class="c-grid" x1="{{ mass.left }}" x2="{{ mass.right }}" y1="{{ t.y }}" y2="{{ t.y }}"/><text class="c-tick" x="{{ mass.left - 8 }}" y="{{ t.y + 4 }}" text-anchor="end">{{ t.label }}</text>{% endfor %}
+        {% for t in mass.xticks %}<text class="c-tick" x="{{ t.x }}" y="{{ mass.height - 8 }}" text-anchor="middle">{{ t.label }}</text>{% endfor %}
+        <path class="c-area c-area--blocked" d="{{ mass.area }}"/>
+        <path class="c-line c-line--blocked" d="{{ mass.line }}"/>
+        {% if mass.peak %}<circle class="c-dot c-dot--blocked" cx="{{ mass.peak.x }}" cy="{{ mass.peak.y }}" r="4"/><text class="c-label" x="{{ mass.peak.x }}" y="{{ mass.peak.y - 10 }}" text-anchor="middle">{{ mass.peak.label }}</text>{% endif %}
+        <line class="c-cross" x1="0" x2="0" y1="14" y2="{{ mass.base }}"/>
+        {% for h in mass.hits %}<rect class="c-hit" x="{{ h.x }}" y="14" width="{{ h.w }}" height="{{ mass.base - 14 }}" data-tip="{{ h.tip }}" data-cx="{{ h.cx }}"/>{% endfor %}
+      </svg>
+    </div>
+    {% call data_table('IPs de Cloudflare bloqueadas') %}
+      <table class="data"><thead><tr><th scope="col">Día (UTC)</th><th scope="col" class="num">Máximo de IPs bloqueadas</th></tr></thead>
+      <tbody>{% for d, v in daily_mass %}<tr><td>{{ d.strftime('%d/%m/%Y') }}</td><td class="num">{{ v }}</td></tr>{% endfor %}</tbody></table>
+    {% endcall %}
+    {% else %}
+    <p class="empty">{{ feed_note or 'Sin datos del feed en este periodo.' }}</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card viz" aria-labelledby="g-dominios">
+  <div class="card__head">
+    <h2 id="g-dominios">Por dónde se ha servido cada dominio</h2>
+    <span class="viz__legend">
+      <span class="viz__key"><span class="key key--cloudflare" aria-hidden="true"></span>Cloudflare</span>
+      <span class="viz__key"><span class="key key--gcore" aria-hidden="true"></span>Gcore</span>
+      <span class="viz__key"><span class="key key--blocked" aria-hidden="true"></span>Sus IPs bloqueadas</span>
+    </span>
+  </div>
+  <div class="card__body stack-gap">
+    <p class="help" style="margin:0">Barra superior: CDN que servía los hostnames que conmutan (según los cambios reales del historial). Barra inferior: cuándo estaban bloqueadas sus IPs de Cloudflare en alguna operadora.</p>
+    {% if timeline %}
+    <div class="viz__frame">
+      <svg class="chart" viewBox="0 0 {{ timeline.width }} {{ timeline.height }}" role="img" aria-labelledby="g-dominios" aria-describedby="g-dominios-desc" data-chart>
+        <desc id="g-dominios-desc">Una fila por dominio. El detalle está en «Ver datos» y en la tabla de episodios.</desc>
+        {% for t in timeline.xticks %}<line class="c-grid" x1="{{ t.x }}" x2="{{ t.x }}" y1="14" y2="{{ timeline.base }}"/><text class="c-tick" x="{{ t.x }}" y="{{ timeline.height - 8 }}" text-anchor="middle">{{ t.label }}</text>{% endfor %}
+        {% for r in timeline.rows %}
+          <text class="c-row" x="{{ timeline.left }}" y="{{ r.label_y }}">{{ r.name }}</text>
+          {% for g in r.segments %}<rect class="c-seg c-seg--{{ g.kind }}" x="{{ g.x }}" y="{{ r.cdn_y }}" width="{{ g.w }}" height="14" rx="2" data-tip="{{ r.name }} · {{ g.tip }}" tabindex="0" aria-label="{{ r.name }}: {{ g.tip }}"/>{% endfor %}
+          <rect class="c-track" x="{{ timeline.left }}" y="{{ r.block_y }}" width="{{ timeline.right - timeline.left }}" height="8" rx="2"/>
+          {% for b in r.blocks %}<rect class="c-seg c-seg--blocked" x="{{ b.x }}" y="{{ r.block_y }}" width="{{ b.w }}" height="8" rx="2" data-tip="{{ r.name }} · {{ b.tip }}" tabindex="0" aria-label="{{ r.name }}: {{ b.tip }}"/>{% endfor %}
+        {% endfor %}
+      </svg>
+    </div>
+    {% call data_table('Por dónde se ha servido cada dominio') %}
+      <table class="data"><thead><tr><th scope="col">Dominio</th><th scope="col">Tramo</th></tr></thead>
+      <tbody>{% for r in rows %}{% for g in r.segments %}<tr><td>{{ r.name }}</td><td>{{ g[3] }}</td></tr>{% endfor %}{% endfor %}</tbody></table>
+    {% endcall %}
+    {% if rows|selectattr('has_ips', 'false')|list %}<p class="help" style="margin:0">Sin IPs de Cloudflare conocidas (no se ha visto nunca en Cloudflare): {{ rows|rejectattr('has_ips')|map(attribute='name')|join(', ') }}.</p>{% endif %}
+    {% else %}
+    <p class="empty">No hay dominios en el inventario.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card viz" aria-labelledby="g-trafico">
+  <div class="card__head">
+    <h2 id="g-trafico">Tráfico de Gcore por día</h2>
+    {% if tseries|length > 1 %}
+    <span class="viz__legend">{% for t in tseries %}<span class="viz__key"><span class="key key--s{{ t.slot }}" aria-hidden="true"></span>{{ t.name }}</span>{% endfor %}</span>
+    {% endif %}
+  </div>
+  <div class="card__body stack-gap">
+    <p class="help" style="margin:0">Total por día (servido a usuarios + traído del origen){% if tseries|length == 1 %} de {{ tseries[0].name }}{% endif %}.{% if traffic_error %} No se pudo leer: {{ traffic_error }}.{% endif %}</p>
+    {% if traffic %}
+    <div class="viz__frame">
+      <svg class="chart" viewBox="0 0 {{ traffic.width }} {{ traffic.height }}" role="img" aria-labelledby="g-trafico" data-chart>
+        {% for t in traffic.yticks %}<line class="c-grid" x1="{{ traffic.left }}" x2="{{ traffic.right }}" y1="{{ t.y }}" y2="{{ t.y }}"/><text class="c-tick" x="{{ traffic.left - 8 }}" y="{{ t.y + 4 }}" text-anchor="end">{{ t.label }}</text>{% endfor %}
+        {% for t in traffic.xticks %}<text class="c-tick" x="{{ t.x }}" y="{{ traffic.height - 8 }}" text-anchor="middle">{{ t.label }}</text>{% endfor %}
+        {% for b in traffic.bars %}
+          {% if b.path %}<path class="c-bar c-s{{ b.slot }}" d="{{ b.path }}" data-tip="{{ b.tip }}" tabindex="0" aria-label="{{ b.tip }}"/>
+          {% else %}<rect class="c-bar c-s{{ b.slot }}" x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" data-tip="{{ b.tip }}" tabindex="0" aria-label="{{ b.tip }}"/>{% endif %}
+        {% endfor %}
+      </svg>
+    </div>
+    {% call data_table('Tráfico de Gcore por día') %}
+      <table class="data"><thead><tr><th scope="col">Día</th>{% for t in tseries %}<th scope="col" class="num">{{ t.name }}</th>{% endfor %}</tr></thead>
+      <tbody>{% for d in day_list %}{% set i = loop.index0 %}<tr><td>{{ d.strftime('%d/%m/%Y') }}</td>{% for t in tseries %}<td class="num">{{ t['values'][i]|bytes }}</td>{% endfor %}</tr>{% endfor %}</tbody></table>
+    {% endcall %}
+    {% else %}
+    <p class="empty">Sin tráfico de Gcore en este periodo{% if not traffic_error %} o sin cuenta de Gcore{% endif %}.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card" aria-labelledby="episodios">
+  <div class="card__head"><h2 id="episodios">Episodios de bloqueo</h2><span class="mono muted">{{ episodes|length }}</span></div>
+  {% if episodes %}
+  <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th scope="col">Dominio</th><th scope="col">Inicio (UTC)</th><th scope="col">Duración</th><th scope="col">Operadoras</th><th scope="col" class="num">En Gcore</th><th scope="col">Partido</th></tr></thead>
+      <tbody>
+      {% for e in episodes %}
+        <tr>
+          <td>{{ e.domain }}</td>
+          <td class="num-plain">{{ e.start.strftime('%d/%m %H:%M') }}</td>
+          <td>{{ e.duration }}{% if not e.end %} <span class="pill pill--blocked">En curso</span>{% endif %}</td>
+          <td><span title="{{ e.isp_names }}">{{ e.isps }} de 5</span></td>
+          <td class="num">{{ e.gcore_pct }} %</td>
+          <td>{{ e.match or '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="card__body empty" style="margin:0">Sin episodios en este periodo.</p>
+  {% endif %}
+</section>
+
+<div class="chart-tip" role="status" hidden></div>
+{% endblock %}

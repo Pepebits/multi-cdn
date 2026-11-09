@@ -1,0 +1,33 @@
+# IP real del cliente detrás de Cloudflare y Gcore.
+#
+# 1. Opciones globales (al principio del Caddyfile; si ya hay un bloque { } global, añade
+#    solo el bloque servers):
+#
+#    {
+#        servers {
+#            import /etc/caddy/cdn-ranges.caddy
+#            client_ip_headers X-Forwarded-For
+#            trusted_proxies_strict
+#        }
+#    }
+#
+#    cdn-ranges.caddy lo genera y actualiza multicdn-firewall.sh con los rangos de los CDN.
+#    Los dos CDN añaden la IP del cliente al final de X-Forwarded-For; en modo estricto Caddy
+#    lee la cabecera de derecha a izquierda y se queda con la primera IP que no es de un CDN,
+#    así que un cliente no puede falsificarla. CF-Connecting-IP no hace falta (y por Gcore
+#    no llega).
+#
+# 2. En cada reverse_proxy, pasa esa IP a la aplicación:
+#
+#    reverse_proxy localhost:8090 {
+#        import real_ip
+#    }
+#
+#    Sustituye también usos de {http.request.header.CF-Connecting-IP} por {client_ip}.
+
+(real_ip) {
+	header_up X-Forwarded-For {client_ip}
+	header_up X-Real-IP {client_ip}
+	# La cabecera secreta de los CDN (deploy/caddy/origin-auth.caddy) no llega a la aplicación.
+	header_up -X-Origin-Auth
+}

@@ -1,0 +1,23 @@
+{% extends "auth_base.html" %}
+{% block title %}Iniciar sesión{% endblock %}
+{% block heading %}Iniciar sesión{% endblock %}
+{% block content %}
+{% if not has_users %}
+<p style="margin:0">Todavía no hay ningún usuario. Créalo desde la terminal del servidor:</p>
+<pre class="diff" style="margin:0">uv run python -m app.cli crear-usuario &lt;tu-usuario&gt;</pre>
+<p class="help" style="margin:0">Por seguridad, el primer usuario no se puede crear desde el navegador.</p>
+{% else %}
+<form method="post" action="/login" class="stack-gap">
+  <input type="hidden" name="next" value="{{ next }}">
+  <div>
+    <label for="username">Usuario</label>
+    <input id="username" type="text" name="username" value="{{ username or '' }}" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
+  </div>
+  <div>
+    <label for="password">Contraseña</label>
+    <input id="password" type="password" name="password" autocomplete="current-password" required>
+  </div>
+  <div class="actions-end"><button class="btn btn--primary" type="submit">Continuar</button></div>
+</form>
+{% endif %}
+{% endblock %}

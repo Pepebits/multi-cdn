@@ -1,0 +1,11 @@
+[Unit]
+Description=Multi-CDN: actualiza cada 24 h (el panel pide más mientras sirve Gcore) los rangos de los CDN (firewall y Caddy)
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=24h
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

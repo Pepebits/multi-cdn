@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Operación{% endblock %}
+{% block crumb %}{{ m.crumbs('Operación', [('Ajustes', '/ajustes/cuentas')]) }}{% endblock %}
+{% block heading %}Ajustes{% endblock %}
+
+{% block content %}
+{{ m.settings_tabs(tab) }}
+
+<section class="card" aria-labelledby="modo">
+  <div class="card__head"><h2 id="modo">Modo de cambios DNS</h2></div>
+  <div class="card__body stack-gap">
+    <p style="margin:0">Ahora mismo: <strong>{{ 'Simulación' if dry_run else 'Real' }}</strong>.</p>
+    {% if dry_run_env %}<p style="margin:0">Para activar cambios reales define <span class="mono">MULTICDN_DRY_RUN=false</span> en el entorno del servidor. No se puede activar desde el panel a propósito. Un dominio sin credencial de Cloudflare asignada siempre se simula.</p>{% endif %}
+  </div>
+</section>
+
+<section class="card" aria-labelledby="automatico">
+  <div class="card__head"><h2 id="automatico">Cambio automático de CDN</h2><span class="pill {{ 'pill--free' if auto_on else 'pill--nodata' }}">{{ 'Activado' if auto_on else 'Desactivado' }}</span></div>
+  <div class="card__body stack-gap">
+    <p style="margin:0">Cada dominio con política <strong>reactiva</strong> pasa a Gcore cuando se bloquean sus IPs de Cloudflare. Con política <strong>preventiva</strong>, también ante un bloqueo masivo y desde 45 min (críticos) o 30 min (resto) antes de cada partido de LaLiga o LaLiga Hypermotion. Antes de cambiar comprueba que Gcore sirve cada hostname. Vuelve a Cloudflare tras 45 min sin bloqueos (dominios críticos) o 30 min (resto).</p>
+    <p class="help" style="margin:0">Mínimo 15 min entre cambios; con más de 4 cambios en 6 h se pausa ese dominio. Un cambio manual lo pausa 1 h. La política <strong>manual</strong> nunca cambia nada. Con el feed caído se puede pasar a Gcore por un partido, pero no se vuelve hasta que el feed confirme que no hay bloqueo. En modo simulación los cambios solo se registran.</p>
+    <form method="post" action="/ajustes/operacion/automatico" class="actions-end">{{ csrf_field() }}
+      <input type="hidden" name="enabled" value="{{ '0' if auto_on else '1' }}">
+      <button class="btn{{ '' if auto_on else ' btn--primary' }}" type="submit">{{ 'Desactivar para todos los dominios' if auto_on else 'Activar' }}</button>
+    </form>
+  </div>
+</section>
+
+<section class="card" aria-labelledby="calendario">
+  <div class="card__head"><h2 id="calendario">Calendario de partidos</h2>{% if calendar %}<span class="mono muted">{{ calendar.matches|length }} partidos · leído {{ calendar.fetched_at|hhmm }}</span>{% endif %}</div>
+  <div class="card__body stack-gap">
+    <ul class="checks">
+      {% for source, covers in [('ESPN', 'LaLiga y LaLiga Hypermotion · sin clave'), ('football-data.org', 'LaLiga · clave gratuita')] %}
+      {% set result = calendar.sources.get(source) if calendar else none %}
+      <li><span>{{ source }} <span class="muted">({{ covers }})</span>{% if result and result != 'ok' %}<br><span class="help">{{ result }}</span>{% endif %}</span>
+        <span class="pill {{ 'pill--free' if result == 'ok' else ('pill--blocked' if result else 'pill--nodata') }}">{{ 'Responde' if result == 'ok' else ('Falla' if result else ('Sin clave' if source == 'football-data.org' and not fd.configured else 'Pendiente')) }}</span></li>
+      {% endfor %}
+    </ul>
+    {% if calendar_error %}<p class="notice notice--error" style="margin:0">Sin calendario: {{ calendar_error }}</p>{% endif %}
+    <form class="form-inline" method="post" action="/ajustes/operacion/football-data">{{ csrf_field() }}
+      <div>
+        <label for="fd-token">Clave de football-data.org</label>
+        <input id="fd-token" type="password" name="token" autocomplete="off" spellcheck="false" required aria-describedby="fd-help"{% if fd.configured %} placeholder="Guardada · {{ fd.hint }}"{% endif %}>
+      </div>
+      <div class="form-actions"><button class="btn btn--primary" type="submit">{{ 'Reemplazar y probar' if fd.configured else 'Guardar y probar' }}</button></div>
+    </form>
+    {% if fd.configured and fd.source == 'panel' %}
+    <form method="post" action="/ajustes/operacion/football-data/eliminar" class="actions-end">{{ csrf_field() }}<button class="btn btn--danger btn--sm" type="submit">Eliminar clave</button></form>
+    {% endif %}
+    <p id="fd-help" class="help" style="margin:0">Se usan las dos fuentes a la vez: un partido cuenta si aparece en cualquiera. Con una sola respondiendo sigue habiendo calendario. Se lee cada 3 h.</p>
+  </div>
+</section>
+
+<section class="card" aria-labelledby="cuota">
+  <div class="card__head"><h2 id="cuota">Cuota de Gcore</h2></div>
+  <form class="card__body form-inline" method="post" action="/ajustes/operacion/cuota">{{ csrf_field() }}
+    <div>
+      <label for="gcore_quota_gb">Tráfico gratuito al mes (GB)</label>
+      <input id="gcore_quota_gb" type="number" name="gcore_quota_gb" value="{{ quota_gb }}" min="1" max="1000000" required aria-describedby="cuota-help">
+    </div>
+    <div class="form-actions"><button class="btn btn--primary" type="submit">Guardar cuota</button></div>
+  </form>
+  <p id="cuota-help" class="card__body help" style="margin:0;padding-top:0">Se compara con el tráfico total del mes de cada cuenta (servido a usuarios + traído del origen), leído cada hora. Avisa al pasar del 70 %, 90 % y 100 %, y cuando quedan 2 recursos CDN libres.</p>
+</section>
+
+<section class="card" aria-labelledby="cifrado">
+  <div class="card__head"><h2 id="cifrado">Cifrado de credenciales</h2></div>
+  <div class="card__body">
+    {% if key_on_disk %}
+    <p class="notice notice--warn" style="margin:0">La clave maestra está en <span class="mono">data/.secret_key</span>, junto a la base de datos. Para que una copia de la base de datos no sirva sin ella, define <span class="mono">MULTICDN_SECRET_KEY</span> en el entorno y guarda la clave fuera del VPS.</p>
+    {% else %}
+    <p class="notice notice--ok" style="margin:0">La clave maestra viene de <span class="mono">MULTICDN_SECRET_KEY</span>.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card" aria-labelledby="retencion">
+  <div class="card__head"><h2 id="retencion">Retención del historial</h2><span class="mono muted">{{ ev_stats.count }} eventos{% if ev_stats.oldest %} · desde {{ ev_stats.oldest|dt }}{% endif %}</span></div>
+  <form class="card__body form-inline" method="post" action="/ajustes/operacion/retencion">{{ csrf_field() }}
+    <div>
+      <label for="events_max_days">Conservar eventos (días)</label>
+      <input id="events_max_days" type="number" name="events_max_days" value="{{ ev_days }}" min="7" max="3650" required>
+    </div>
+    <div>
+      <label for="events_max_rows">Máximo de eventos</label>
+      <input id="events_max_rows" type="number" name="events_max_rows" value="{{ ev_rows }}" min="500" max="1000000" step="500" required>
+    </div>
+    <div class="form-actions"><button class="btn btn--primary" type="submit">Guardar retención</button></div>
+  </form>
+  <p class="card__body help" style="margin:0;padding-top:0">Se aplica lo que se cumpla antes. La limpieza se ejecuta al arrancar, cada 6 horas y al guardar. Los logs de certbot se limitan a 10 copias; los del servidor los gestiona systemd o Docker.</p>
+</section>
+
+<section class="card" aria-labelledby="exportar">
+  <div class="card__head"><h2 id="exportar">Copia del inventario</h2></div>
+  <div class="card__body"><a class="btn" href="/ajustes/inventario.yaml">Exportar inventario (YAML, sin secretos)</a></div>
+</section>
+{% endblock %}

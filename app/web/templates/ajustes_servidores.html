@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Servidores{% endblock %}
+{% block crumb %}{{ m.crumbs('Servidores', [('Ajustes', '/ajustes/cuentas')]) }}{% endblock %}
+{% block heading %}Ajustes{% endblock %}
+
+{% block content %}
+{{ m.settings_tabs(tab) }}
+
+<section class="card" aria-labelledby="servidores-titulo">
+  <div class="card__head"><h2 id="servidores-titulo">Servidores de origen</h2><span class="mono muted">{{ servers|length }} registrados</span></div>
+  <p class="card__body help" style="margin:0">La IP se guarda cifrada en la base de datos y no sale en la exportación YAML. Evita compartir capturas de esta página.</p>
+  {% for srv in servers %}
+  <form class="server-row" method="post" action="/ajustes/servidores/{{ srv.id }}/editar" aria-label="Servidor {{ srv.id }}">{{ csrf_field() }}
+    <div class="card__body form-grid">
+      <div>
+        <label for="id-{{ loop.index }}">Nombre</label>
+        <input id="id-{{ loop.index }}" type="text" name="new_id" value="{{ srv.id }}" required autocomplete="off" spellcheck="false">
+      </div>
+      <div>
+        <label for="ip-{{ loop.index }}">IP de origen (IPv4)</label>
+        <input id="ip-{{ loop.index }}" type="text" name="origin_ipv4" value="{{ srv.origin_ip or '' }}" autocomplete="off" spellcheck="false" inputmode="decimal">
+      </div>
+      <div>
+        <label for="pa-{{ loop.index }}">Dirección privada (opcional)</label>
+        <input id="pa-{{ loop.index }}" type="text" name="private_address" value="{{ srv.private_address or '' }}" placeholder="vps-1.tailnet.ts.net" autocomplete="off" spellcheck="false" aria-describedby="pa-help-{{ loop.index }}">
+      </div>
+    </div>
+    <p id="pa-help-{{ loop.index }}" class="card__body help field-note">Dirección privada: nombre o IP en tu red privada (Tailscale, WireGuard, NetBird o red local). Solo hace falta si el panel corre en otro servidor: para comprobar la salud del origen y recibir el estado de su firewall.</p>
+    <div class="card__foot actions-end">
+      <span class="help server-row__meta">{{ srv.hostnames }} hostname{{ 's' if srv.hostnames != 1 }} asignado{{ 's' if srv.hostnames != 1 }}</span>
+      {% if srv.hostnames == 0 %}
+      <button class="btn btn--danger" type="submit" formaction="/ajustes/servidores/{{ srv.id }}/eliminar" formnovalidate>Eliminar<span class="visually-hidden"> {{ srv.id }}</span></button>
+      {% endif %}
+      <button class="btn btn--primary" type="submit">Guardar<span class="visually-hidden"> {{ srv.id }}</span></button>
+    </div>
+  </form>
+  {% endfor %}
+</section>
+
+<section class="card" aria-labelledby="nuevo-servidor">
+  <div class="card__head"><h2 id="nuevo-servidor">Añadir servidor</h2></div>
+  <form class="card__body form-inline" method="post" action="/ajustes/servidores">{{ csrf_field() }}
+    <div>
+      <label for="server_id">Nombre</label>
+      <input id="server_id" type="text" name="server_id" required placeholder="vps-2" autocomplete="off" spellcheck="false">
+    </div>
+    <div>
+      <label for="origin_ipv4">IP de origen (IPv4)</label>
+      <input id="origin_ipv4" type="text" name="origin_ipv4" autocomplete="off" spellcheck="false" inputmode="decimal">
+    </div>
+    <div>
+      <label for="private_address">Dirección privada (opcional)</label>
+      <input id="private_address" type="text" name="private_address" placeholder="vps-2.tailnet.ts.net" autocomplete="off" spellcheck="false" aria-describedby="private-address-help">
+    </div>
+    <div class="form-actions"><button class="btn btn--primary" type="submit">Añadir servidor</button></div>
+    <p id="private-address-help" class="help field-note">Dirección privada: nombre o IP en tu red privada (Tailscale, WireGuard, NetBird o red local). Solo hace falta si el panel corre en otro servidor: para comprobar la salud del origen y recibir el estado de su firewall.</p>
+  </form>
+</section>
+
+<section class="card" aria-labelledby="firewall-titulo">
+  <div class="card__head">
+    <h2 id="firewall-titulo">Firewall del origen</h2>
+    {% if not fw %}<span class="pill pill--nodata">Sin instalar</span>
+    {% elif fw_problem %}<span class="pill pill--blocked">Revisar</span>
+    {% else %}<span class="pill pill--free">Al día</span>{% endif %}
+  </div>
+  <div class="card__body stack-gap">
+    {% if fw %}
+    <dl class="kv">
+      <div><dt>Última lista aplicada</dt><dd>{{ fw.last_ok|dt if fw.last_ok else '—' }}</dd></div>
+      <div><dt>Rangos de los CDN</dt><dd>{{ fw.ipv4 }} IPv4 · {{ fw.ipv6 }} IPv6 (última actualización: +{{ fw.added }} / −{{ fw.removed }})</dd></div>
+      <div><dt>Caddy (proxies de confianza)</dt><dd>{{ fw.caddy or '—' }}</dd></div>
+      <div><dt>Última comprobación</dt><dd>{{ fw.checked_at|dt if fw.checked_at else '—' }}</dd></div>
+    </dl>
+    {% if fw_problem %}<p class="notice notice--error" style="margin:0">{{ fw_problem }}</p>{% endif %}
+    {% if fw_changes %}
+    <details>
+      <summary>Cambios recientes en las listas</summary>
+      <div class="table-wrap"><table>
+        <thead><tr><th scope="col">Aplicada (UTC)</th><th scope="col" class="num">Entran</th><th scope="col" class="num">Salen</th></tr></thead>
+        <tbody>{% for ts, a, r in fw_changes %}<tr><td class="num-plain">{{ ts|dt }}</td><td class="num">{{ a }}</td><td class="num">{{ r }}</td></tr>{% endfor %}</tbody>
+      </table></div>
+    </details>
+    {% endif %}
+    <p class="help" style="margin:0">Se actualiza cada 24 h, justo antes de cada cambio a Gcore y cada hora mientras algún dominio se sirve por Gcore. Si una actualización falla o la lista pasa 48 h sin renovarse, avisa por Telegram.</p>
+    {% else %}
+    <p style="margin:0">El servidor aún no tiene instalado <span class="mono">multicdn-firewall.sh</span>: los puertos web del origen aceptan conexiones de cualquiera. Instrucciones en <span class="mono">deploy/README.md</span>.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

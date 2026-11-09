@@ -1,0 +1,30 @@
+# Configuración real y secretos: NUNCA al repositorio (ver plan §10.1)
+inventory.yaml
+.env
+.env.*
+!.env.example
+data/
+*.db
+*.db-*
+certs/
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Informes de accesibilidad generados
+reports/
+
+# Sistema
+.DS_Store
+
+# Planes internos y maquetas con datos reales: solo en local, nunca al repositorio público
+plan-inicial-multicdn.md
+plan-multicdn-v2.md
+docs/design/
+docs/plan-login.md

@@ -1,0 +1,26 @@
+# El fichero real con los secretos lo genera el panel en el VPS (nunca va al repositorio):
+#
+#   docker compose exec -T panel python -m app.cli secretos-origen --caddy | sudo tee /etc/caddy/origin-auth.caddy
+#
+# Define el snippet (origin_auth), que rechaza con 403 lo que no traiga X-Origin-Auth con el
+# secreto de un CDN (y, durante una rotación, también el anterior). Se usa así:
+#
+#   import /etc/caddy/origin-auth.caddy      # al principio del Caddyfile
+#   example.com {
+#       import origin_auth
+#       ...
+#   }
+#
+# Pasos completos y rotación: deploy/README.md, «Cabecera secreta». Forma del fichero generado:
+
+(origin_auth) {
+	@sin_cdn not {
+		header X-Origin-Auth <secreto de Cloudflare>
+		header X-Origin-Auth <secreto de Gcore>
+	}
+	respond @sin_cdn "Forbidden" 403 {
+		close
+	}
+	# No quitar aquí la cabecera con request_header: Caddy lo ejecuta antes que respond y todo
+	# daría 403. La quita header_up -X-Origin-Auth en (real_ip), al reenviar a la aplicación.
+}

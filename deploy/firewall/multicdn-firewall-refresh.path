@@ -1,0 +1,11 @@
+# El panel pide una actualización inmediata (p. ej. justo antes de pasar a Gcore) creando
+# este fichero en su carpeta de datos. Ajusta la ruta si el repo no está en /var/www/multi-cdn.
+[Unit]
+Description=Multi-CDN: actualización de rangos pedida por el panel
+
+[Path]
+PathExists=/var/www/multi-cdn/data/firewall-refresh-request
+Unit=multicdn-firewall.service
+
+[Install]
+WantedBy=multi-user.target

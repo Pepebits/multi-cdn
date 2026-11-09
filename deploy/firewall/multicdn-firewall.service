@@ -1,0 +1,8 @@
+[Unit]
+Description=Multi-CDN: limita los puertos web del origen a los CDN y actualiza los proxies de Caddy
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/multicdn-firewall.sh apply

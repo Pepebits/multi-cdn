@@ -1,0 +1,149 @@
+{% macro icon(name) -%}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" aria-hidden="true" focusable="false">
+{%- if name == 'grid' -%}<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+{%- elif name == 'globe' -%}<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>
+{%- elif name == 'history' -%}<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 3"/>
+{%- elif name == 'chart' -%}<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>
+{%- elif name == 'sun' -%}<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
+{%- elif name == 'moon' -%}<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>
+{%- elif name == 'auto' -%}<rect x="3" y="4" width="18" height="12"/><path d="M8 20h8M12 16v4"/>
+{%- elif name == 'gear' -%}<path stroke-linejoin="round" d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>
+{%- endif -%}
+</svg>
+{%- endmacro %}
+
+{% macro priority_tag(d) -%}
+<span class="tag tag--{{ d.priority }}" title="{{ {'critical': 'Se protege primero y tiene preferencia en los recursos de respaldo', 'medium': 'Protección normal', 'low': 'Se protege solo si sobra capacidad; puede quedarse en Cloudflare'}[d.priority] }}">Prioridad {{ d.priority_label|lower }}</span>
+{%- endmacro %}
+
+{% macro isp_pill(state) -%}
+{%- if state == 'blocked' -%}<span class="pill pill--blocked">Bloqueada</span>
+{%- elif state == 'free' -%}<span class="pill pill--free">Libre</span>
+{%- else -%}<span class="pill pill--nodata">Sin datos</span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro isp_list(d, heading_id) -%}
+<section class="isp" aria-labelledby="{{ heading_id }}">
+  <div class="isp__head">
+    <h4 id="{{ heading_id }}" class="isp__title">Operadoras<span class="visually-hidden"> de {{ d.name }}</span> (IPs de Cloudflare)</h4>
+    <span>
+      {%- if not d.monitored_ips %}sin datos
+      {%- else %}{{ d.blocked_count }}/{{ d.isp_rows|length }} bloqueadas{% endif -%}
+    </span>
+  </div>
+  <ul>
+    {% for row in d.isp_rows %}
+    <li><span>{{ row.name }}</span>{{ isp_pill(row.state) }}</li>
+    {% endfor %}
+  </ul>
+</section>
+{%- endmacro %}
+
+{% macro event_row(e, show_domain=true) -%}
+<li>
+  <div class="timeline__row">
+    <time datetime="{{ e.ts.isoformat() }}">{{ e.ts|dt }}</time>
+    <span class="actor {% if e.actor == 'auto' %}actor--auto{% endif %}">{{ 'AUTO' if e.actor == 'auto' else e.actor }}</span>
+    {% if show_domain and e.domain %}<strong>{{ e.domain }}</strong>{% endif %}
+    {% if e.transition %}<span class="pill pill--backup">{{ e.transition }}</span>{% endif %}
+    {% if e.kind == 'alert' %}<span class="pill pill--blocked">Alerta</span>{% endif %}
+    {% if e.kind == 'error' %}<span class="pill pill--blocked">Error</span>{% endif %}
+    {% if e.simulated %}<span class="pill pill--nodata">Simulado</span>{% endif %}
+  </div>
+  <p style="margin:0">{{ e.summary }}</p>
+  {% if e.dns_diff or e.signals %}
+  <details>
+    <summary><span class="if-closed">Mostrar detalle</span><span class="if-open">Ocultar detalle</span></summary>
+    {% if e.signals %}<p style="margin:4px 0">Señales: {{ e.signals|join(' · ') }}</p>{% endif %}
+    {% if e.dns_diff %}
+    <pre class="diff" aria-label="Cambios DNS">{% for host, before, after in e.dns_diff %}<span class="minus">- {{ host }}  {{ before }}</span>
+<span class="plus">+ {{ host }}  {{ after }}</span>
+{% endfor %}</pre>
+    {% endif %}
+  </details>
+  {% endif %}
+</li>
+{%- endmacro %}
+
+{% macro settings_tabs(tab) -%}
+<nav class="tabs" aria-label="Secciones de ajustes">
+  <ul>
+    {% for key, label in [('cuentas', 'Cuentas de proveedor'), ('notificaciones', 'Notificaciones'), ('servidores', 'Servidores'), ('operacion', 'Operación'), ('cuenta', 'Mi cuenta')] %}
+    <li><a href="/ajustes/{{ key }}" {% if tab == key %}aria-current="page"{% endif %}>{{ label }}</a></li>
+    {% endfor %}
+  </ul>
+</nav>
+{%- endmacro %}
+
+{% macro check_status(c) -%}
+{% if c.check_ok is none %}<span class="pill pill--nodata">Sin verificar</span>
+{% elif c.check_ok %}<span class="pill pill--free">Verificada</span>
+{% else %}<span class="pill pill--blocked">Falló</span>{% endif %}
+{%- endmacro %}
+
+{% macro crumbs(current, parents=[]) -%}
+<ol>
+  <li><a href="/">Multi-CDN</a></li>
+  {% for label, url in parents %}<li><a href="{{ url }}">{{ label }}</a></li>{% endfor %}
+  <li><span aria-current="page">{{ current }}</span></li>
+</ol>
+{%- endmacro %}
+
+{% macro delete_dialog(d, idx, dry_run) -%}
+<dialog id="del-{{ idx }}" aria-labelledby="del-{{ idx }}-t">
+  <form method="post" action="/dominios/{{ d.name }}/eliminar">{{ csrf_field() }}
+    <div class="dialog__head">
+      <h2 id="del-{{ idx }}-t">Eliminar {{ d.name }} del inventario</h2>
+      <button class="btn" type="button" data-close aria-label="Cerrar">✕</button>
+    </div>
+    <div class="dialog__body">
+      <p style="margin:0">El panel dejará de vigilar este dominio. Decide antes dónde queda servido.</p>
+      <ul class="checks">
+        {% for h in d.hosts %}<li><span class="mono">{{ h.name }}</span><span class="pill {{ 'pill--free' if h.provider == 'cloudflare' else ('pill--backup' if h.provider == 'gcore' else ('pill--blocked' if h.provider == 'origin' else 'pill--nodata')) }}">{{ h.provider_label }}</span></li>{% endfor %}
+      </ul>
+      <fieldset class="choice">
+        <legend>Dónde queda el dominio</legend>
+        <label class="choice__opt"><input type="radio" name="dns_action" value="cloudflare" checked>
+          <span><strong>Dejarlo en Cloudflare</strong> (recomendado)<br><span class="help">Restaura con proxy los hostnames que no estén en Cloudflare.</span></span></label>
+        <label class="choice__opt"><input type="radio" name="dns_action" value="gcore" {% if not d.gcore_ready %}disabled{% endif %}>
+          <span><strong>Dejarlo en Gcore</strong><br><span class="help">{{ 'Apunta todos los hostnames a Gcore.' if d.gcore_ready else 'No disponible: el dominio no está preparado en Gcore.' }}</span></span></label>
+        <label class="choice__opt"><input type="radio" name="dns_action" value="none">
+          <span><strong>No tocar el DNS</strong><br><span class="help">Se queda exactamente como está ahora.</span></span></label>
+      </fieldset>
+      {% if d.gcore_resource_id %}
+      <label class="choice__opt"><input type="checkbox" name="delete_gcore" value="1">
+        <span><strong>Borrar también su recurso en Gcore</strong> (id {{ d.gcore_resource_id }})<br><span class="help">Irreversible. No se permite si eliges dejarlo en Gcore.</span></span></label>
+      {% endif %}
+      {% if dry_run %}<p class="notice notice--warn" style="margin:0">Modo simulación: los cambios de DNS se registran pero no se aplican.</p>{% endif %}
+      <div>
+        <label for="del-{{ idx }}-c">Escribe <span class="mono">{{ d.name }}</span> para confirmar</label>
+        <input id="del-{{ idx }}-c" type="text" name="confirm" autocomplete="off" spellcheck="false" required data-expected="{{ d.name }}">
+      </div>
+    </div>
+    <div class="dialog__foot">
+      <button class="btn" type="button" data-close>Cancelar</button>
+      <button class="btn btn--danger" type="submit" data-submit disabled>Eliminar del inventario</button>
+    </div>
+  </form>
+</dialog>
+{%- endmacro %}
+
+
+{% macro pepebits_signature() -%}
+<a class="pb-sign" href="https://pepebits.com" rel="external">
+  <span>un producto de</span>
+  {% include "_pepebits_wordmark.html" %}
+  <span class="visually-hidden">PEPEBITS (Ir a pepebits.com)</span>
+</a>
+{%- endmacro %}
+
+
+{% macro change_badge(c) -%}
+{%- if c -%}
+<span class="change change--{{ c.kind }} change--to-{{ c.target }}">
+  {%- if c.kind == 'propagating' %}<span class="change__bar" aria-hidden="true"></span>{% else %}<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>{% endif -%}
+  <span>{{ c.text }}</span>
+</span>
+{%- endif -%}
+{%- endmacro %}

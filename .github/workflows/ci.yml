@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Public repository: GitHub-hosted runners only. A pull request from a fork runs
+# whatever code it contains, so it must never reach a self-hosted machine.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install
+        # Fails rather than rewriting the lockfile if pyproject.toml drifted.
+        run: uv sync --frozen
+
+      # The firewall script's own tests need bash and jq (both on the runner).
+      - name: Test
+        run: uv run pytest -q
+
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v6
+
+      # Runtime dependencies only: advisories in test tools never reach the
+      # deployed process. Kept as its own job so a new advisory is visibly
+      # distinct from a failing test.
+      - name: Audit runtime dependencies
+        run: |
+          uv export --frozen --no-dev --no-hashes --format requirements-txt > requirements.txt
+          uvx pip-audit --requirement requirements.txt --disable-pip
+
+  # Builds the runtime image and scans it. Kept out of `test` so a new CVE in a
+  # base layer is visibly a different failure from a broken test.
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: multi-cdn:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Scan for known vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: multi-cdn:scan
+          severity: HIGH,CRITICAL
+          # Nothing can be done about a vulnerability with no fix available,
+          # so failing on one would only train people to ignore this job.
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table

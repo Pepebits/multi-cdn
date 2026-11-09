@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Cuentas de proveedor{% endblock %}
+{% block crumb %}{{ m.crumbs('Cuentas de proveedor', [('Ajustes', '/ajustes/cuentas')]) }}{% endblock %}
+{% block heading %}Ajustes{% endblock %}
+
+{% block content %}
+{{ m.settings_tabs(tab) }}
+
+<section class="card" aria-labelledby="lista-cuentas">
+  <div class="card__head">
+    <h2 id="lista-cuentas">Cuentas de proveedor</h2>
+    <span class="mono muted">Cifradas · nunca se vuelven a mostrar</span>
+  </div>
+  <details class="card__body help-box">
+    <summary><span class="if-closed">Cómo crear el token de Cloudflare</span><span class="if-open">Ocultar instrucciones</span></summary>
+    <ol>
+      <li>Cloudflare → Mi perfil → Tokens de API → <strong>Crear token</strong> → Crear token personalizado.</li>
+      <li>Permisos: <strong>Zona · Zona · Leer</strong> (listar zonas al importar) y <strong>Zona · DNS · Editar</strong> (leer registros y conmutar). Opcional: <strong>Zona · Transform Rules · Editar</strong>, para que el panel cree la regla de la cabecera secreta hacia el origen.</li>
+      <li>Recursos de zona: <strong>Incluir · Zona específica</strong> (una por dominio) o <strong>Todas las zonas de una cuenta</strong>. No hace falta ningún permiso de cuenta.</li>
+      <li>Filtrado de IP de cliente: la IP pública del VPS donde corre el controlador (añade la tuya mientras lo pruebas en local).</li>
+      <li>No uses la Global API Key: da acceso total a la cuenta.</li>
+    </ol>
+  </details>
+  <p class="card__body help" style="margin:0">Puedes añadir varias por proveedor: una por cuenta de Cloudflare, o un token por dominio si los limitas a una zona. Cada dominio elige cuál usa en su página de configuración.</p>
+  {% if creds %}
+  <ul class="cred-list">
+    {% for c, used in creds %}
+    <li id="cuenta-{{ c.id }}">
+      <div class="cred-info">
+        <h3>{{ c.label }} <span class="pill pill--neutral">{{ c.provider_label }}</span></h3>
+        <div class="field__status">
+          {{ m.check_status(c) }} <span class="mono">{{ c.hint }}</span>
+          <span class="inline-actions">
+            <form method="post" action="/ajustes/cuentas/{{ c.id }}/probar">{{ csrf_field() }}<button class="btn btn--ok btn--sm-plain" type="submit">Probar<span class="visually-hidden"> {{ c.label }}</span></button></form>
+            {% if not used %}
+            <form method="post" action="/ajustes/cuentas/{{ c.id }}/eliminar">{{ csrf_field() }}<button class="btn btn--danger btn--sm" type="submit">Eliminar<span class="visually-hidden"> {{ c.label }}</span></button></form>
+            {% endif %}
+          </span>
+        </div>
+        {% if c.check_msg %}<p class="help" style="margin:0">{{ c.check_msg }}{% if c.checked_at %} · {{ c.checked_at|dt }}{% endif %}</p>{% endif %}
+        {% if c.scope %}<p class="help" style="margin:4px 0 0">Zonas visibles: <span class="mono">{{ c.scope }}</span></p>{% endif %}
+        {% set u = usage.get(c.id) %}
+        {% if u %}
+        <div class="usage">
+          {% if u.error %}
+          <p class="help" style="margin:0">No se pudo leer el consumo: {{ u.error }}</p>
+          {% else %}
+          <p style="margin:0"><strong>Tráfico de {{ u.month[5:] }}/{{ u.month[:4] }}:</strong> {{ u.total|bytes }} de {{ u.quota_gb }} GB ({{ '%.1f'|format(u.percent)|replace('.', ',') }} %)</p>
+          <div class="meter" role="img" aria-label="{{ '%.1f'|format(u.percent) }} % de la cuota mensual"><span style="width:{{ [u.percent, 100]|min }}%"></span></div>
+          <p class="help" style="margin:0">Servido a usuarios {{ u.sent|bytes }} · traído del origen {{ u.upstream|bytes }}{% if u.max_resources %} · recursos CDN {{ u.resources }} de {{ u.max_resources }}{% endif %} · leído {{ u.checked_at|hhmm }}</p>
+          {% endif %}
+        </div>
+        {% endif %}
+        <p class="help" style="margin:4px 0 0">Usada por: {{ used|join(', ') if used else 'ningún dominio' }}{% if used %} · para eliminarla, asigna otra credencial a esos dominios{% endif %}</p>
+      </div>
+      <div class="cred-actions">
+        <form method="post" action="/ajustes/cuentas/{{ c.id }}/rotar" class="cred-form">{{ csrf_field() }}
+          <label for="rot-{{ c.id }}">Reemplazar credencial<span class="visually-hidden"> de {{ c.label }}</span></label>
+          <input id="rot-{{ c.id }}" type="password" name="secret" autocomplete="off" spellcheck="false" required>
+          <button class="btn" type="submit">Reemplazar<span class="visually-hidden"> {{ c.label }}</span></button>
+        </form>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="card__body" style="margin:0">Todavía no hay credenciales de proveedor.</p>
+  {% endif %}
+</section>
+
+<section class="card" aria-labelledby="nueva-cuenta">
+  <div class="card__head"><h2 id="nueva-cuenta">Añadir credencial</h2></div>
+  <form class="card__body form-grid" method="post" action="/ajustes/cuentas">{{ csrf_field() }}
+    <div>
+      <label for="provider">Proveedor</label>
+      <select id="provider" name="provider">{% for k, v in providers.items() %}<option value="{{ k }}" data-placeholder="{{ {'cloudflare': 'Cloudflare personal', 'gcore': 'Gcore principal'}.get(k, v) }}">{{ v }}</option>{% endfor %}</select>
+    </div>
+    <div>
+      <label for="label">Nombre</label>
+      <input id="label" type="text" name="label" required placeholder="Cloudflare personal" autocomplete="off" aria-describedby="label-help">
+      <p id="label-help" class="help">
+        <span data-provider-help="cloudflare">Para distinguirla: cuenta de Cloudflare, cliente o dominio.</span>
+        <span data-provider-help="gcore" hidden>Para distinguirla: cuenta de Gcore o cliente.</span>
+      </p>
+    </div>
+    <div>
+      <label for="secret">Token o API key</label>
+      <input id="secret" type="password" name="secret" required autocomplete="off" spellcheck="false" aria-describedby="secret-help">
+      <p id="secret-help" class="help">
+        <span data-provider-help="cloudflare">Token API (no la Global API Key) con permisos <strong>Zona · Zona · Leer</strong> y <strong>Zona · DNS · Editar</strong>, limitado a tus zonas. Se verifica al guardar.</span>
+        <span data-provider-help="gcore" hidden>API token permanente de Gcore (Perfil → API tokens → Create token) con rol <strong>Administrators</strong> o <strong>Engineers</strong>, para crear orígenes, certificados y recursos CDN. Se verifica al guardar.</span>
+      </p>
+    </div>
+    <div class="form-actions"><button class="btn btn--primary" type="submit">Guardar y verificar</button></div>
+  </form>
+</section>
+{% endblock %}
