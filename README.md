@@ -1,7 +1,6 @@
 <p align="center"><img src="docs/banner.png" alt="multi-cdn" width="720"></p>
 
 <p align="center">
-  <a href="https://github.com/Pepebits/multi-cdn/releases"><img alt="Release" src="https://img.shields.io/github/v/release/Pepebits/multi-cdn"></a>
   <a href="https://github.com/Pepebits/multi-cdn/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Pepebits/multi-cdn/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://hub.docker.com/r/pepebits/multi-cdn"><img alt="Docker Hub" src="https://img.shields.io/docker/v/pepebits/multi-cdn?label=docker"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/Pepebits/multi-cdn"></a>
