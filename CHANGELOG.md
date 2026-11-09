@@ -4,9 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-## [Unreleased]
+## [0.2.0] - 2026-11-09
 
 ### Added
 - **English interface**, with Spanish kept: each browser gets its preferred language and can
@@ -15,13 +13,14 @@ All notable changes to this project are documented here. The format follows
 - **Getting started checklist** on the overview, with links to each pending step.
 - English command names for the CLI (`create-user`, `status`, `switch`, `origin-secrets`…); the
   Spanish names keep working.
-- Icons on headings, buttons and notices across the panel.
+- Icons on headings, buttons and notices across the panel, including Telegram and email in
+  the notification settings.
 
 ### Changed
 - Step-by-step deployment guide in English (`deploy/README.md`), from an empty server to live
   failover.
 
- - 2026-11-09
+## [0.1.0] - 2026-11-09
 
 First release: a private panel and controller that keeps sites reachable in Spain
 during the court-ordered blocks of Cloudflare IPs, by moving DNS to a second CDN
@@ -58,5 +57,5 @@ during the court-ordered blocks of Cloudflare IPs, by moving DNS to a second CDN
 - **Docker image** (~160 MB, Alpine, Python 3.15, non-root, read-only friendly) published to
   GitHub Container Registry and Docker Hub.
 
-[Unreleased]: https://github.com/Pepebits/multi-cdn/compare/v0.1.0...HEAD
+[0.2.0]: https://github.com/Pepebits/multi-cdn/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Pepebits/multi-cdn/releases/tag/v0.1.0

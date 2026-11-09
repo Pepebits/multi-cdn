@@ -1,6 +1,6 @@
 [project]
 name = "multicdn"
-version = "0.1.0"
+version = "0.2.0"
 description = "Multi-CDN failover controller and private panel (Cloudflare + Gcore)"
 readme = "README.md"
 license = "Apache-2.0"

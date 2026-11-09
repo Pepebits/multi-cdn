@@ -29,14 +29,14 @@
 
 {% for canal, title, a, b in [('telegram', 'Telegram', fields.telegram_token, fields.telegram_chat_id), ('email', 'Email', fields.smtp_url, fields.alert_email_to)] %}
 <section class="card" aria-labelledby="canal-{{ canal }}">
-  <div class="card__head"><h2 id="canal-{{ canal }}">{{ m.icon('bell') }} {{ title }}</h2></div>
+  <div class="card__head"><h2 id="canal-{{ canal }}">{{ m.icon('send' if canal == 'telegram' else 'mail') }} {{ title }}</h2></div>
   <form method="post" action="/ajustes/notificaciones/canal/{{ canal }}">{{ csrf_field() }}
     <div class="card__body form-grid form-grid--2">
       {{ field(a) }}
       {{ field(b, 'text') }}
     </div>
     <div class="card__foot actions-end">
-      <button class="btn btn--ok" type="submit" formaction="/ajustes/notificaciones/probar/{{ canal }}" formnovalidate>{{ m.icon('play') }} {{ _('Send a test message') if canal == 'telegram' else _('Test SMTP connection') }}</button>
+      <button class="btn btn--ok" type="submit" formaction="/ajustes/notificaciones/probar/{{ canal }}" formnovalidate>{{ m.icon('send' if canal == 'telegram' else 'play') }} {{ _('Send a test message') if canal == 'telegram' else _('Test SMTP connection') }}</button>
       <button class="btn btn--primary" type="submit">{{ _("Save {channel}", channel=title) }}</button>
     </div>
   </form>
