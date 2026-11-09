@@ -40,7 +40,7 @@ during the court-ordered blocks of Cloudflare IPs, by moving DNS to a second CDN
   (healthchecks.io), origin health checks, Gcore traffic against the free quota,
   daily database backups, and a terminal runbook (`python -m app.cli estado` and
   `cambiar`) for when the panel is down.
-- **Docker image** (~150 MB, Alpine, non-root, read-only friendly) published to
+- **Docker image** (~160 MB, Alpine, Python 3.15, non-root, read-only friendly) published to
   GitHub Container Registry and Docker Hub.
 
 [Unreleased]: https://github.com/Pepebits/multi-cdn/compare/v0.1.0...HEAD
