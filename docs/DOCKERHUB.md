@@ -18,7 +18,7 @@ does the switching, Gcore preparation (certificates included) and alerts.
 docker run -d --name multicdn-panel --restart unless-stopped \
   --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
   -p 127.0.0.1:8765:8765 -v ./data:/app/data --env-file .env \
-  ghcr.io/pepebits/multi-cdn:latest
+  pepebits/multi-cdn:latest
 docker exec -it multicdn-panel python -m app.cli crear-usuario <user>
 ```
 
@@ -29,4 +29,5 @@ changes. Full deployment guide, origin firewall and Caddy snippets:
 [github.com/Pepebits/multi-cdn](https://github.com/Pepebits/multi-cdn).
 
 Image: Alpine, non-root (uid 10001), works with a read-only root filesystem; data in
-`/app/data`. Multi-arch (amd64, arm64), with SBOM and build provenance.
+`/app/data`. Multi-arch (amd64, arm64), with SBOM and build provenance. Also published
+as `ghcr.io/pepebits/multi-cdn`.

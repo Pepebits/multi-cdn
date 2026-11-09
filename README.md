@@ -47,7 +47,7 @@ The panel listens on `127.0.0.1:8765` only. Reach it through an SSH tunnel
 never through the CDNs it controls. DNS changes are simulated until
 `MULTICDN_DRY_RUN=false` is set in the server environment; the panel cannot turn them on.
 
-The image (`ghcr.io/pepebits/multi-cdn`, also on Docker Hub) is Alpine-based, runs as a
+The image (`ghcr.io/pepebits/multi-cdn`, also `pepebits/multi-cdn` on Docker Hub) is Alpine-based, runs as a
 non-root user with a read-only root filesystem, and is built for amd64 and arm64 with an
 SBOM and provenance.
 
