@@ -24,6 +24,12 @@ def feed(blocked: bool, now: datetime = T0, extra_blocked: int = 0):
 
 
 @pytest.fixture
+def client(make_client):
+    # IP de origen de documentación: la vuelta a Cloudflare restaura el registro A con ella.
+    return make_client(ORIGIN_VPS1_IPV4="192.0.2.10")
+
+
+@pytest.fixture
 def st(client, monkeypatch):
     """example.com preparado en Gcore, con credencial de Cloudflare y resolviendo a Cloudflare."""
     state = client.app.state.mc

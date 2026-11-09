@@ -123,9 +123,11 @@ def load_inventory(path: str | Path | None = None) -> Inventory:
     return Inventory.model_validate(_expand(raw))
 
 
-def load_dotenv(path: str | Path = ".env") -> None:
-    """Lector mínimo de .env (KEY=VALUE); no sobrescribe variables ya definidas."""
-    p = Path(path)
+def load_dotenv(path: str | Path | None = None) -> None:
+    """Lector mínimo de .env (KEY=VALUE); no sobrescribe variables ya definidas.
+    MULTICDN_DOTENV cambia el fichero; los tests lo apuntan a uno inexistente para no leer
+    nunca el .env del desarrollador."""
+    p = Path(path or os.environ.get("MULTICDN_DOTENV", ".env"))
     if not p.exists():
         return
     for line in p.read_text(encoding="utf-8").splitlines():

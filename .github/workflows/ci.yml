@@ -46,7 +46,8 @@ jobs:
       # distinct from a failing test.
       - name: Audit runtime dependencies
         run: |
-          uv export --frozen --no-dev --no-hashes --format requirements-txt > requirements.txt
+          # With hashes: pip-audit then checks exactly the pinned files, without pip.
+          uv export --frozen --no-dev --format requirements-txt > requirements.txt
           uvx pip-audit --requirement requirements.txt --disable-pip
 
   # Builds the runtime image and scans it. Kept out of `test` so a new CVE in a

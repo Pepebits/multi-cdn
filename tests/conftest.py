@@ -43,6 +43,12 @@ def login(client: TestClient, username: str = USER, password: str = PASSWORD) ->
     assert r.status_code == 303 and r.headers["location"] == "/", r.text
 
 
+@pytest.fixture(autouse=True)
+def no_developer_env(monkeypatch):
+    """Los tests nunca leen el .env del desarrollador (ni su IP de origen ni sus tokens)."""
+    monkeypatch.setenv("MULTICDN_DOTENV", "/nonexistent/.env")
+
+
 @pytest.fixture
 def make_client(tmp_path, monkeypatch):
     clients = []
