@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-11-14
+
+Interface improvements from a review of the panel in every state, on desktop and phone.
+
+### Changed
+- **Typing the domain to confirm** a switch, return or deletion works on phones: no automatic
+  capital letter, the field gets the focus when the dialog opens, and the check ignores case.
+- **Getting started** no longer pushes the live status down: once there are domains it is
+  folded at the bottom of the overview.
+- The overview and the domain list show when a domain's automatic switching is paused, in
+  maintenance or failed, and the overview opens with a one-line summary (domains on Gcore,
+  exposed, needing attention).
+- A failed automatic switch is shown first, with a "Dismiss failure" button instead of a
+  misleading "Resume now".
+- The domain page's main button follows the state: "Back to Cloudflare" when it is already on
+  Gcore, and a hint when the origin is exposed.
+- Upcoming switch and return times are larger and add "in 52 min (local time)" next to UTC.
+- Sign out, access channel and DNS mode are available on phones.
+- Dark theme: saturated status colours and higher-contrast borders.
+- Small buttons no longer carry the red danger shadow; larger touch targets on phones; dialogs
+  fit the screen with the keyboard open; the warning about ongoing blocks comes first in the
+  return dialog.
+- Statistics: the last day label is no longer cut and match bands are visible.
+- Matches tile says "No upcoming matches" instead of "Loading…" forever; status blocks carry
+  an icon; clearer wording in both languages.
+
 ## [0.2.1] - 2026-11-14
 
 ### Changed
@@ -91,6 +117,7 @@ during the court-ordered blocks of Cloudflare IPs, by moving DNS to a second CDN
 - **Docker image** (~160 MB, Alpine, Python 3.15, non-root, read-only friendly) published to
   GitHub Container Registry and Docker Hub.
 
+[0.2.2]: https://github.com/Pepebits/multi-cdn/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Pepebits/multi-cdn/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Pepebits/multi-cdn/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Pepebits/multi-cdn/releases/tag/v0.1.0

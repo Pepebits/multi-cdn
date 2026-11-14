@@ -113,7 +113,7 @@
   "The server does not have <span class=\"mono\">multicdn-firewall.sh</span> installed yet: the web ports of the origin accept connections from anyone. Instructions in <span class=\"mono\">deploy/README.md</span>.": "El servidor aún no tiene instalado <span class=\"mono\">multicdn-firewall.sh</span>: los puertos web del origen aceptan conexiones de cualquiera. Instrucciones en <span class=\"mono\">deploy/README.md</span>.",
   "There are no provider credentials yet.": "Todavía no hay credenciales de proveedor.",
   "This session": "Esta sesión",
-  "To enable live DNS changes set <span class=\"mono\">MULTICDN_DRY_RUN=false</span> in the server environment. It cannot be enabled from the panel on purpose. A domain without an assigned Cloudflare credential is always simulated.": "Para activar cambios reales define <span class=\"mono\">MULTICDN_DRY_RUN=false</span> en el entorno del servidor. No se puede activar desde el panel a propósito. Un dominio sin credencial de Cloudflare asignada siempre se simula.",
+  "To enable live DNS changes set <span class=\"mono\">MULTICDN_DRY_RUN=false</span> in the server environment. For safety, it cannot be enabled from the panel. A domain without an assigned Cloudflare credential is always simulated.": "Para activar cambios reales define <span class=\"mono\">MULTICDN_DRY_RUN=false</span> en el entorno del servidor. Por seguridad, no se puede activar desde el panel. Un dominio sin credencial de Cloudflare asignada siempre se simula.",
   "To tell it apart: Cloudflare account, client or domain.": "Para distinguirla: cuenta de Cloudflare, cliente o dominio.",
   "To tell it apart: Gcore account or client.": "Para distinguirla: cuenta de Gcore o cliente.",
   "Token or API key": "Token o API key",

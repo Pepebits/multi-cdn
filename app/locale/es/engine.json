@@ -103,6 +103,5 @@
   "{host}: no response from the Gcore edge ({error})": "{host}: sin respuesta del borde de Gcore ({error})",
   "{ip} on {isp}": "{ip} en {isp}",
   "{isp}: blocked": "{isp}: bloqueada",
-  "{text}. Last failure: {error}": "{text}. Último fallo: {error}",
   "{text}. Next match: {match}, {when}": "{text}. Próximo partido: {match}, {when}"
 }

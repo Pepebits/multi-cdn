@@ -10,7 +10,7 @@
   <div class="card__head"><h2 id="modo">{{ m.icon('shield') }} {{ _("DNS change mode") }}</h2></div>
   <div class="card__body stack-gap">
     <p style="margin:0">{{ _("Right now:") }} <strong>{{ _('Dry run') if dry_run else _('Live') }}</strong>.</p>
-    {% if dry_run_env %}<p style="margin:0">{{ _m("To enable live DNS changes set <span class=\"mono\">MULTICDN_DRY_RUN=false</span> in the server environment. It cannot be enabled from the panel on purpose. A domain without an assigned Cloudflare credential is always simulated.") }}</p>{% endif %}
+    {% if dry_run_env %}<p style="margin:0">{{ _m("To enable live DNS changes set <span class=\"mono\">MULTICDN_DRY_RUN=false</span> in the server environment. For safety, it cannot be enabled from the panel. A domain without an assigned Cloudflare credential is always simulated.") }}</p>{% endif %}
   </div>
 </section>
 

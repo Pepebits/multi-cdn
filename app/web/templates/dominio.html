@@ -7,8 +7,9 @@
 {% if d.status == 'origin' %}
 <div class="banner banner--danger" role="alert">
   <span class="live" aria-hidden="true"></span>
+  {{ m.icon('alert') }}
   <strong>{{ _('Origin exposed.') }}</strong>
-  <span>{{ _('A hostname resolves to the server IP without going through a CDN.') }}</span>
+  <span>{{ _('A hostname resolves to the server IP without going through a CDN: go back to Cloudflare or switch to Gcore below.') }}</span>
 </div>
 {% endif %}
 {% endblock %}
@@ -20,7 +21,7 @@
     <span>{{ m.priority_tag(d) }} <span class="pill pill--neutral">{{ _('{policy} policy', policy=d.policy_label) }}</span></span>
   </div>
   <div class="card__body stack-gap">
-    <div class="status tone-{{ d.status_tone }}"><span>{{ d.status_label }}</span></div>
+    <div class="status tone-{{ d.status_tone }}"><span>{{ m.status_icon(d.status) }}{{ d.status_label }}</span></div>
     {% if d.alerts %}
     <ul class="alerts">{% for a in d.alerts %}<li class="notice notice--{{ 'error' if ('expuesto' in a or 'exposed' in a) else 'warn' }}">{{ m.icon('alert') }} {{ a }}</li>{% endfor %}</ul>
     {% endif %}
@@ -28,10 +29,13 @@
     <p class="notice notice--warn" style="margin:0">{{ m.icon('alert') }} {{ _m('No Cloudflare credential assigned: changes to this domain can only be simulated. Assign it in <a href="#config">Configuration</a>.') }}</p>
     {% endif %}
     <div class="auto-line notice{{ {'ok': ' notice--ok', 'warn': ' notice--warn', 'error': ' notice--error'}.get(auto.tone, '') }}">
-      <p style="margin:0">{{ m.icon('check' if auto.tone == 'ok' else ('alert' if auto.tone in ('warn', 'error') else 'info')) }} <strong>{{ _('Automatic switch:') }}</strong> {{ auto.text }}</p>
-      {% if auto.resumable %}
+      <p style="margin:0">{{ m.icon('check' if auto.tone == 'ok' else ('alert' if auto.tone in ('warn', 'error') else 'info')) }} <strong>{{ _('Automatic switching:') }}</strong> {{ auto.text }}</p>
+      {% if auto.action == 'resume' %}
       <form method="post" action="/dominios/{{ d.name }}/automatico/reanudar">{{ csrf_field() }}<button class="btn btn--sm" type="submit">{{ m.icon('play') }}{{ _('Resume now') }}</button></form>
-      {% elif auto.tone in ('ok', 'error') %}
+      {% elif auto.action == 'clear' %}
+      <form method="post" action="/dominios/{{ d.name }}/automatico/descartar">{{ csrf_field() }}<button class="btn btn--sm" type="submit">{{ m.icon('x') }}{{ _('Dismiss failure') }}</button></form>
+      {% endif %}
+      {% if auto.tone in ('ok', 'error') %}
       <form method="post" action="/dominios/{{ d.name }}/automatico/mantenimiento" class="maint-form">{{ csrf_field() }}
         <label for="maint-horas">{{ m.icon('wrench') }} {{ _('Maintenance') }}</label>
         <select id="maint-horas" name="horas">{% for h, label in maintenance_options.items() %}<option value="{{ h }}">{{ label }}</option>{% endfor %}</select>
@@ -39,11 +43,19 @@
       </form>
       {% endif %}
     </div>
+    {% set fo_hosts = d.hosts|selectattr('failover')|list %}
+    {% set all_on_gcore = fo_hosts and fo_hosts|rejectattr('provider', 'equalto', 'gcore')|list|length == 0 %}
+    {% if d.status == 'origin' %}
+    <p class="notice notice--error" style="margin:0">{{ m.icon('alert') }} {{ _('To hide the origin again use either action: back to Cloudflare restores the proxy, switch to Gcore moves it to the backup CDN.') }}</p>
+    {% endif %}
     <div class="row">
       {% if d.status != 'cloudflare' and d.status != 'unknown' %}
-      <button class="btn" type="button" data-open="volver">{{ m.icon('refresh') }}{{ _('Back to Cloudflare…') }}</button>
+      <button class="btn{{ ' btn--primary' if all_on_gcore else '' }}" type="button" data-open="volver">{{ m.icon('refresh') }}{{ _('Back to Cloudflare…') }}</button>
       {% endif %}
-      {% if d.gcore_ready %}
+      {% if d.gcore_ready and all_on_gcore %}
+      <button class="btn" type="button" aria-disabled="true" aria-describedby="ya-en-gcore">{{ m.icon('switch') }}{{ _('Switch to Gcore…') }}</button>
+      <p id="ya-en-gcore" class="muted" style="margin:0;align-self:center">{{ _('Already served by Gcore.') }}</p>
+      {% elif d.gcore_ready %}
       <button class="btn btn--primary" type="button" data-open="confirmar">{{ m.icon('switch') }}{{ _('Switch to Gcore…') }}</button>
       {% else %}
       <button class="btn" type="button" aria-disabled="true" aria-describedby="gcore-pendiente">{{ m.icon('switch') }}{{ _('Switch to Gcore…') }}</button>
@@ -273,7 +285,7 @@
       {% if dry_run %}<p class="notice notice--warn" style="margin:0">{{ m.icon('alert') }} {{ _('Dry run: the switch will be recorded but not applied on Cloudflare.') }}</p>{% endif %}
       <div>
         <label for="confirm">{{ _m('Type <span class="mono">{domain}</span> to confirm', domain=d.name) }}</label>
-        <input id="confirm" name="confirm" type="text" autocomplete="off" spellcheck="false" required data-expected="{{ d.name }}">
+        <input id="confirm" name="confirm" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" inputmode="url" spellcheck="false" required data-expected="{{ d.name }}">
       </div>
     </div>
     <div class="dialog__foot">
@@ -290,15 +302,15 @@
       <button class="btn" type="button" data-close aria-label="{{ _('Close') }}">✕</button>
     </div>
     <div class="dialog__body">
+      {% if d.blocked_count %}<p class="notice notice--error" style="margin:0">{{ m.icon('alert') }} {{ _n('The feed currently shows {n} ISP with the Cloudflare IPs blocked.', 'The feed currently shows {n} ISPs with the Cloudflare IPs blocked.', d.blocked_count) }}</p>{% endif %}
       <p style="margin:0">{{ _('The hostnames not already on Cloudflare are restored with the Cloudflare proxy. If the ISPs are still blocking, the website will fail again for those users.') }}</p>
       <ul class="checks">
         {% for h in d.hosts %}<li><span class="mono">{{ h.name }}</span><span class="pill {{ 'pill--free' if h.provider == 'cloudflare' else 'pill--backup' }}">{{ _('no changes') if h.provider == 'cloudflare' else h.provider_label ~ ' → Cloudflare' }}</span></li>{% endfor %}
       </ul>
-      {% if d.blocked_count %}<p class="notice notice--error" style="margin:0">{{ m.icon('alert') }} {{ _n('The feed currently shows {n} ISP with the Cloudflare IPs blocked.', 'The feed currently shows {n} ISPs with the Cloudflare IPs blocked.', d.blocked_count) }}</p>{% endif %}
       {% if dry_run %}<p class="notice notice--warn" style="margin:0">{{ m.icon('alert') }} {{ _('Dry run: the switch will be recorded but not applied on Cloudflare.') }}</p>{% endif %}
       <div>
         <label for="volver-confirm">{{ _m('Type <span class="mono">{domain}</span> to confirm', domain=d.name) }}</label>
-        <input id="volver-confirm" name="confirm" type="text" autocomplete="off" spellcheck="false" required data-expected="{{ d.name }}">
+        <input id="volver-confirm" name="confirm" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" inputmode="url" spellcheck="false" required data-expected="{{ d.name }}">
       </div>
     </div>
     <div class="dialog__foot">

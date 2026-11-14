@@ -20,7 +20,7 @@
           <th scope="row"><a href="/dominios/{{ d.name }}">{{ d.name }}</a></th>
           <td data-label="{{ _('Priority') }}">{{ m.priority_tag(d) }}</td>
           <td data-label="{{ _('Policy') }}">{{ d.policy_label }}</td>
-          <td data-label="{{ _('Status') }}"><span class="pill tone-{{ d.status_tone }}">{{ d.status_label }}</span>{{ m.change_badge(changes.get(d.name)) }}</td>
+          <td data-label="{{ _('Status') }}"><span class="pill tone-{{ d.status_tone }}">{{ d.status_label }}</span>{{ m.change_badge(changes.get(d.name)) }}{{ m.auto_notice(autos.get(d.name), d.name) }}</td>
           <td data-label="Hostnames" class="mono">{{ d.hosts|length }}</td>
           <td data-label="Gcore">{{ _('ready') if d.gcore_ready else _('not set up') }}</td>
           <td class="actions-cell"><button class="btn btn--danger btn--sm" type="button" data-open="del-{{ loop.index }}">{{ _('Delete') }}<span class="visually-hidden"> {{ d.name }}</span></button></td>

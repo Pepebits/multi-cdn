@@ -45,7 +45,7 @@
         <button class="btn btn--sm-plain" type="submit">{{ m.icon('logout') }} {{ _("Sign out") }}</button>
       </form>
       {% endif %}
-      <p style="margin:0" title="{{ access.help }}"><span class="dot dot--{{ access.tone }}" aria-hidden="true"></span>{{ access.label }}</p>
+      <p style="margin:0"><span class="dot dot--{{ access.tone }}" aria-hidden="true"></span>{{ access.label }}<span class="visually-hidden"> {{ access.help }}</span></p>
       <p style="margin:4px 0 0">{% if dry_run %}{{ _("Dry run: DNS is not modified") }}{% else %}{{ _("Live DNS changes enabled") }}{% endif %}</p>
     </div>
   </nav>
@@ -69,7 +69,7 @@
       </div>
       <div class="meta">
         <span class="pill pill--neutral">{% if dry_run %}{{ _("Dry run") }}{% else %}{{ _("Production") }}{% endif %}</span>
-        <span class="pill pill--neutral">{{ _("DNS checked {time}", time=dns_checked_at|hhmm) }}</span>
+        <span class="pill pill--neutral">{% if dns_checked_at %}{{ _("DNS checked {time}", time=dns_checked_at|hhmm) }}{% else %}{{ _("DNS not checked yet") }}{% endif %}</span>
       </div>
     </header>
 
@@ -91,6 +91,15 @@
       {% include "_lang_switch.html" %}
       </div>
     </footer>
+    {% if user %}
+    {# En el móvil la barra lateral se oculta: sesión, acceso y modo aquí. #}
+    <div class="mobile-session">
+      <p><span class="dot dot--{{ access.tone }}" aria-hidden="true"></span>{{ access.label }} · {% if dry_run %}{{ _("Dry run: DNS is not modified") }}{% else %}{{ _("Live DNS changes enabled") }}{% endif %}</p>
+      <form method="post" action="/logout">{{ csrf_field() }}
+        <button class="btn btn--sm-plain" type="submit">{{ m.icon('logout') }} {{ _("Sign out") }} <span class="muted">({{ user.username }})</span></button>
+      </form>
+    </div>
+    {% endif %}
     <div class="site-sign">
       <span>© {{ current_year() }} Multi-CDN</span>
       {{ m.pepebits_signature() }}

@@ -205,6 +205,12 @@ class EngineStore:
         st.hold_reason = "mantenimiento"
         self.save(st)
 
+    def clear_error(self, domain: str) -> None:
+        """Descartar el último fallo avisado (sin tocar pausas ni el contador de cambios)."""
+        st = self.get(domain)
+        st.last_error = st.error_code = None
+        self.save(st)
+
     def resume(self, domain: str) -> None:
         """Reanudar a mano: también olvida los cambios recientes, o la protección contra cambios
         en bucle volvería a pausarlo en el siguiente ciclo."""
@@ -457,20 +463,25 @@ async def _act(state, view, cfg, st: DomainState, decision: Decision, now: datet
 
 
 def describe(state, name: str, now: datetime | None = None) -> dict:
-    """Texto del estado del automático para el panel."""
+    """Estado del automático para el panel.
+
+    tone: ok | warn | error | neutral; text: frase completa (ficha del dominio); short: aviso de
+    una línea para el resumen y la lista (solo si hay algo que mirar); action: botón de la ficha,
+    "resume" (quitar la pausa) o "clear" (descartar el último fallo)."""
     now = now or datetime.now(UTC)
     cfg = state.inventory.domains[name]
     st = state.engine.get(name)
     if not auto_enabled(state):
-        return {"tone": "neutral", "text": tr("Automatic switching off in Settings → Operation"), "resumable": False}
+        return {"tone": "neutral", "text": tr("Automatic switching off in Settings → Operation"), "resumable": False, "action": None}
     if cfg.policy == "manual":
-        return {"tone": "neutral", "text": tr("Manual policy: only alerts, never changes anything"), "resumable": False}
+        return {"tone": "neutral", "text": tr("Manual policy: only alerts, never changes anything"), "resumable": False, "action": None}
     if not eligible(cfg):
-        return {"tone": "warn", "text": tr("No Cloudflare credential or zone: cannot switch automatically"), "resumable": False}
+        text = tr("No Cloudflare credential or zone: cannot switch automatically")
+        return {"tone": "warn", "text": text, "short": text, "resumable": False, "action": None}
     if st.paused:
         text = tr("In maintenance until you resume it") if st.hold_reason == "mantenimiento" \
             else tr("Paused after too many switches in a row")
-        return {"tone": "warn", "text": text, "resumable": True}
+        return {"tone": "warn", "text": text, "short": text, "resumable": True, "action": "resume"}
     if st.hold_until and now < st.hold_until:
         maintenance = st.hold_reason == "mantenimiento"
         if st.hold_until - now > timedelta(hours=20):
@@ -481,7 +492,7 @@ def describe(state, name: str, now: datetime | None = None) -> dict:
             time = _fmt(st.hold_until)
             text = tr("Paused until {time} for maintenance", time=time) if maintenance \
                 else tr("Paused until {time} after a manual change", time=time)
-        return {"tone": "warn", "text": text, "resumable": True}
+        return {"tone": "warn", "text": text, "short": text, "resumable": True, "action": "resume"}
     calendar = getattr(state, "calendar", None)
     if cfg.policy == "preventive":
         text = tr("Active: switches to Gcore if its Cloudflare IPs get blocked, a mass block is underway or a match "
@@ -505,8 +516,11 @@ def describe(state, name: str, now: datetime | None = None) -> dict:
     elif on_backup:
         text = tr("On Gcore while the block lasts; returns to Cloudflare after {minutes} min without blocks", minutes=wait)
     if st.last_error:
-        return {"tone": "error", "text": tr("{text}. Last failure: {error}", text=text, error=st.last_error), "resumable": True}
-    return {"tone": "ok", "text": text, "resumable": False}
+        # El fallo primero: es lo que hay que leer. No hay pausa que quitar: el botón lo descarta.
+        return {"tone": "error", "text": tr("Last automatic switch failed: {error}. It retries while the need to switch "
+                                            "lasts. {text}", error=st.last_error, text=text),
+                "short": tr("Last automatic switch failed"), "resumable": True, "action": "clear"}
+    return {"tone": "ok", "text": text, "resumable": False, "action": None}
 
 
 CDN_NAME = {"gcore": "Gcore", "cloudflare": "Cloudflare"}
@@ -545,10 +559,12 @@ def change_indicator(state, name: str, now: datetime | None = None) -> dict | No
     if on_backup and st.clear_since and not in_match:
         eta = st.clear_since + return_after(state, cfg.priority)
         if eta > now:
-            return {"kind": "pending", "target": "cloudflare", "text": tr("Back to Cloudflare around {time}", time=_fmt(eta))}
+            return {"kind": "pending", "target": "cloudflare", "when": eta,
+                    "text": tr("Back to Cloudflare around {time}", time=_fmt(eta))}
     if not on_backup and cfg.policy == "preventive" and calendar:
         nxt = calendar.upcoming(now)
         if nxt and nxt.kickoff - lead - now < UPCOMING_WINDOW:
             when = max(now, nxt.kickoff - lead)
-            return {"kind": "pending", "target": "gcore", "text": tr("Switches to Gcore at {time} ({match})", time=_fmt(when), match=nxt.name)}
+            return {"kind": "pending", "target": "gcore", "when": when,
+                    "text": tr("Switches to Gcore at {time} ({match})", time=_fmt(when), match=nxt.name)}
     return None

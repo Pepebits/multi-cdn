@@ -584,7 +584,7 @@ def getting_started(s: State, domains) -> list[dict]:
         {"key": "alerts", "done": bool((sec.get("telegram_token") and sec.get("telegram_chat_id"))
                                        or (sec.get("smtp_url") and sec.get("alert_email_to"))),
          "href": "/ajustes/notificaciones"},
-        {"key": "live", "done": not s.dry_run, "href": None},
+        {"key": "live", "done": not s.dry_run, "href": "/ajustes/operacion"},
     ]
 
 
@@ -598,6 +598,7 @@ async def resumen(request: Request):
         domains=domains,
         exposed=[d for d in domains if d.status == "origin"],
         changes={d.name: failover.change_indicator(s, d.name) for d in domains},
+        autos={d.name: failover.describe(s, d.name) for d in domains},
         events=s.events.list(limit=5),
         origin_configured=bool(s.inventory.origin_ips),
         origin_health=list(s.origin_health.values()),
@@ -607,6 +608,7 @@ async def resumen(request: Request):
         match_next=s.calendar.upcoming(datetime.now(UTC)) if s.calendar else None,
         calendar_error=s.calendar_error,
         steps=steps if not all(st["done"] for st in steps) else None,
+        calendar_loaded=s.calendar is not None,
     ))
 
 
@@ -619,6 +621,7 @@ async def dominios(request: Request):
         request, "dominios",
         domains=s.views(),
         changes={n: failover.change_indicator(s, n) for n in s.inventory.domains},
+        autos={n: failover.describe(s, n) for n in s.inventory.domains},
         servers=list(s.inventory.servers),
         cf_creds=s.creds.list("cloudflare"),
     ))
@@ -869,7 +872,7 @@ async def dominio_eliminar(request: Request, name: str, confirm: str = Form(""),
     if domain is None:
         raise HTTPException(404)
     back = request.url_for("dominio", name=name)
-    if confirm.strip() != name:
+    if confirm.strip().lower() != name.lower():
         return _back(back, error=tr("Type the domain name to delete it"))
     if dns_action not in ("cloudflare", "gcore", "none"):
         return _back(back, error=tr("Invalid option"))
@@ -941,7 +944,7 @@ async def volver_cloudflare(request: Request, name: str, confirm: str = Form("")
     if name not in s.inventory.domains:
         raise HTTPException(404, tr("Domain not in the inventory"))
     url = request.url_for("dominio", name=name)
-    if confirm.strip() != name:
+    if confirm.strip().lower() != name.lower():
         return _back(url, error=tr("Type the domain name to confirm"))
     async with s.engine_lock:  # no cruzarse con un ciclo del motor
         try:
@@ -971,7 +974,7 @@ async def cambiar(request: Request, name: str, target: str = Form(...), confirm:
     if name not in s.inventory.domains:
         raise HTTPException(404, tr("Domain not in the inventory"))
     url = request.url_for("dominio", name=name)
-    if confirm.strip() != name:
+    if confirm.strip().lower() != name.lower():
         return _back(url, error=tr("Type the domain name to confirm"))
     if target != "gcore":
         return _back(url, error=tr("Target not available yet"))
@@ -1025,6 +1028,15 @@ async def automatico_reanudar(request: Request, name: str):
     s.events.add(actor=_actor(request), kind="config", domain=name, summary=tn("Automatic switching resumed"))
     asyncio.create_task(run_engine(s))
     return _back(request.url_for("dominio", name=name), ok=tr("Automatic switching resumed"))
+
+
+@app.post("/dominios/{name}/automatico/descartar")
+async def automatico_descartar(request: Request, name: str):
+    s = _state(request)
+    if name not in s.inventory.domains:
+        raise HTTPException(404)
+    s.engine.clear_error(name)
+    return _back(request.url_for("dominio", name=name), ok=tr("Last failure dismissed"))
 
 
 # ---------------------------------------------------------------- Historial

@@ -1,8 +1,15 @@
 // Diálogos, confirmaciones escritas, tema y refresco del registro de tareas.
-document.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => document.getElementById(b.dataset.open).showModal()));
+document.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => {
+  const dialog = document.getElementById(b.dataset.open);
+  dialog.showModal();
+  // En el móvil, directo al campo de confirmación (no al botón de cerrar).
+  const field = dialog.querySelector('input[data-expected]');
+  if (field) field.focus();
+}));
 document.querySelectorAll('dialog [data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
 document.querySelectorAll('input[data-expected]').forEach(i => i.addEventListener('input', () => {
-  i.form.querySelector('[data-submit]').disabled = i.value.trim() !== i.dataset.expected;
+  // Sin distinguir mayúsculas: el teclado del móvil puede poner la primera en mayúscula.
+  i.form.querySelector('[data-submit]').disabled = i.value.trim().toLowerCase() !== i.dataset.expected.toLowerCase();
 }));
 (() => {
   const buttons = document.querySelectorAll('[data-theme-choice]');
@@ -99,3 +106,24 @@ if (document.querySelector('.joblog[data-running]')) setTimeout(() => location.r
 
 // En pantallas estrechas las gráficas se desplazan dentro de su tarjeta: empezar por lo más reciente.
 document.querySelectorAll('.viz__frame').forEach(f => { f.scrollLeft = f.scrollWidth; });
+
+// Horas del panel (en UTC): añadir cuánto falta y la hora local del navegador, p. ej.
+// "· in 52 min (02:48 local)". Si no hay JavaScript queda el texto en UTC.
+(() => {
+  const times = document.querySelectorAll('time.rel[datetime]');
+  if (!times.length || !window.Intl || !Intl.RelativeTimeFormat) return;
+  const lang = document.documentElement.lang || 'en';
+  const rel = new Intl.RelativeTimeFormat(lang, { numeric: 'auto', style: 'short' });
+  const local = lang.startsWith('es') ? 'hora local' : 'local';
+  const render = () => times.forEach(t => {
+    const when = new Date(t.getAttribute('datetime'));
+    if (isNaN(when)) return;
+    const mins = Math.round((when - Date.now()) / 60000);
+    const span = Math.abs(mins) >= 120 ? rel.format(Math.round(mins / 60), 'hour') : rel.format(mins, 'minute');
+    const clock = when.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' });
+    t.textContent = `· ${span} (${clock} ${local})`;
+    t.hidden = false;
+  });
+  render();
+  setInterval(render, 30000);
+})();

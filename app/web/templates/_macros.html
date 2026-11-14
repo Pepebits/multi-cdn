@@ -57,7 +57,7 @@
 {% macro isp_list(d, heading_id) -%}
 <section class="isp" aria-labelledby="{{ heading_id }}">
   <div class="isp__head">
-    <h4 id="{{ heading_id }}" class="isp__title">{{ _m('ISPs<span class="visually-hidden"> for {domain}</span> (Cloudflare IPs)', domain=d.name) }}</h4>
+    <h4 id="{{ heading_id }}" class="isp__title">{{ _m('ISPs<span class="visually-hidden"> for {domain} (Cloudflare IPs)</span>', domain=d.name) }}</h4>
     <span>
       {%- if not d.monitored_ips %}{{ _('no data') }}
       {%- else %}{{ _('{blocked}/{total} blocked', blocked=d.blocked_count, total=d.isp_rows|length) }}{% endif -%}
@@ -149,7 +149,7 @@
       {% if dry_run %}<p class="notice notice--warn" style="margin:0">{{ icon('alert') }} {{ _('Dry run: DNS changes are recorded but not applied.') }}</p>{% endif %}
       <div>
         <label for="del-{{ idx }}-c">{{ _m('Type <span class="mono">{domain}</span> to confirm', domain=d.name) }}</label>
-        <input id="del-{{ idx }}-c" type="text" name="confirm" autocomplete="off" spellcheck="false" required data-expected="{{ d.name }}">
+        <input id="del-{{ idx }}-c" type="text" name="confirm" autocomplete="off" autocapitalize="none" autocorrect="off" inputmode="url" spellcheck="false" required data-expected="{{ d.name }}">
       </div>
     </div>
     <div class="dialog__foot">
@@ -170,11 +170,21 @@
 {%- endmacro %}
 
 
+{% macro status_icon(status) -%}
+{{ icon({'cloudflare': 'cloud', 'gcore': 'switch', 'origin': 'alert', 'mixed': 'alert'}.get(status, 'info')) }}
+{%- endmacro %}
+
+{% macro auto_notice(a, name) -%}
+{%- if a and a.short and a.tone in ('warn', 'error') -%}
+<p class="notice notice--{{ a.tone }} auto-short">{{ icon('alert' if a.tone == 'error' else 'pause') }} <a href="/dominios/{{ name }}">{{ a.short }}</a></p>
+{%- endif -%}
+{%- endmacro %}
+
 {% macro change_badge(c) -%}
 {%- if c -%}
 <span class="change change--{{ c.kind }} change--to-{{ c.target }}">
   {%- if c.kind == 'propagating' %}<span class="change__bar" aria-hidden="true"></span>{% else %}<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>{% endif -%}
-  <span>{{ c.text }}</span>
+  <span>{{ c.text }}{% if c.when %} <time class="rel" datetime="{{ c.when.isoformat() }}" hidden></time>{% endif %}</span>
 </span>
 {%- endif -%}
 {%- endmacro %}

@@ -50,7 +50,9 @@ class Scale:
         while t < self.end:
             if i % every == 0:
                 label = f"{tr(DAYS[t.weekday()])} {t.day}" if days <= 7 else f"{t.day}/{t.month}"
-                out.append({"x": self.x(t), "label": label})
+                x = self.x(t)
+                # Cerca del borde derecho la etiqueta centrada se corta: alinearla al final.
+                out.append({"x": x, "label": label, "anchor": "end" if x > W - RIGHT - 24 else "middle"})
             t += timedelta(days=1)
             i += 1
         return out
