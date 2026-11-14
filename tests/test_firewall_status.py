@@ -6,8 +6,15 @@ from app import firewall_status
 NOW = datetime(2026, 11, 9, 12, tzinfo=UTC)
 
 
-def write(client, **kw):
-    data = {"checked_at": "2026-11-09T11:30:00Z", "last_ok": "2026-11-09T11:30:00Z", "ipv4": 1000, "ipv6": 850,
+def iso(t: datetime) -> str:
+    return t.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def write(client, at: datetime | None = None, **kw):
+    """Estado del script; por defecto, aplicado hace 30 min respecto al reloj real (la página lo
+    compara con datetime.now). Las pruebas con NOW fijo pasan at=NOW."""
+    last = iso((at or datetime.now(UTC)) - timedelta(minutes=30))
+    data = {"checked_at": last, "last_ok": last, "ipv4": 1000, "ipv6": 850,
             "caddy": "sin cambios", "error": ""} | kw
     (firewall_status.data_dir() / "firewall-status.json").write_text(json.dumps(data))
 
@@ -19,17 +26,17 @@ def alerts(state):
 def test_alerts_once_on_problem_and_on_recovery(client):
     state = client.app.state.mc
     firewall_status.check(state, NOW)  # sin script instalado: nada
-    write(client)
+    write(client, NOW)
     firewall_status.check(state, NOW)
     assert not alerts(state)
-    write(client, error="la lista gc4 ha llegado vacía")
+    write(client, NOW, error="la lista gc4 ha llegado vacía")
     firewall_status.check(state, NOW)
     firewall_status.check(state, NOW)
     assert alerts(state) == ["Firewall del origen: la última actualización falló: la lista gc4 ha llegado vacía"]
-    write(client)
+    write(client, NOW)
     firewall_status.check(state, NOW + timedelta(days=2))  # sin error pero con la lista vieja
     assert "no se actualizan desde 09/11 11:30" in alerts(state)[0]
-    write(client, last_ok="2026-11-11T11:00:00Z")
+    write(client, NOW, last_ok="2026-11-11T11:00:00Z")
     firewall_status.check(state, NOW + timedelta(days=2))
     assert alerts(state)[0] == "Firewall del origen: rangos actualizados de nuevo"
 
@@ -54,7 +61,7 @@ def test_requests_hourly_refresh_while_serving_gcore(client):
     from app.signals.dnscheck import Resolution
     state = client.app.state.mc
     request = firewall_status.data_dir() / "firewall-refresh-request"
-    write(client)  # última lista: 11:30
+    write(client, NOW)  # última lista: 11:30
     firewall_status.check(state, NOW)  # en Cloudflare: no pide nada
     assert not request.exists()
     state.resolutions = {"example.com": Resolution("example.com", ("5.188.126.61",), "cl-a.gcorecdn.com.", "gcore")}

@@ -210,9 +210,16 @@ In **Settings → Notifications**:
   (period 5 min, grace 10 min) and paste its ping URL. The panel pings it every 5 minutes while
   everything runs; if the panel or the server goes down, healthchecks.io alerts you.
 
-In **Settings → Operation** you can also set the language of history entries and alerts, add
-a [football-data.org](https://www.football-data.org) token for a second match calendar source,
-and adjust the Gcore quota.
+In **Settings → Operation** you can also:
+
+- adjust the **switching times** per priority: how long before a match the preventive policy
+  moves to Gcore (default 120 min for critical domains, 90 for the rest) and how long without
+  blocks before returning to Cloudflare (default 20 and 15 min). The defaults come from two
+  months of real block history;
+- set the language of history entries and alerts;
+- add a [football-data.org](https://www.football-data.org) token for a second match calendar
+  source;
+- adjust the Gcore quota.
 
 ## 9. Protect the origin
 

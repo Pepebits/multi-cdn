@@ -70,11 +70,11 @@ def test_switches_on_block_and_returns_after_quiet_period(st):
 
     st.feed = feed(False, T0 + timedelta(minutes=20))
     run(st, T0 + timedelta(minutes=20))
-    st.feed = feed(False, T0 + timedelta(minutes=60))
-    run(st, T0 + timedelta(minutes=60))  # crítico: 45 min sin bloqueos aún no
+    st.feed = feed(False, T0 + timedelta(minutes=35))
+    run(st, T0 + timedelta(minutes=35))  # crítico: 20 min sin bloqueos aún no
     assert len(switches(st)) == 1
-    st.feed = feed(False, T0 + timedelta(minutes=66))
-    run(st, T0 + timedelta(minutes=66))
+    st.feed = feed(False, T0 + timedelta(minutes=41))
+    run(st, T0 + timedelta(minutes=41))
     sw = switches(st)
     assert len(sw) == 2 and sw[0].transition == "GCORE → CF" and "sin bloqueos desde las 20:20" in sw[0].summary
     assert not st.engine.get("example.com").sim_backup
@@ -229,12 +229,14 @@ def calendar_at(kickoff):
 def test_preventive_switches_before_a_match_and_waits_after_it(st):
     kickoff = T0 + timedelta(hours=1)
     st.calendar = calendar_at(kickoff)
-    st.feed = feed(False, kickoff - timedelta(minutes=50))
-    run(st, kickoff - timedelta(minutes=50))  # aún fuera de la ventana (45 min en críticos)
+    kickoff = T0 + timedelta(hours=3)
+    st.calendar = calendar_at(kickoff)
+    st.feed = feed(False, kickoff - timedelta(minutes=125))
+    run(st, kickoff - timedelta(minutes=125))  # aún fuera de la ventana (120 min en críticos)
     assert not switches(st)
-    st.feed = feed(False, kickoff - timedelta(minutes=44))
-    run(st, kickoff - timedelta(minutes=44))
-    assert "partido de LaLiga (Celta Vigo – Levante, 21:00 UTC)" in switches(st)[0].summary
+    st.feed = feed(False, kickoff - timedelta(minutes=119))
+    run(st, kickoff - timedelta(minutes=119))
+    assert "partido de LaLiga (Celta Vigo – Levante, 23:00 UTC)" in switches(st)[0].summary
     end = kickoff + timedelta(hours=2, minutes=30)
     st.feed = feed(False, end - timedelta(minutes=1))
     run(st, end - timedelta(minutes=1))
@@ -336,7 +338,7 @@ def test_change_indicator_pending_return_and_preventive_match(st):
     es.clear_since = now - timedelta(minutes=10)
     st.engine.save(es)
     c = failover.change_indicator(st, "example.com", now)
-    assert c["kind"] == "pending" and c["text"] == f"Vuelta a Cloudflare hacia las {(es.clear_since + timedelta(minutes=45)):%H:%M} UTC"
+    assert c["kind"] == "pending" and c["text"] == f"Vuelta a Cloudflare hacia las {(es.clear_since + timedelta(minutes=20)):%H:%M} UTC"
     st.engine.maintenance("example.com", None)
     assert failover.change_indicator(st, "example.com", now) is None  # en pausa: no se promete nada
     st.engine.resume("example.com")
@@ -369,3 +371,116 @@ def test_cli_english_command_names(tmp_path, monkeypatch, capsys):
     names = set(cli._parser()._subparsers._group_actions[0].choices)
     for english, spanish in cli.COMMANDS.items():
         assert english in names and set(spanish) <= names
+
+
+# ---------------------------------------------------------------- arreglos de la revisión de la 0.2.0
+
+def test_resume_after_flap_pause_forgets_recent_switches(st):
+    test_flapping_pauses_the_domain(st)
+    t = T0 + timedelta(minutes=16 * failover.FLAP_MAX + 20)
+    st.engine.resume("example.com")
+    st.feed = feed(True, t)
+    run(st, t)
+    assert not st.engine.get("example.com").paused  # reanudar no vuelve a pausar en el siguiente ciclo
+
+
+def test_same_failure_alerts_again_after_the_need_to_switch_ends(st, monkeypatch):
+    calls = iter(["edge HTTP 502", "edge timeout", "edge HTTP 502"])
+
+    async def broken(state_, name):
+        return next(calls)
+    monkeypatch.setattr(failover, "check_backup", broken)
+    errors = lambda: [e for e in st.events.list(limit=20) if e.kind == "error"]  # noqa: E731
+    st.feed = feed(True)
+    run(st, T0)
+    run(st, T0 + timedelta(minutes=2))  # otro detalle, mismo tipo de fallo: no repite el aviso
+    assert len(errors()) == 1 and "timeout" in st.engine.get("example.com").last_error
+    st.feed = feed(False, T0 + timedelta(minutes=10))
+    run(st, T0 + timedelta(minutes=10))  # ya no hace falta cambiar: se olvida el fallo
+    assert st.engine.get("example.com").last_error is None
+    st.feed = feed(True, T0 + timedelta(days=7))
+    run(st, T0 + timedelta(days=7))  # la semana siguiente, el mismo fallo vuelve a avisar
+    assert len(errors()) == 2
+
+
+def test_hold_written_by_another_process_is_respected(st):
+    """app.cli switch escribe la pausa desde otro proceso: el panel no la deshace."""
+    import sqlite3
+    from app.engine.failover import EngineStore
+    db_file = st.store.conn.execute("PRAGMA database_list").fetchone()[2]
+    other = EngineStore(sqlite3.connect(db_file))
+    other.manual_change("example.com", to_backup=False, simulated=True, now=T0)
+    st.feed = feed(True)
+    run(st, T0 + timedelta(minutes=5))
+    assert not switches(st) and st.engine.get("example.com").hold_until is not None
+
+
+def test_maintenance_set_while_checking_gcore_stops_the_switch(st, monkeypatch):
+    async def slow_check(state_, name):
+        state_.engine.maintenance(name, None)  # el usuario pausa mientras se comprueba Gcore
+        return None
+    monkeypatch.setattr(failover, "check_backup", slow_check)
+    st.feed = feed(True)
+    run(st, T0)
+    assert not switches(st)
+
+
+def test_one_domain_error_does_not_stop_the_others(st, monkeypatch, caplog):
+    st.store.set_credentials("example.net", st.creds.list("cloudflare")[0].id, None)
+    st.reload()
+    seen = []
+    real = failover.decide
+
+    def picky(view, cfg, *a, **kw):
+        seen.append(view.name)
+        if view.name == "example.com":
+            raise RuntimeError("boom")
+        return real(view, cfg, *a, **kw)
+    monkeypatch.setattr(failover, "decide", picky)
+    st.engine_ok_at = None
+    run(st, T0)
+    assert "example.com" in seen and st.engine_ok_at is None and "boom" in caplog.text
+
+
+def test_switching_times_are_configurable(st, client):
+    r = client.post("/ajustes/operacion/tiempos", data={
+        "match_lead_critical": "60", "return_after_critical": "10", "match_lead_medium": "90",
+        "return_after_medium": "15", "match_lead_low": "90", "return_after_low": "15"}, follow_redirects=True)
+    assert "Tiempos de cambio guardados" in r.text
+    assert failover.return_after(st, "critical") == timedelta(minutes=10)
+    assert failover.match_lead(st, "critical") == timedelta(minutes=60)
+    st.feed = feed(True)
+    run(st, T0)
+    st.feed = feed(False, T0 + timedelta(minutes=20))
+    run(st, T0 + timedelta(minutes=20))
+    st.feed = feed(False, T0 + timedelta(minutes=31))
+    run(st, T0 + timedelta(minutes=31))  # 11 min sin bloqueos > 10 configurados
+    assert switches(st)[0].transition == "GCORE → CF"
+    bad = client.post("/ajustes/operacion/tiempos", data={"match_lead_critical": "5"}, follow_redirects=True)
+    assert "Introduce minutos enteros" in bad.text or "deben estar entre" in bad.text
+    client.post("/ajustes/operacion/tiempos", data={"reset": "1"})
+    assert failover.return_after(st, "critical") == timedelta(minutes=failover.DEFAULT_RETURN_AFTER["critical"])
+
+
+def test_delete_refuses_removing_gcore_resource_while_served_by_gcore(st, client, monkeypatch):
+    from app.providers import gcore
+    deleted = []
+
+    async def fake_delete(token, rid):
+        deleted.append(rid)
+    monkeypatch.setattr(gcore, "delete_resource", fake_delete)
+    st.resolutions = {h: Resolution(h, ("5.188.126.61",), "cl-test.gcorecdn.com.", "gcore") for h in ("example.com", "www.example.com")}
+    r = client.post("/dominios/example.com/eliminar", data={"confirm": "example.com", "dns_action": "cloudflare",
+                                                             "delete_gcore": "1"}, follow_redirects=True)
+    assert not deleted and "example.com" in st.inventory.domains and "aún no está en Cloudflare" in r.text
+
+
+def test_stale_feed_alerts_once_and_on_recovery(st):
+    from app.main import check_stale_feed
+    st.feed = feed(False, datetime.now(UTC) - timedelta(hours=1))
+    check_stale_feed(st)
+    check_stale_feed(st)
+    st.feed = feed(False, datetime.now(UTC))
+    check_stale_feed(st)
+    alerts = [e.summary for e in st.events.list(limit=10) if e.kind == "alert"]
+    assert len(alerts) == 2 and "datos viejos" in alerts[1] and "al día" in alerts[0]

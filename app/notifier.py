@@ -15,6 +15,7 @@ import asyncio
 import html
 import logging
 import smtplib
+import ssl
 import time
 from email.message import EmailMessage
 from urllib.parse import unquote, urlparse
@@ -115,18 +116,28 @@ class Notifier:
         u = urlparse(self.secrets.get("smtp_url"))
         to = self.secrets.get("alert_email_to")
         sender = unquote(u.username) if u.username and "@" in unquote(u.username) else to
-        msg = EmailMessage()
-        msg["Subject"], msg["From"], msg["To"] = f"[Multi-CDN] {subject}", sender, to
-        msg.set_content(body)
+        # Una cabecera no admite saltos de línea (EmailMessage lanza ValueError): el asunto va en
+        # una sola línea y el texto completo queda en el cuerpo.
+        subject = " ".join(f"[Multi-CDN] {subject}".split())
         try:
+            msg = EmailMessage()
+            msg["Subject"], msg["From"], msg["To"] = subject, sender, to
+            msg.set_content(body)
             port = u.port or (465 if u.scheme == "smtps" else 587)
-            cls = smtplib.SMTP_SSL if u.scheme == "smtps" else smtplib.SMTP
-            with cls(u.hostname, port, timeout=20) as s:
+            context = ssl.create_default_context()  # verifica certificado y nombre del servidor
+            if u.scheme == "smtps":
+                server = smtplib.SMTP_SSL(u.hostname, port, timeout=20, context=context)
+            else:
+                server = smtplib.SMTP(u.hostname, port, timeout=20)
+            with server as s:
                 if u.scheme == "smtp":
-                    s.starttls()
+                    s.starttls(context=context)
                 if u.username:
                     s.login(unquote(u.username), unquote(u.password or ""))
                 s.send_message(msg)
             return "ok"
         except (smtplib.SMTPException, OSError) as exc:
+            return type(exc).__name__
+        except Exception as exc:  # nunca debe matar la tarea de envío sin dejar rastro
+            log.exception("email notification failed")
             return type(exc).__name__

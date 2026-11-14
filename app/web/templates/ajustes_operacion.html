@@ -17,13 +17,38 @@
 <section class="card" aria-labelledby="automatico">
   <div class="card__head"><h2 id="automatico">{{ m.icon('switch') }} {{ _("Automatic CDN switching") }}</h2><span class="pill {{ 'pill--free' if auto_on else 'pill--nodata' }}">{{ _('Enabled') if auto_on else _('Disabled') }}</span></div>
   <div class="card__body stack-gap">
-    <p style="margin:0">{{ _m("Each domain with the <strong>reactive</strong> policy moves to Gcore when its Cloudflare IPs are blocked. With the <strong>preventive</strong> policy, also on a mass block and from 45 min (critical) or 30 min (the rest) before each LaLiga or LaLiga Hypermotion match. Before switching it checks that Gcore serves each hostname. It returns to Cloudflare after 45 min without blocks (critical domains) or 30 min (the rest).") }}</p>
+    <p style="margin:0">{{ _m("Each domain with the <strong>reactive</strong> policy moves to Gcore when its Cloudflare IPs are blocked. With the <strong>preventive</strong> policy, also on a mass block and ahead of each LaLiga or LaLiga Hypermotion match. Before switching it checks that Gcore serves each hostname. It returns to Cloudflare after a while without blocks. Both times are set per priority in <a href=\"#tiempos\">Switching times</a>.") }}</p>
     <p class="help" style="margin:0">{{ _m("At least 15 min between switches; with more than 4 switches in 6 h that domain is paused. A manual switch pauses it for 1 h. The <strong>manual</strong> policy never changes anything. With the feed down it can move to Gcore for a match, but it does not return until the feed confirms there is no block. In dry run mode switches are only recorded.") }}</p>
     <form method="post" action="/ajustes/operacion/automatico" class="actions-end">{{ csrf_field() }}
       <input type="hidden" name="enabled" value="{{ '0' if auto_on else '1' }}">
       <button class="btn{{ '' if auto_on else ' btn--primary' }}" type="submit">{% if auto_on %}{{ m.icon('pause') }} {{ _("Disable for all domains") }}{% else %}{{ m.icon('play') }} {{ _("Enable") }}{% endif %}</button>
     </form>
   </div>
+</section>
+
+<section class="card" aria-labelledby="tiempos">
+  <div class="card__head"><h2 id="tiempos">{{ m.icon('clock') }} {{ _("Switching times") }}</h2></div>
+  <form method="post" action="/ajustes/operacion/tiempos">{{ csrf_field() }}
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th scope="col">{{ _("Priority") }}</th><th scope="col">{{ _("Switch before a match (min)") }}</th><th scope="col">{{ _("Return after no blocks for (min)") }}</th></tr></thead>
+        <tbody>
+          {% for p, t in timings.items() %}
+          <tr>
+            <th scope="row">{{ {'critical': _("Critical"), 'medium': _("Medium"), 'low': _("Low")}[p] }}</th>
+            <td><input type="number" name="match_lead_{{ p }}" value="{{ t.match_lead }}" min="{{ limits.match_lead[0] }}" max="{{ limits.match_lead[1] }}" required aria-label="{{ _('Switch before a match (min)') }}" aria-describedby="tiempos-help"> <span class="muted mono">{{ _("default {n}", n=t.default_lead) }}</span></td>
+            <td><input type="number" name="return_after_{{ p }}" value="{{ t.return_after }}" min="{{ limits.return_after[0] }}" max="{{ limits.return_after[1] }}" required aria-label="{{ _('Return after no blocks for (min)') }}" aria-describedby="tiempos-help"> <span class="muted mono">{{ _("default {n}", n=t.default_wait) }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card__foot actions-end">
+      <button class="btn" type="submit" name="reset" value="1" formnovalidate>{{ m.icon('refresh') }} {{ _("Restore defaults") }}</button>
+      <button class="btn btn--primary" type="submit">{{ _("Save times") }}</button>
+    </div>
+  </form>
+  <p id="tiempos-help" class="card__body help" style="margin:0;padding-top:0">{{ m.icon('info') }} {{ _("The defaults come from two months of block history: blocks start a median of 68 min before kick-off (90 % within the previous 2 h), and a released IP was blocked again within 15 min only 0.05 % of the time. A longer lead protects more of the match at the cost of more time and traffic on Gcore.") }}</p>
 </section>
 
 <section class="card" aria-labelledby="idioma">

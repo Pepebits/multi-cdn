@@ -27,7 +27,6 @@
   "Disabled": "Desactivado",
   "Do not use the Global API Key: it gives full access to the account.": "No uses la Global API Key: da acceso total a la cuenta.",
   "Dry run": "Simulación",
-  "Each domain with the <strong>reactive</strong> policy moves to Gcore when its Cloudflare IPs are blocked. With the <strong>preventive</strong> policy, also on a mass block and from 45 min (critical) or 30 min (the rest) before each LaLiga or LaLiga Hypermotion match. Before switching it checks that Gcore serves each hostname. It returns to Cloudflare after 45 min without blocks (critical domains) or 30 min (the rest).": "Cada dominio con política <strong>reactiva</strong> pasa a Gcore cuando se bloquean sus IPs de Cloudflare. Con política <strong>preventiva</strong>, también ante un bloqueo masivo y desde 45 min (críticos) o 30 min (resto) antes de cada partido de LaLiga o LaLiga Hypermotion. Antes de cambiar comprueba que Gcore sirve cada hostname. Vuelve a Cloudflare tras 45 min sin bloqueos (dominios críticos) o 30 min (resto).",
   "Enable": "Activar",
   "Enabled": "Activado",
   "Encrypted · never shown again": "Cifradas · nunca se vuelven a mostrar",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import smtplib
+import ssl
 from urllib.parse import unquote, urlparse
 
 import httpx
@@ -31,10 +32,14 @@ def _smtp_check(url: str) -> tuple[bool, str]:
     if u.scheme not in ("smtp", "smtps") or not u.hostname:
         return False, tr("Use smtp://… or smtps://user:password@host:port")
     port = u.port or (465 if u.scheme == "smtps" else 587)
-    cls = smtplib.SMTP_SSL if u.scheme == "smtps" else smtplib.SMTP
-    with cls(u.hostname, port, timeout=15) as s:
+    context = ssl.create_default_context()  # verifica certificado y nombre del servidor
+    if u.scheme == "smtps":
+        server = smtplib.SMTP_SSL(u.hostname, port, timeout=15, context=context)
+    else:
+        server = smtplib.SMTP(u.hostname, port, timeout=15)
+    with server as s:
         if u.scheme == "smtp":
-            s.starttls()
+            s.starttls(context=context)
         if u.username:
             s.login(unquote(u.username), unquote(u.password or ""))
     return True, tr("Connection and authentication OK with {host}:{port}", host=u.hostname, port=port)

@@ -32,6 +32,14 @@ def valid_url(url: str) -> bool:
     return url.startswith("https://") and " " not in url and len(url) < 300
 
 
+ENGINE_MAX = timedelta(minutes=10)
+
+
+def _engine_should_run(state) -> bool:
+    from .engine import failover
+    return failover.auto_enabled(state) and any(failover.eligible(d) for d in state.inventory.domains.values())
+
+
 def health(state, now: datetime | None = None) -> tuple[bool, list[str]]:
     """(¿funciona el panel?, mensajes). Solo las tareas del propio panel cuentan como fallo;
     lo que depende de terceros (feed, calendario) se informa pero no lo marca como caído."""
@@ -42,8 +50,13 @@ def health(state, now: datetime | None = None) -> tuple[bool, list[str]]:
     needs_cf = any(d.cloudflare_credential and d.zone_id for d in state.inventory.domains.values())
     if needs_cf and (state.cf_sync_at is None or now - state.cf_sync_at > CF_MAX):
         problems.append(tn("reading Cloudflare has been stopped for more than 15 min"))
+    ok_at = getattr(state, "engine_ok_at", None)
+    if ok_at is not None and now - ok_at > ENGINE_MAX and _engine_should_run(state):
+        problems.append(tn("the switching engine has not completed a cycle for more than 10 min"))
     if state.feed is None or now - state.feed.fetched_at > FEED_WARN:
         notes.append(tn("block feed without recent data"))
+    elif state.feed.is_stale(now):
+        notes.append(tn("block feed answering with old data: automatic switching is not deciding"))
     if state.calendar_error:
         notes.append(tn("match calendar not available"))
     notes.append(tn("dry run mode") if state.dry_run else tn("live mode"))

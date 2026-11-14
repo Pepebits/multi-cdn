@@ -81,3 +81,35 @@ def test_page_renders_charts_tables_and_periods(client):
 def test_page_without_feed_shows_empty_states(client):
     page = client.get("/estadisticas").text
     assert "feed de bloqueos aún sin leer" in page and "Sin episodios" in page
+
+
+def test_kind_matches_exact_labels_in_both_languages():
+    assert stats._kind("A → origin IP (not proxied)") == "origin"  # contiene «proxied» pero no es Cloudflare
+    assert stats._kind("A → IP de origen (sin proxy)") == "origin"
+    assert stats._kind("Cloudflare proxied") == "cloudflare"
+    assert stats._kind("CNAME → Gcore") == "gcore"
+    assert stats._kind("CNAME → cl-a.gcorecdn.com · TTL 60") == "gcore"
+    assert stats._kind("otro destino") == "other" and stats._kind("other target") == "other"
+    assert stats._kind("sin resolver") == "unresolved" and stats._kind("unresolved") == "unresolved"
+    assert stats._kind("desconocido") is None and stats._kind("unknown") is None
+
+
+def test_cdn_segments_map_other_kinds_to_unknown():
+    to_cf = [["x.com", "A → IP de origen (sin proxy)", "Cloudflare proxied"]]
+    to_gcore = [["x.com", "Cloudflare proxied", "CNAME → cl-a.gcorecdn.com · TTL 60"]]
+    segs = stats.cdn_segments([E(2, to_cf), E(4, to_gcore)], ["x.com"], {"x.com": "gcore"}, T, T + timedelta(hours=6))
+    assert [(g.start.hour, g.end.hour, g.kind) for g in segs] == [(0, 2, "unknown"), (2, 4, "cloudflare"), (4, 6, "gcore")]
+    for provider in ("unresolved", "other", "origin"):  # sin cambios: el estado actual
+        segs = stats.cdn_segments([], ["x.com"], {"x.com": provider}, T, T + timedelta(hours=6))
+        assert [g.kind for g in segs] == ["unknown"]
+
+
+def test_page_survives_hostnames_without_cdn(client):
+    state = client.app.state.mc
+    from app.signals.dnscheck import Resolution
+    state.resolutions = {h: Resolution(h, (), None, "unresolved") for h in ("example.com", "www.example.com")}
+    assert client.get("/estadisticas").status_code == 200  # antes: KeyError en CDN_LABEL
+    state.events.add(actor="admin", kind="switch", domain="example.com", transition="GCORE → CF", summary="x",
+                     dns_diff=[[h, "A → origin IP (not proxied)", "Cloudflare proxied"]
+                               for h in ("example.com", "www.example.com")])
+    assert client.get("/estadisticas").status_code == 200

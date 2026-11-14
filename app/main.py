@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 import hmac
 import logging
 import os
@@ -74,6 +75,7 @@ class State:
     client: httpx.AsyncClient | None = None
     cf_sync_at: datetime | None = None
     cf_sync_errors: dict = field(default_factory=dict)  # dominio -> error
+    cf_multi_records: dict = field(default_factory=dict)  # dominio -> hostnames con varios registros web
     jobs: dict = field(default_factory=dict)  # dominio -> Job de preparación en Gcore
     blocked_domains: set = field(default_factory=set)  # dominios con sus IPs de Cloudflare bloqueadas
     cf_live: dict = field(default_factory=dict)  # hostname -> registro actual en Cloudflare (to_backup, target)
@@ -84,6 +86,8 @@ class State:
     last_beat: object | None = None  # último aviso externo enviado (heartbeat.Beat)
     origin_health: dict = field(default_factory=dict)  # servidor -> origin_health.OriginHealth
     engine: EngineStore = field(init=False)
+    engine_ok_at: datetime | None = None  # último ciclo completo del motor sin errores
+    feed_stale_alerted: bool = False
     engine_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def __post_init__(self) -> None:
@@ -116,8 +120,23 @@ async def refresh_feed(state: State) -> None:
         if not was_down:
             state.events.add(actor="auto", kind="alert", summary=tn("Block feed unavailable ({error})", error=type(exc).__name__))
         return
+    check_stale_feed(state)
     check_block_transitions(state)
     await run_engine(state)
+
+
+def check_stale_feed(state: State) -> None:
+    """El feed puede responder bien con datos viejos: entonces el motor no decide (ni va ni vuelve).
+    Avisar al empezar y al terminar."""
+    stale = state.feed.is_stale()
+    if stale and not state.feed_stale_alerted:
+        state.feed_stale_alerted = True
+        state.events.add(actor="auto", kind="alert", summary=tn(
+            "Block feed is answering with old data (last update {time}): automatic switching is not deciding",
+            time=f"{state.feed.last_update.astimezone(UTC):%d/%m %H:%M} UTC"))
+    elif not stale and state.feed_stale_alerted:
+        state.feed_stale_alerted = False
+        state.events.add(actor="auto", kind="alert", summary=tn("Block feed up to date again"))
 
 
 async def refresh_calendar(state: State) -> None:
@@ -184,7 +203,8 @@ def check_block_transitions(state: State) -> None:
             elif d.status == "gcore":
                 where = tn("already served by Gcore")
             else:
-                where = tn("current status: {status}", status=d.status_label.lower())
+                from .views import STATUS
+                where = tn("current status: {status}", status=tn(STATUS[d.status][0]).lower())
             state.events.add(actor="auto", kind="alert", domain=d.name,
                              summary=tnn("Cloudflare IPs blocked at {n} ISP; {where}", "Cloudflare IPs blocked at {n} ISPs; {where}",
                                          d.blocked_count, where=where),
@@ -194,7 +214,7 @@ def check_block_transitions(state: State) -> None:
             if d.status in ("cloudflare", "unknown"):
                 summary = tn("Block ended on its Cloudflare IPs")
             elif is_auto:
-                mins = int(failover.RETURN_AFTER[cfg.priority].total_seconds() // 60)
+                mins = int(failover.return_after(state, cfg.priority).total_seconds() // 60)
                 summary = tn("Block ended on its Cloudflare IPs; automatic return to Cloudflare after {mins} min without blocks",
                              mins=mins)
             else:
@@ -237,8 +257,14 @@ async def refresh_cloudflare(state: State) -> None:
         if not token or not domain.zone_id:
             continue
         try:
-            records = {r["name"]: r for r in await cf.list_web_records(token, domain.zone_id)}
+            listed = await cf.list_web_records(token, domain.zone_id)
+            records = {r["name"]: r for r in listed}
             state.cf_sync_errors.pop(name, None)
+            # A + AAAA (o varios A) en un hostname que conmuta: Cloudflare no deja convertir uno en
+            # CNAME mientras existan los otros, así que el cambio a Gcore fallaría en pleno bloqueo.
+            counts = Counter(r["name"] for r in listed)
+            multi = sorted(h.name for h in domain.hostnames if h.failover and counts[h.name] > 1)
+            state.cf_multi_records[name] = multi
         except (RuntimeError, httpx.HTTPError) as exc:
             state.cf_sync_errors[name] = str(exc) or type(exc).__name__
             continue
@@ -289,8 +315,10 @@ async def _delayed_loop(delay: int, interval: int, fn, *args) -> None:
 
 async def _loop(interval: int, fn, *args) -> None:
     while True:
-        with suppress(Exception):
+        try:
             await fn(*args)
+        except Exception:
+            log.exception("background task %s failed", getattr(fn, "__name__", fn))
         await asyncio.sleep(interval)
 
 
@@ -575,7 +603,7 @@ async def resumen(request: Request):
         origin_health=list(s.origin_health.values()),
         gcore_configured=any(d.gcore_ready for d in domains),
         usage=list(s.gcore_usage.values()),
-        match_now=s.calendar.active(datetime.now(UTC), failover.MATCH_LEAD["critical"]) if s.calendar else None,
+        match_now=s.calendar.active(datetime.now(UTC), failover.match_lead(s, "critical")) if s.calendar else None,
         match_next=s.calendar.upcoming(datetime.now(UTC)) if s.calendar else None,
         calendar_error=s.calendar_error,
         steps=steps if not all(st["done"] for st in steps) else None,
@@ -683,6 +711,10 @@ async def dominio(request: Request, name: str):
     view = build_domain(name, s.inventory.domains[name], s.resolutions, s.feed, s.engine.get(name).cf_ips)
     if name in s.cf_sync_errors:
         view.alerts.append(tr("Could not read its records on Cloudflare: {error}", error=s.cf_sync_errors[name]))
+    if multi := s.cf_multi_records.get(name):
+        view.alerts.append(tr("{hosts}: more than one A/AAAA record on Cloudflare. The switch to Gcore turns the record into a "
+                              "CNAME, which Cloudflare rejects while the others exist: keep a single record per hostname",
+                              hosts=", ".join(multi)))
     return templates.TemplateResponse(request, "dominio.html", _common(
         request, "dominios", d=view, cfg=s.inventory.domains[name],
         servers=list(s.inventory.servers), events=s.events.list(domain=name, limit=10),
@@ -843,7 +875,17 @@ async def dominio_eliminar(request: Request, name: str, confirm: str = Form(""),
         return _back(back, error=tr("Invalid option"))
     if dns_action == "gcore" and delete_gcore:
         return _back(back, error=tr("You cannot leave it on Gcore and delete its Gcore resource at the same time"))
+    if delete_gcore and domain.gcore_resource_id and any(
+            (r := s.resolutions.get(h.name)) is None or r.provider not in ("cloudflare",) for h in domain.hostnames if h.failover):
+        # El DNS tarda en propagar (y en simulación ni siquiera cambia): borrar ahora el recurso
+        # dejaría la web apuntando a nada.
+        return _back(back, error=tr("Its DNS is not on Cloudflare yet. Return it to Cloudflare first, wait until the "
+                                    "public DNS shows it there, then delete the domain and its Gcore resource"))
+    async with s.engine_lock:
+        return await _delete_domain(request, s, name, domain, back, dns_action, delete_gcore)
 
+
+async def _delete_domain(request, s, name, domain, back, dns_action, delete_gcore):
     client = s.cloudflare_for(domain)
     diff, changes = [], []
     try:
@@ -901,14 +943,15 @@ async def volver_cloudflare(request: Request, name: str, confirm: str = Form("")
     url = request.url_for("dominio", name=name)
     if confirm.strip() != name:
         return _back(url, error=tr("Type the domain name to confirm"))
-    try:
-        diff, simulated = await failover.return_to_cloudflare(s, name, force_all=s.dry_run and s.engine.get(name).sim_backup is True)
-    except SwitchFailed as exc:
-        s.events.add(actor=_actor(request), kind="error", domain=name, summary=tn("Return to Cloudflare failed: {error}", error=exc), dns_diff=exc.diff)
-        return _back(url, error=tr("Could not return to Cloudflare: {error}", error=exc))
-    if not diff:
-        return _back(url, ok=tr("All hostnames were already on Cloudflare"))
-    s.engine.manual_change(name, to_backup=False, simulated=simulated)
+    async with s.engine_lock:  # no cruzarse con un ciclo del motor
+        try:
+            diff, simulated = await failover.return_to_cloudflare(s, name, force_all=s.dry_run and s.engine.get(name).sim_backup is True)
+        except SwitchFailed as exc:
+            s.events.add(actor=_actor(request), kind="error", domain=name, summary=tn("Return to Cloudflare failed: {error}", error=exc), dns_diff=exc.diff)
+            return _back(url, error=tr("Could not return to Cloudflare: {error}", error=exc))
+        if not diff:
+            return _back(url, ok=tr("All hostnames were already on Cloudflare"))
+        s.engine.manual_change(name, to_backup=False, simulated=simulated)
     s.events.add(actor=_actor(request), kind="switch", domain=name, transition="GCORE → CF",
                  summary=tn("Manual return to Cloudflare from the panel"), dns_diff=diff, simulated=simulated)
     await _after_inventory_change(s)
@@ -932,13 +975,14 @@ async def cambiar(request: Request, name: str, target: str = Form(...), confirm:
         return _back(url, error=tr("Type the domain name to confirm"))
     if target != "gcore":
         return _back(url, error=tr("Target not available yet"))
-    try:
-        diff, simulated = await failover.switch_to_gcore(s, name)
-    except SwitchFailed as exc:
-        if exc.diff:
-            s.events.add(actor=_actor(request), kind="error", domain=name, summary=str(exc), dns_diff=exc.diff)
-        return _back(url, error=str(exc))
-    s.engine.manual_change(name, to_backup=True, simulated=simulated)
+    async with s.engine_lock:  # no cruzarse con un ciclo del motor
+        try:
+            diff, simulated = await failover.switch_to_gcore(s, name)
+        except SwitchFailed as exc:
+            if exc.diff:
+                s.events.add(actor=_actor(request), kind="error", domain=name, summary=str(exc), dns_diff=exc.diff)
+            return _back(url, error=str(exc))
+        s.engine.manual_change(name, to_backup=True, simulated=simulated)
     s.events.add(actor=_actor(request), kind="switch", domain=name, transition="CF → GCORE",
                  summary=tn("Manual switch to Gcore from the panel"), dns_diff=diff, simulated=simulated)
     await _after_inventory_change(s)
@@ -964,6 +1008,8 @@ async def automatico_mantenimiento(request: Request, name: str, horas: int = For
     if horas not in MAINTENANCE_OPTIONS:
         return _back(url, error=tr("Invalid duration"))
     until = datetime.now(UTC) + timedelta(hours=horas) if horas else None
+    # Sin esperar al ciclo en curso: _act vuelve a mirar la pausa en la base de datos justo antes
+    # de tocar el DNS, así que la pausa también frena un cambio que ya estaba comprobando Gcore.
     s.engine.maintenance(name, until)
     s.events.add(actor=_actor(request), kind="config", domain=name,
                  summary=tn("Maintenance: automatic switching paused ({duration})", duration=tn(MAINTENANCE_OPTIONS[horas])))
@@ -1343,7 +1389,43 @@ async def ajustes_operacion(request: Request):
         ev_stats=s.events.stats(), ev_days=s.events.get_setting("events_max_days"),
         ev_rows=s.events.get_setting("events_max_rows"), auto_on=failover.auto_enabled(s),
         quota_gb=s.events.get_setting("gcore_quota_gb"), calendar=s.calendar, calendar_error=s.calendar_error,
-        fd=s.secrets.status("football_data_token"), now=datetime.now(UTC), notify_lang=i18n.notify_lang()))
+        fd=s.secrets.status("football_data_token"), now=datetime.now(UTC), notify_lang=i18n.notify_lang(),
+        timings={p: {"match_lead": int(failover.match_lead(s, p).total_seconds() // 60),
+                     "return_after": int(failover.return_after(s, p).total_seconds() // 60),
+                     "default_lead": failover.DEFAULT_MATCH_LEAD[p], "default_wait": failover.DEFAULT_RETURN_AFTER[p]}
+                 for p in failover.PRIORITIES},
+        limits=failover.TIMING_LIMITS))
+
+
+@app.post("/ajustes/operacion/tiempos")
+async def tiempos_guardar(request: Request):
+    """Antelación antes de un partido y espera sin bloqueos para volver, por prioridad."""
+    s = _state(request)
+    url = request.url_for("ajustes_operacion")
+    form = await request.form()
+    values = {}
+    for kind, (lo, hi) in failover.TIMING_LIMITS.items():
+        for p in failover.PRIORITIES:
+            if form.get("reset"):
+                values[(kind, p)] = failover.TIMING_DEFAULTS[kind][p]
+                continue
+            try:
+                minutes = int(str(form.get(failover.timing_key(kind, p), "")))
+            except ValueError:
+                return _back(url, "tiempos", error=tr("Enter whole minutes"))
+            if not lo <= minutes <= hi:
+                return _back(url, "tiempos", error=tr("Times must be between {lo} and {hi} min", lo=lo, hi=hi))
+            values[(kind, p)] = minutes
+    for (kind, p), minutes in values.items():
+        s.events.set_value(failover.timing_key(kind, p), str(minutes))
+    summary = "; ".join(tn("{priority}: {lead} min before a match, back after {wait} min without blocks",
+                           priority=tn(PRIORITY_NAME[p]), lead=values[("match_lead", p)], wait=values[("return_after", p)])
+                        for p in failover.PRIORITIES)
+    s.events.add(actor=_actor(request), kind="config", summary=tn("Switching times: {summary}", summary=summary))
+    return _back(url, "tiempos", ok=tr("Default switching times restored") if form.get("reset") else tr("Switching times saved"))
+
+
+PRIORITY_NAME = {"critical": N_("Critical"), "medium": N_("Medium"), "low": N_("Low")}
 
 
 @app.post("/ajustes/operacion/automatico")

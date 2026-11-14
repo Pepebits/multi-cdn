@@ -5,11 +5,15 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Publish image runs this same workflow before publishing (no duplicated test steps).
+  workflow_call:
 
 # Public repository: GitHub-hosted runners only. A pull request from a fork runs
 # whatever code it contains, so it must never reach a self-hosted machine.
 concurrency:
-  group: ci-${{ github.ref }}
+  # github.workflow is the caller's name when Publish image calls this workflow, so a
+  # release run never cancels (or is cancelled by) a push run on the same ref.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:

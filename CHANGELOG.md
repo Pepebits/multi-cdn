@@ -4,6 +4,40 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-11-14
+
+### Changed
+- **Switching times are configurable** per priority in Settings → Operation, with new defaults
+  taken from two months of block history (6,103 block endings, 95 matches): blocks start a
+  median of 68 min before kick-off, so the preventive switch now happens 120 min before a match
+  for critical domains (90 for the rest, was 45/30); a released IP was blocked again within
+  15 min only 0.05 % of the time, so the return to Cloudflare now waits 20 min without blocks
+  for critical domains (15 for the rest, was 45/30).
+
+### Fixed
+- Deleting a domain could delete its Gcore resource while DNS still pointed at it (always in
+  dry run, where the DNS change is only simulated). It is now refused until DNS is back on
+  Cloudflare.
+- A switch made from the terminal was undone by the running panel within 90 s: the engine now
+  re-reads its state every cycle and re-checks pauses right before touching DNS.
+- Resuming a domain paused for too many switches paused it again on the next cycle.
+- A failure that repeated on a later day (for example the following match) did not alert again.
+- Manual switches, maintenance and deletion no longer race with an engine cycle.
+- One failing domain no longer stops the engine for the others; background errors are logged,
+  and the external heartbeat reports an engine that stops completing cycles.
+- A block feed answering with old data now raises an alert (and another when it recovers).
+- Email alerts verify the SMTP server's TLS certificate, and multi-line alerts are no longer
+  dropped.
+- The statistics page no longer fails when a hostname is momentarily unresolved.
+- A warning when a switching hostname has several A/AAAA records on Cloudflare, which would make
+  the switch to Gcore fail.
+- Firewall script: it no longer follows links planted in the panel's data folder, restores the
+  previous rules if the first run after a reboot cannot download the ranges, and retries every
+  5 min after a failure.
+- Panel backups are created private from the start and no longer leave SQLite side files
+  behind.
+- Releases are only published after the full CI passes.
+
 ## [0.2.0] - 2026-11-09
 
 ### Added
@@ -57,5 +91,6 @@ during the court-ordered blocks of Cloudflare IPs, by moving DNS to a second CDN
 - **Docker image** (~160 MB, Alpine, Python 3.15, non-root, read-only friendly) published to
   GitHub Container Registry and Docker Hub.
 
+[0.2.1]: https://github.com/Pepebits/multi-cdn/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Pepebits/multi-cdn/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Pepebits/multi-cdn/releases/tag/v0.1.0

@@ -6,8 +6,8 @@ Cada ciclo (tras leer el feed de bloqueos o comprobar el DNS) decide por dominio
     (política reactiva o preventiva) o si hay un bloqueo masivo de IPs de Cloudflare
     (solo preventiva). Antes comprueba que Gcore sirve cada hostname (HTTPS contra su
     borde con el SNI real) y que el borde no figura como bloqueado.
-  - Volver a Cloudflare cuando lleva un tiempo sin ninguna de esas señales
-    (45 min los críticos, 30 el resto).
+  - Volver a Cloudflare cuando lleva un tiempo sin ninguna de esas señales (configurable
+    por prioridad en Ajustes → Operación; ver DEFAULT_RETURN_AFTER).
 
 Salvaguardas:
   - Política «manual»: nunca cambia nada, solo avisa.
@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
@@ -34,13 +35,47 @@ from ..providers.cloudflare import OriginExposureError, plan_to_gcore
 from ..i18n import N_, tn, tnn, tr
 from ..signals.hayahora import ISPS
 
-RETURN_AFTER = {"critical": timedelta(minutes=45), "medium": timedelta(minutes=30), "low": timedelta(minutes=30)}
+log = logging.getLogger(__name__)
+
+# Tiempos por prioridad, en minutos; se cambian en Ajustes → Operación. Valores por defecto
+# sacados del historial del feed (15/09–08/11/2026, 6.103 fines de bloqueo y 95 partidos):
+#  - una IP liberada se volvió a bloquear en menos de 15 min el 0,05 % de las veces y en menos
+#    de 30 el 0,3 %: esperar más apenas protege y alarga el tiempo en Gcore;
+#  - los bloqueos empiezan una mediana de 68 min antes del saque, y el 90 % dentro de las 2 h
+#    previas: con 45 min de antelación el cambio preventivo llegaba tarde la mayoría de veces.
+DEFAULT_RETURN_AFTER = {"critical": 20, "medium": 15, "low": 15}
+DEFAULT_MATCH_LEAD = {"critical": 120, "medium": 90, "low": 90}
+TIMING_LIMITS = {"return_after": (10, 180), "match_lead": (15, 240)}
+TIMING_DEFAULTS = {"return_after": DEFAULT_RETURN_AFTER, "match_lead": DEFAULT_MATCH_LEAD}
+PRIORITIES = ("critical", "medium", "low")
 MIN_GAP = timedelta(minutes=15)
 FLAP_WINDOW, FLAP_MAX = timedelta(hours=6), 4
 MANUAL_HOLD = timedelta(hours=1)
 MASS_BLOCK = 50  # IPs de Cloudflare bloqueadas en ≥3 operadoras
-# Política preventiva: antelación con la que se pasa a Gcore antes de cada partido.
-MATCH_LEAD = {"critical": timedelta(minutes=45), "medium": timedelta(minutes=30), "low": timedelta(minutes=30)}
+
+
+def timing_key(kind: str, priority: str) -> str:
+    return f"{kind}_{priority}"
+
+
+def timing(state, kind: str, priority: str) -> timedelta:
+    """Espera para volver (return_after) o antelación antes de un partido (match_lead)."""
+    default = TIMING_DEFAULTS[kind][priority]
+    raw = state.events.get_value(timing_key(kind, priority)) if state is not None else None
+    lo, hi = TIMING_LIMITS[kind]
+    try:
+        minutes = int(raw) if raw is not None else default
+    except ValueError:
+        minutes = default
+    return timedelta(minutes=minutes if lo <= minutes <= hi else default)
+
+
+def return_after(state, priority: str) -> timedelta:
+    return timing(state, "return_after", priority)
+
+
+def match_lead(state, priority: str) -> timedelta:
+    return timing(state, "match_lead", priority)
 
 DNS_BEFORE = {
     "cloudflare": "Cloudflare proxied", "gcore": "CNAME → Gcore", "origin": N_("A → origin IP (not proxied)"),
@@ -56,8 +91,9 @@ CREATE TABLE IF NOT EXISTS failover_state (
     paused INTEGER NOT NULL DEFAULT 0,     -- pausa por demasiados cambios: hasta reanudar a mano
     clear_since TEXT,                      -- desde cuándo no hay señales de bloqueo
     switches TEXT NOT NULL DEFAULT '[]',   -- marcas de tiempo de los cambios automáticos recientes
-    last_error TEXT,                       -- último fallo avisado (para no repetirlo cada ciclo)
-    hold_reason TEXT                       -- motivo de la pausa: manual | mantenimiento | demasiados cambios
+    last_error TEXT,                       -- último fallo avisado (texto, para el panel)
+    hold_reason TEXT,                      -- motivo de la pausa: manual | mantenimiento | demasiados cambios
+    error_code TEXT                        -- tipo del último fallo avisado (para no repetirlo cada ciclo)
 );
 """
 
@@ -73,6 +109,7 @@ class DomainState:
     switches: list[datetime] = field(default_factory=list)
     last_error: str | None = None
     hold_reason: str | None = None
+    error_code: str | None = None
 
     def held(self, now: datetime) -> bool:
         return self.paused or (self.hold_until is not None and now < self.hold_until)
@@ -91,15 +128,33 @@ class EngineStore:
         if cols.get("sim_backup") == 1:  # primera versión: sim_backup NOT NULL; el estado se puede regenerar
             self.conn.execute("DROP TABLE failover_state")
         self.conn.executescript(SCHEMA)
-        if "hold_reason" not in {r[1] for r in self.conn.execute("PRAGMA table_info(failover_state)")}:
-            self.conn.execute("ALTER TABLE failover_state ADD COLUMN hold_reason TEXT")
+        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(failover_state)")}
+        for col in ("hold_reason", "error_code"):
+            if col not in cols:
+                self.conn.execute(f"ALTER TABLE failover_state ADD COLUMN {col} TEXT")
         self._cache: dict[str, DomainState] = {}
+        self.reload()
+
+    def reload(self) -> None:
+        """Vuelve a leer el estado de la base de datos: la terminal (app.cli switch) escribe en
+        ella desde otro proceso, y su pausa de 1 h tiene que verla el panel."""
+        cache = {}
         for row in self.conn.execute("SELECT domain, cf_ips, sim_backup, hold_until, paused, clear_since, switches,"
-                                     " last_error, hold_reason FROM failover_state"):
-            self._cache[row[0]] = DomainState(
+                                     " last_error, hold_reason, error_code FROM failover_state"):
+            cache[row[0]] = DomainState(
                 domain=row[0], cf_ips=json.loads(row[1]), sim_backup=None if row[2] is None else bool(row[2]), hold_until=_dt(row[3]),
                 paused=bool(row[4]), clear_since=_dt(row[5]), switches=[datetime.fromisoformat(t) for t in json.loads(row[6])],
-                last_error=row[7], hold_reason=row[8])
+                last_error=row[7], hold_reason=row[8], error_code=row[9])
+        self._cache = cache
+
+    def held_now(self, domain: str, now: datetime) -> bool:
+        """¿Está en pausa según la base de datos? Justo antes de tocar el DNS (otro proceso o una
+        acción del panel ha podido pausarlo mientras se comprobaba Gcore)."""
+        row = self.conn.execute("SELECT paused, hold_until FROM failover_state WHERE domain = ?", (domain,)).fetchone()
+        if row is None:
+            return False
+        until = _dt(row[1])
+        return bool(row[0]) or (until is not None and now < until)
 
     def get(self, domain: str) -> DomainState:
         return self._cache.get(domain) or DomainState(domain)
@@ -108,13 +163,13 @@ class EngineStore:
         self._cache[st.domain] = st
         self.conn.execute(
             "INSERT INTO failover_state (domain, cf_ips, sim_backup, hold_until, paused, clear_since, switches, last_error,"
-            " hold_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(domain) DO UPDATE SET cf_ips=excluded.cf_ips,"
+            " hold_reason, error_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(domain) DO UPDATE SET cf_ips=excluded.cf_ips,"
             " sim_backup=excluded.sim_backup, hold_until=excluded.hold_until, paused=excluded.paused,"
             " clear_since=excluded.clear_since, switches=excluded.switches, last_error=excluded.last_error,"
-            " hold_reason=excluded.hold_reason",
+            " hold_reason=excluded.hold_reason, error_code=excluded.error_code",
             (st.domain, json.dumps(st.cf_ips), None if st.sim_backup is None else int(st.sim_backup), st.hold_until and st.hold_until.isoformat(),
              int(st.paused), st.clear_since and st.clear_since.isoformat(),
-             json.dumps([t.isoformat() for t in st.switches]), st.last_error, st.hold_reason))
+             json.dumps([t.isoformat() for t in st.switches]), st.last_error, st.hold_reason, st.error_code))
         self.conn.commit()
 
     def forget(self, domain: str) -> None:
@@ -151,8 +206,12 @@ class EngineStore:
         self.save(st)
 
     def resume(self, domain: str) -> None:
+        """Reanudar a mano: también olvida los cambios recientes, o la protección contra cambios
+        en bucle volvería a pausarlo en el siguiente ciclo."""
         st = self.get(domain)
-        st.hold_until, st.paused, st.last_error, st.hold_reason = None, False, None, None
+        st.hold_until, st.paused, st.hold_reason = None, False, None
+        st.last_error = st.error_code = None
+        st.switches = []
         self.save(st)
 
 
@@ -270,12 +329,14 @@ class Decision:
 
 
 def decide(view, cfg, st: DomainState, *, dry_run: bool, mass: int, now: datetime,
-           match=None, feed_ok: bool = True) -> Decision:
+           match=None, feed_ok: bool = True, wait: timedelta | None = None) -> Decision:
     """Decisión pura (sin efectos) a partir del estado del dominio. Actualiza st.clear_since.
 
     match: partido en cuya ventana estamos (solo cuenta con política preventiva).
     feed_ok: con el feed caído o desactualizado no se sabe si hay bloqueo: se puede ir a
-    Gcore por el calendario, pero nunca volver."""
+    Gcore por el calendario, pero nunca volver.
+    wait: tiempo sin bloqueos antes de volver (por defecto, el de su prioridad)."""
+    wait = wait if wait is not None else timedelta(minutes=DEFAULT_RETURN_AFTER[cfg.priority])
     reasons = []
     if feed_ok and view.blocked_count:
         reasons.append(tnn("Cloudflare IPs blocked at {n} ISP", "Cloudflare IPs blocked at {n} ISPs", view.blocked_count))
@@ -295,7 +356,7 @@ def decide(view, cfg, st: DomainState, *, dry_run: bool, mass: int, now: datetim
         on_backup, on_cf = st.sim_backup, not st.sim_backup
     if reasons and on_cf:
         return Decision("switch", reasons)
-    if not reasons and feed_ok and on_backup and now - st.clear_since >= RETURN_AFTER[cfg.priority]:
+    if not reasons and feed_ok and on_backup and now - st.clear_since >= wait:
         return Decision("return", [tn("no blocks since {time}", time=_fmt(st.clear_since))])
     return Decision("none", reasons)
 
@@ -314,16 +375,29 @@ async def evaluate(state, now: datetime | None = None, on_switched=None) -> None
     if calendar is not None and calendar.is_stale(now):
         calendar = None
     mass = state.feed.blocked_ips() if feed_ok else 0
+    state.engine.reload()
+    healthy = True
     for view in build_all(state.inventory, state.resolutions, state.feed, state.engine.known_ips()):
-        cfg = state.inventory.domains[view.name]
-        if not eligible(cfg) or not any(h.failover for h in view.hosts):
+        cfg = state.inventory.domains.get(view.name)
+        if cfg is None or not eligible(cfg) or not any(h.failover for h in view.hosts):
             continue
-        st = state.engine.get(view.name)
-        match = calendar.active(now, MATCH_LEAD[cfg.priority]) if calendar else None
-        decision = decide(view, cfg, st, dry_run=state.dry_run, mass=mass, now=now, match=match, feed_ok=feed_ok)
-        if decision.action != "none" and not st.held(now):
-            await _act(state, view, cfg, st, decision, now, on_switched)
-        state.engine.save(st)
+        # Un fallo inesperado en un dominio no debe dejar sin motor a los demás.
+        try:
+            st = state.engine.get(view.name)
+            match = calendar.active(now, match_lead(state, cfg.priority)) if calendar else None
+            decision = decide(view, cfg, st, dry_run=state.dry_run, mass=mass, now=now, match=match, feed_ok=feed_ok,
+                              wait=return_after(state, cfg.priority))
+            if decision.action == "none" and st.error_code:
+                st.last_error = st.error_code = None  # ya no hace falta cambiar: el próximo fallo vuelve a avisar
+            if decision.action != "none" and not st.held(now):
+                await _act(state, view, cfg, st, decision, now, on_switched)
+            if view.name in state.inventory.domains:  # no resucitar un dominio eliminado mientras tanto
+                state.engine.save(st)
+        except Exception:
+            healthy = False
+            log.exception("engine: unexpected error on %s", view.name)
+    if healthy:
+        state.engine_ok_at = now  # el latido externo avisa si deja de avanzar
 
 
 async def _act(state, view, cfg, st: DomainState, decision: Decision, now: datetime, on_switched) -> None:
@@ -340,34 +414,42 @@ async def _act(state, view, cfg, st: DomainState, decision: Decision, now: datet
         return
     signals = [tn("{isp}: blocked", isp=r.name) for r in view.isp_rows if r.state == "blocked"]
 
-    def fail(msg: str, diff=None) -> None:
-        if msg != st.last_error:  # no repetir el mismo fallo cada ciclo
-            st.last_error = msg
+    def fail(code: str, msg: str, diff=None) -> None:
+        """Avisa una vez por tipo de fallo mientras dure la necesidad de cambiar (el detalle puede
+        variar de un ciclo a otro); el texto del panel se mantiene al día."""
+        if code != st.error_code:
             state.events.add(actor="auto", kind="error", domain=name, summary=msg, dns_diff=diff or [], signals=signals)
+        st.error_code, st.last_error = code, msg
+
+    def still_wanted() -> bool:
+        """Tras la comprobación de Gcore (segundos): ¿sigue el dominio y no lo han pausado?"""
+        return name in state.inventory.domains and not state.engine.held_now(name, now)
 
     if decision.action == "switch":
         if not cfg.gcore_resource_id or not view.gcore_ready:
-            return fail(tn("Automatic switch to Gcore not possible: the domain is not prepared on Gcore. Stays on Cloudflare"))
+            return fail("not_prepared", tn("Automatic switch to Gcore not possible: the domain is not prepared on Gcore. Stays on Cloudflare"))
         problem = await check_backup(state, name)
         if problem:
             from ..origin_health import down_note
-            return fail(tn("Automatic switch to Gcore cancelled: {problem}{note}. Stays on Cloudflare",
-                           problem=problem, note=down_note(state, name)))
+            return fail("backup_check", tn("Automatic switch to Gcore cancelled: {problem}{note}. Stays on Cloudflare",
+                                           problem=problem, note=down_note(state, name)))
+        if not still_wanted():
+            return
         try:
             diff, simulated = await switch_to_gcore(state, name)
         except SwitchFailed as exc:
-            return fail(tn("Automatic switch to Gcore failed: {error}", error=exc), exc.diff)
+            return fail("switch_failed", tn("Automatic switch to Gcore failed: {error}", error=exc), exc.diff)
         st.sim_backup = True if simulated else None
         transition, summary = "CF → GCORE", tn("Automatic switch to Gcore: {reasons}", reasons="; ".join(decision.reasons))
     else:
         try:
             diff, simulated = await return_to_cloudflare(state, name, force_all=state.dry_run and st.sim_backup is True)
         except SwitchFailed as exc:
-            return fail(tn("Automatic return to Cloudflare failed: {error}", error=exc), exc.diff)
+            return fail("return_failed", tn("Automatic return to Cloudflare failed: {error}", error=exc), exc.diff)
         st.sim_backup = False if simulated else None
         transition, summary = "GCORE → CF", tn("Automatic return to Cloudflare: {reasons}", reasons="; ".join(decision.reasons))
     st.switches.append(now)
-    st.last_error = None
+    st.last_error = st.error_code = None
     state.events.add(actor="auto", kind="switch", domain=name, transition=transition, summary=summary,
                      dns_diff=diff, signals=signals, simulated=simulated)
     if on_switched and not simulated:
@@ -403,7 +485,7 @@ def describe(state, name: str, now: datetime | None = None) -> dict:
     calendar = getattr(state, "calendar", None)
     if cfg.policy == "preventive":
         text = tr("Active: switches to Gcore if its Cloudflare IPs get blocked, a mass block is underway or a match "
-                  "starts ({minutes} min before)", minutes=int(MATCH_LEAD[cfg.priority].total_seconds() // 60))
+                  "starts ({minutes} min before)", minutes=int(match_lead(state, cfg.priority).total_seconds() // 60))
         nxt = calendar.upcoming(now) if calendar else None
         if nxt:
             text = tr("{text}. Next match: {match}, {when}", text=text, match=nxt.name,
@@ -413,13 +495,13 @@ def describe(state, name: str, now: datetime | None = None) -> dict:
     on_backup = any((r := state.resolutions.get(h.name)) and r.provider == "gcore" for h in cfg.hostnames if h.failover)
     if state.dry_run and st.sim_backup is not None:
         on_backup = st.sim_backup
-    match = calendar.active(now, MATCH_LEAD[cfg.priority]) if calendar and cfg.policy == "preventive" else None
-    wait = int(RETURN_AFTER[cfg.priority].total_seconds() // 60)
+    match = calendar.active(now, match_lead(state, cfg.priority)) if calendar and cfg.policy == "preventive" else None
+    wait = int(return_after(state, cfg.priority).total_seconds() // 60)
     if on_backup and match:
         text = tr("On Gcore during the {match} match; then waits {minutes} min without blocks", match=match.name, minutes=wait)
     elif on_backup and st.clear_since:
         text = tr("On Gcore. No blocks since {since}: back to Cloudflare around {eta}", since=_fmt(st.clear_since),
-                  eta=_fmt(st.clear_since + RETURN_AFTER[cfg.priority]))
+                  eta=_fmt(st.clear_since + return_after(state, cfg.priority)))
     elif on_backup:
         text = tr("On Gcore while the block lasts; returns to Cloudflare after {minutes} min without blocks", minutes=wait)
     if st.last_error:
@@ -458,14 +540,15 @@ def change_indicator(state, name: str, now: datetime | None = None) -> dict | No
     if state.dry_run and st.sim_backup is not None:
         on_backup = st.sim_backup
     calendar = getattr(state, "calendar", None)
-    in_match = bool(calendar and cfg.policy == "preventive" and calendar.active(now, MATCH_LEAD[cfg.priority]))
+    lead = match_lead(state, cfg.priority)
+    in_match = bool(calendar and cfg.policy == "preventive" and calendar.active(now, lead))
     if on_backup and st.clear_since and not in_match:
-        eta = st.clear_since + RETURN_AFTER[cfg.priority]
+        eta = st.clear_since + return_after(state, cfg.priority)
         if eta > now:
             return {"kind": "pending", "target": "cloudflare", "text": tr("Back to Cloudflare around {time}", time=_fmt(eta))}
     if not on_backup and cfg.policy == "preventive" and calendar:
         nxt = calendar.upcoming(now)
-        if nxt and nxt.kickoff - MATCH_LEAD[cfg.priority] - now < UPCOMING_WINDOW:
-            when = max(now, nxt.kickoff - MATCH_LEAD[cfg.priority])
+        if nxt and nxt.kickoff - lead - now < UPCOMING_WINDOW:
+            when = max(now, nxt.kickoff - lead)
             return {"kind": "pending", "target": "gcore", "text": tr("Switches to Gcore at {time} ({match})", time=_fmt(when), match=nxt.name)}
     return None

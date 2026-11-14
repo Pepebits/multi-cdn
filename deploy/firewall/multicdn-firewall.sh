@@ -52,6 +52,41 @@ die() {
   write_status || true
   exit 1
 }
+
+# Tras un reinicio la tabla no persiste: si apply falla antes de cargar las reglas nuevas (descarga
+# o comprobaciones), se cargan las últimas buenas para no dejar 80/443 abiertos hasta la próxima
+# ejecución. Si la tabla ya está cargada no se toca: siguen valiendo las reglas actuales.
+restore_previous() {
+  [[ $EUID -eq 0 || ${MULTICDN_FIREWALL_TEST:-0} == 1 ]] || return 1
+  nft list table inet $TABLE >/dev/null 2>&1 && return 1
+  if [[ ! -s $STATE_DIR/rules.nft ]]; then
+    log "no hay reglas anteriores que restaurar: los puertos web siguen abiertos"
+    return 1
+  fi
+  if nft -c -f "$STATE_DIR/rules.nft" && nft -f "$STATE_DIR/rules.nft"; then
+    log "restauradas las reglas anteriores ($STATE_DIR/rules.nft, lista del $(cat "$STATE_DIR/last_ok" 2>/dev/null || echo '?'))"
+    return 0
+  fi
+  log "las reglas anteriores no validan: los puertos web siguen abiertos"
+  return 1
+}
+
+# Ficheros en la carpeta de datos del panel: el contenedor (otro usuario) puede escribir en ella
+# y dejar enlaces simbólicos para que root sobrescriba ficheros del host. Se escribe en un fichero
+# nuevo con nombre aleatorio creado con O_EXCL (noclobber: nunca sigue un enlace) y ya con 644
+# (umask, sin chmod), y se renombra encima del destino: rename sustituye un enlace, no lo sigue.
+panel_write() {  # panel_write NOMBRE < contenido
+  local dest="$PANEL_DATA/$1" tmpf
+  tmpf=$(mktemp -u "$PANEL_DATA/.$1.XXXXXXXXXX") || return 1
+  if ! (set -C; umask 022; cat > "$tmpf"); then
+    log "no se pudo escribir $dest"
+    return 1
+  fi
+  if [[ -d $dest && ! -L $dest ]]; then
+    rm -f "$tmpf"; log "$dest es una carpeta: no se actualiza"; return 1
+  fi
+  mv -f "$tmpf" "$dest" || { rm -f "$tmpf"; log "no se pudo actualizar $dest"; return 1; }
+}
 need() { command -v "$1" >/dev/null || die "falta el comando $1"; }
 fetch() { curl -fsS --retry 3 --max-time 30 "$1"; }
 
@@ -73,8 +108,7 @@ write_status() {
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$last_ok" "$v4" "$v6" "$added" "$removed" "$(json_escape "$caddy")" "$(json_escape "$STATUS_ERROR")")
   echo "$json" > "$STATE_DIR/status.json"
   if [[ -n $PANEL_DATA && -d $PANEL_DATA ]]; then
-    echo "$json" > "$PANEL_DATA/firewall-status.json"
-    chmod 644 "$PANEL_DATA/firewall-status.json"
+    echo "$json" | panel_write firewall-status.json || true
   fi
 }
 
@@ -193,6 +227,16 @@ case $cmd in
     need curl; need jq
     [[ $cmd == apply ]] && need nft
     tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+    if [[ $cmd == apply ]]; then
+      # Cualquier salida con error antes de cargar las reglas nuevas (die o set -e) intenta
+      # restaurar las anteriores si la tabla no está cargada (p. ej. descarga fallida al arrancar).
+      trap 'rc=$?
+        if (( rc != 0 )) && restore_previous; then
+          STATUS_ERROR="${STATUS_ERROR:-fallo inesperado (código $rc)} · restauradas las reglas anteriores"
+          write_status || true
+        fi
+        rm -rf "$tmp"' EXIT
+    fi
     download "$tmp"
     [[ $cmd == apply ]] && sanity "$tmp"
     ruleset "$tmp" > "$tmp/rules.nft"
@@ -211,13 +255,15 @@ case $cmd in
     fi
     nft -c -f "$tmp/rules.nft" || die "las reglas no validan: no se ha cambiado nada"
     nft -f "$tmp/rules.nft"   # carga atómica: o todo o nada
+    trap 'rm -rf "$tmp"' EXIT  # reglas nuevas cargadas: un fallo posterior (Caddy) no las cambia
     mkdir -p "$STATE_DIR"
     cp "$tmp/all4" "$tmp/all6" "$tmp/rules.nft" "$STATE_DIR/"
     date -u +%Y-%m-%dT%H:%M:%SZ > "$STATE_DIR/last_ok"
     line="$(cat "$STATE_DIR/last_ok") +$ADDED -$REMOVED"
     echo "$line" >> "$STATE_DIR/changes.log"
     if [[ -n $PANEL_DATA && -d $PANEL_DATA ]]; then
-      echo "$line" >> "$PANEL_DATA/firewall-changes.log"; chmod 644 "$PANEL_DATA/firewall-changes.log"
+      # Copia del registro de root (no se añade al del panel: podría ser un enlace).
+      tail -n 1000 "$STATE_DIR/changes.log" | panel_write firewall-changes.log || true
     fi
     apply_caddy "$tmp"
     write_status

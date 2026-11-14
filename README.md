@@ -25,7 +25,8 @@ time.
   mass-block detection and the LaLiga match calendar.
 - 🔀 **Switches on its own**: per domain, only when its IPs are blocked (*reactive*), also
   before matches (*preventive*), or never, just alerts (*manual*). It comes back to
-  Cloudflare after 30–45 min without blocks.
+  Cloudflare after 15–20 min without blocks. ⏱️ Both times are configurable, with defaults
+  taken from two months of real block history.
 - 🔒 **Never exposes the origin**: a hostname is always proxied by Cloudflare or a CNAME to
   Gcore. The code refuses any DNS change that would reveal your IP.
 - ☁️ **Gcore ready in advance**: certificate, CDN resource and origin, prepared with one

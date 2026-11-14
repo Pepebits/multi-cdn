@@ -29,7 +29,8 @@ def env(tmp_path):
                                                 "addresses_v6": ["2a03:90c0:9992::1/128"]}))
     bindir = tmp_path / "bin"
     bindir.mkdir()
-    shim(bindir, "nft", "exit 0")
+    # NFT_LIST_EXIT=1: la tabla multicdn no está cargada (p. ej. recién arrancado).
+    shim(bindir, "nft", '[[ "$1 $2" == "list table" ]] && exit "${NFT_LIST_EXIT:-0}"; exit 0')
     shim(bindir, "caddy", 'exit "${CADDY_VALIDATE_EXIT:-0}"')
     shim(bindir, "systemctl", "exit 0")
     caddydir = tmp_path / "caddy"
@@ -109,3 +110,45 @@ def test_counts_ranges_added_and_removed_and_logs_them(env):
     assert (status["added"], status["removed"]) == (1, 1)
     log = (env["panel"] / "firewall-changes.log").read_text().splitlines()
     assert len(log) == 2 and log[-1].endswith("+1 -1")
+
+
+def test_panel_files_replace_planted_symlinks_instead_of_following_them(env):
+    host = env["tmp"] / "host-file"
+    host.write_text("root:x:0:0\n")
+    for name in ("firewall-status.json", "firewall-changes.log"):
+        (env["panel"] / name).symlink_to(host)
+    r = run(env, "apply")
+    assert r.returncode == 0, r.stderr
+    assert host.read_text() == "root:x:0:0\n"
+    for name in ("firewall-status.json", "firewall-changes.log"):
+        f = env["panel"] / name
+        assert not f.is_symlink() and oct(f.stat().st_mode)[-3:] == "644"
+    assert json.loads((env["panel"] / "firewall-status.json").read_text())["error"] == ""
+    assert (env["panel"] / "firewall-changes.log").read_text().endswith("+6 -0\n")
+    assert not [p.name for p in env["panel"].iterdir() if p.name.startswith(".")]  # sin temporales
+
+
+def test_failed_download_restores_previous_rules_when_table_is_not_loaded(env):
+    assert run(env, "apply").returncode == 0
+    rules = env["tmp"] / "state" / "rules.nft"
+    assert rules.exists()
+    (env["src"] / "v4").unlink()  # sin red al arrancar
+    r = run(env, "apply")  # la tabla sigue cargada: no se toca
+    assert r.returncode == 1 and f"nft -f {rules}" not in calls(env)
+    r = run(env, "apply", NFT_LIST_EXIT="1")  # tras reiniciar: tabla no cargada
+    assert r.returncode == 1 and "restauradas las reglas anteriores" in r.stderr
+    assert f"nft -c -f {rules}" in calls(env) and f"nft -f {rules}" in calls(env)
+    status = json.loads((env["panel"] / "firewall-status.json").read_text())
+    assert "IPv4 de Cloudflare" in status["error"] and "restauradas las reglas anteriores" in status["error"]
+
+
+def test_failed_first_download_without_previous_rules_says_so(env):
+    (env["src"] / "v4").unlink()
+    r = run(env, "apply", NFT_LIST_EXIT="1")
+    assert r.returncode == 1 and "no hay reglas anteriores" in r.stderr
+    assert "nft -f" not in calls(env)
+
+
+def test_service_retries_on_failure():
+    unit = (SCRIPT.parent / "multicdn-firewall.service").read_text()
+    assert "Type=oneshot" in unit and "Restart=on-failure" in unit and "RestartSec=5min" in unit

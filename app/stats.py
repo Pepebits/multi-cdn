@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 
 PERIODS = {7: timedelta(hours=1), 30: timedelta(hours=2), 60: timedelta(hours=4)}  # días -> paso de la serie
 MASS_MIN_ISPS = 3
@@ -117,13 +118,42 @@ def block_intervals(feed, ips: list[str], start: datetime, end: datetime) -> lis
 
 # ---------------------------------------------------------------- por dónde se sirvió (historial)
 
+SEGMENT_KINDS = ("cloudflare", "gcore")  # el resto (origen, otro destino, sin resolver) cuenta como «unknown»
+
+
+@lru_cache(maxsize=1)
+def _known_labels() -> dict[str, str | None]:
+    """Textos exactos del «antes» del diff (failover.DNS_BEFORE) en todos los idiomas -> tipo.
+    «unknown» (tn("unknown")) no dice nada del estado: None."""
+    from .engine.failover import DNS_BEFORE
+    from .i18n import LANGS, translate
+    labels: dict[str, str | None] = {}
+    for kind, text in DNS_BEFORE.items():
+        for lang in LANGS:
+            labels[translate(text, lang).casefold()] = kind
+    for lang in LANGS:
+        labels[translate("unknown", lang).casefold()] = None
+    return labels
+
+
 def _kind(dns_text: str) -> str | None:
-    text = dns_text.lower()
+    """Tipo de destino de un texto del diff DNS: cloudflare | gcore | origin | other | unresolved | None."""
+    text = " ".join(dns_text.split()).casefold()
+    labels = _known_labels()
+    if text in labels:
+        return labels[text]
+    # Textos de DnsChange.describe(): «Cloudflare proxied» o «CNAME → destino · TTL n».
+    if "not proxied" in text or "sin proxy" in text or "proxy off" in text or "proxy desactivado" in text:
+        return "origin"
+    if text.startswith("cloudflare proxied"):
+        return "cloudflare"
     if "gcore" in text or "gcdn" in text:
         return "gcore"
-    if "proxied" in text or "cloudflare" in text:
-        return "cloudflare"
     return None
+
+
+def _segment_kind(kind: str | None) -> str:
+    return kind if kind in SEGMENT_KINDS else "unknown"
 
 
 def cdn_segments(events, failover_hosts: list[str], current: dict[str, str], start: datetime,
@@ -135,10 +165,10 @@ def cdn_segments(events, failover_hosts: list[str], current: dict[str, str], sta
     # Estado inicial de cada hostname: el «antes» de su primer cambio o, si nunca cambió, el actual.
     for e in changes:
         for host, before, _after in e.dns_diff:
-            if host in hosts and host not in state and _kind(before):
-                state[host] = _kind(before)
+            if host in hosts and host not in state and (kind := _kind(before)):
+                state[host] = _segment_kind(kind)
     for host in hosts:
-        state.setdefault(host, current.get(host, "unknown"))
+        state.setdefault(host, _segment_kind(current.get(host)))
 
     def domain_kind() -> str:
         kinds = {state[h] for h in hosts}
@@ -147,8 +177,8 @@ def cdn_segments(events, failover_hosts: list[str], current: dict[str, str], sta
     timeline: list[tuple[datetime, str]] = [(datetime.min.replace(tzinfo=UTC), domain_kind())]
     for e in changes:
         for host, _before, after in e.dns_diff:
-            if host in hosts and _kind(after):
-                state[host] = _kind(after)
+            if host in hosts and (kind := _kind(after)):
+                state[host] = _segment_kind(kind)
         timeline.append((e.ts, domain_kind()))
     segments: list[Segment] = []
     for (t0, kind), (t1, _) in zip(timeline, timeline[1:] + [(end, None)]):
