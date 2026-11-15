@@ -27,6 +27,13 @@ Reliability and observability, from a review of a week of production logs.
 - The panel's own log lines now reach `docker compose logs` with date and level
   (`MULTICDN_LOG_LEVEL`, default INFO). Before, informational lines were dropped.
 
+- **Open problems on the overview**: what is broken right now (feed, Cloudflare reading,
+  firewall, origin, exposed hostnames, domains that cannot switch…), since when, and a link to
+  where to fix it.
+- **Last 7 days on each domain page**: time on Gcore, blocks of its Cloudflare IPs and matches,
+  with a list of periods as text alternative.
+- Settings → Operation shows whether error reporting is on and to which server (never the key).
+
 ### Changed
 - **The feed is read every 5 min when nothing is going on, instead of every 90 s** (about 120 MB
   a day instead of 400 on days without matches). It is still read every 90 s during match
@@ -39,6 +46,13 @@ Reliability and observability, from a review of a week of production logs.
 - The "block feed unavailable" alert waits for a second failed read in a row.
 - The panel no longer trusts `X-Forwarded-For` unless `MULTICDN_TRUSTED_PROXIES` says so:
   behind Tailscale without it, sign-ins show the gateway address.
+- **One date format** across the panel ("14 Nov, 22:50 UTC"), with the relative and local time
+  in the tooltip.
+- **Phones**: ISP states as compact chips on the domain cards, a short priority tag, one-line
+  code inputs and a footer that no longer overflows.
+- **Consistent wording**: "Switch to Gcore" / "Return to Cloudflare" everywhere (no more
+  "conmutar" in Spanish), "Delete" only for what is destroyed and "Remove" for what is taken
+  out of a list.
 - A failed switch and an undelivered notification are logged as errors, and the DNS re-check
   after a switch logs its failures instead of hiding them.
 

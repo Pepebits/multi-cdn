@@ -614,8 +614,8 @@ details.setup[open] > summary { margin-bottom: 0; border-bottom: 2px solid var(-
 
 /* Tabla de hostnames: que no se corten el servidor ni el destino de Gcore en escritorio */
 @media (min-width: 900px) {
-  table.stack td select { min-width: 9rem; }
-  table.stack td input[type="text"] { min-width: 16rem; }
+  table.stack td select { min-width: 7rem; }
+  table.stack td input[type="text"] { min-width: 11rem; }
 }
 
 /* Sesión, acceso y modo en el móvil (la barra lateral se oculta) */
