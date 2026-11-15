@@ -19,16 +19,17 @@
   <div class="card__body stack-gap">
     <p style="margin:0">{{ _m("Each domain with the <strong>reactive</strong> policy switches to Gcore when its Cloudflare IPs are blocked. With the <strong>preventive</strong> policy, also on a mass block and ahead of each LaLiga or LaLiga Hypermotion match. Before switching it checks that Gcore serves each hostname. It returns to Cloudflare after a while without blocks. Both times are set per priority in <a href=\"#tiempos\">Switching times</a>.") }}</p>
     <p class="help" style="margin:0">{{ _m("At least 15 min between switches; with more than 4 switches in 6 h that domain is paused. A manual switch pauses it for 1 h. The <strong>manual</strong> policy never changes anything. With the feed down it can switch to Gcore for a match, but it does not return until the feed confirms there is no block. In dry run mode switches are only recorded.") }}</p>
-    <form method="post" action="/ajustes/operacion/automatico" class="actions-end">{{ csrf_field() }}
-      <input type="hidden" name="enabled" value="{{ '0' if auto_on else '1' }}">
-      <button class="btn{{ '' if auto_on else ' btn--primary' }}" type="submit">{% if auto_on %}{{ m.icon('pause') }} {{ _("Disable for all domains") }}{% else %}{{ m.icon('play') }} {{ _("Enable") }}{% endif %}</button>
-    </form>
   </div>
+  <form method="post" action="/ajustes/operacion/automatico" class="card__foot actions-end">{{ csrf_field() }}
+    <input type="hidden" name="enabled" value="{{ '0' if auto_on else '1' }}">
+    <button class="btn{{ '' if auto_on else ' btn--primary' }}" type="submit">{% if auto_on %}{{ m.icon('pause') }} {{ _("Disable for all domains") }}{% else %}{{ m.icon('play') }} {{ _("Enable") }}{% endif %}</button>
+  </form>
 </section>
 
 <section class="card" aria-labelledby="tiempos">
   <div class="card__head"><h2 id="tiempos">{{ m.icon('clock') }} {{ _("Switching times") }}</h2></div>
   <form method="post" action="/ajustes/operacion/tiempos">{{ csrf_field() }}
+    <p id="tiempos-help" class="card__body help card__intro">{{ m.icon('info') }} {{ _("The defaults come from two months of block history: blocks start a median of 68 min before kick-off (90 % within the previous 2 h), and a released IP was blocked again within 15 min only 0.05 % of the time. A longer lead protects more of the match at the cost of more time and traffic on Gcore.") }}</p>
     <div class="table-wrap">
       <table class="table">
         <thead><tr><th scope="col">{{ _("Priority") }}</th><th scope="col">{{ _("Switch before a match (min)") }}</th><th scope="col">{{ _("Return after no blocks for (min)") }}</th></tr></thead>
@@ -48,31 +49,38 @@
       <button class="btn btn--primary" type="submit">{{ _("Save times") }}</button>
     </div>
   </form>
-  <p id="tiempos-help" class="card__body help" style="margin:0;padding-top:0">{{ m.icon('info') }} {{ _("The defaults come from two months of block history: blocks start a median of 68 min before kick-off (90 % within the previous 2 h), and a released IP was blocked again within 15 min only 0.05 % of the time. A longer lead protects more of the match at the cost of more time and traffic on Gcore.") }}</p>
 </section>
 
 <section class="card" aria-labelledby="feed">
   <div class="card__head"><h2 id="feed">{{ m.icon('refresh') }} {{ _("Block feed polling") }}</h2><span class="pill {{ 'pill--free' if feed_now == feed_idle else 'pill--nodata' }}">{{ _("now every {seconds} s", seconds=feed_now) }}</span></div>
-  <form class="card__body form-inline" method="post" action="/ajustes/operacion/feed">{{ csrf_field() }}
-    <div>
-      <label for="feed-interval">{{ _("Read the feed every") }}</label>
-      <select id="feed-interval" name="seconds" aria-describedby="feed-help">{% for v in feed_options %}<option value="{{ v }}"{% if v == feed_idle %} selected{% endif %}>{{ _("{seconds} s (default)", seconds=v) if v == 300 else _("{seconds} s", seconds=v) }}</option>{% endfor %}</select>
+  <form method="post" action="/ajustes/operacion/feed">{{ csrf_field() }}
+    <div class="card__body stack-gap">
+      <p id="feed-help" class="help" style="margin:0">{{ m.icon('info') }} {{ _("Interval while nothing is going on. It reads every 90 s during a match window (with the longest lead of Switching times), while any hostname is on Gcore, during blocks, without a match calendar and after a failed read. Each read downloads about 0.4 MB. Preventive switching before a match does not depend on this interval.") }}</p>
+      <div class="form-inline card__fields">
+        <div>
+          <label for="feed-interval">{{ _("Read the feed every") }}</label>
+          <select id="feed-interval" name="seconds" aria-describedby="feed-help">{% for v in feed_options %}<option value="{{ v }}"{% if v == feed_idle %} selected{% endif %}>{{ _("{seconds} s (default)", seconds=v) if v == 300 else _("{seconds} s", seconds=v) }}</option>{% endfor %}</select>
+        </div>
+      </div>
     </div>
-    <div class="form-actions"><button class="btn btn--primary" type="submit">{{ _("Save interval") }}</button></div>
+    <div class="card__foot actions-end"><button class="btn btn--primary" type="submit">{{ _("Save interval") }}</button></div>
   </form>
-  <p id="feed-help" class="card__body help" style="margin:0;padding-top:0">{{ m.icon('info') }} {{ _("Interval while nothing is going on. It reads every 90 s during a match window (with the longest lead of Switching times), while any hostname is on Gcore, during blocks, without a match calendar and after a failed read. Each read downloads about 0.4 MB. Preventive switching before a match does not depend on this interval.") }}</p>
 </section>
 
 <section class="card" aria-labelledby="idioma">
   <div class="card__head"><h2 id="idioma">{{ m.icon('language') }} {{ _("Language of history and alerts") }}</h2><span class="mono muted">{{ LANGS[notify_lang] }}</span></div>
-  <form class="card__body form-inline" method="post" action="/ajustes/operacion/idioma">{{ csrf_field() }}
-    <div>
-      <label for="notify-lang">{{ _("Language") }}</label>
-      <select id="notify-lang" name="lang" aria-describedby="idioma-help">{% for code, name in LANGS.items() %}<option value="{{ code }}" lang="{{ code }}"{% if code == notify_lang %} selected{% endif %}>{{ name }}</option>{% endfor %}</select>
+  <form method="post" action="/ajustes/operacion/idioma">{{ csrf_field() }}
+    <div class="card__body stack-gap">
+      <p id="idioma-help" class="help" style="margin:0">{{ _("Used for new history entries, Telegram and email alerts, and terminal commands. Entries already stored stay in the language they were written in.") }}</p>
+      <div class="form-inline card__fields">
+        <div>
+          <label for="notify-lang">{{ _("Language") }}</label>
+          <select id="notify-lang" name="lang" aria-describedby="idioma-help">{% for code, name in LANGS.items() %}<option value="{{ code }}" lang="{{ code }}"{% if code == notify_lang %} selected{% endif %}>{{ name }}</option>{% endfor %}</select>
+        </div>
+      </div>
     </div>
-    <div class="form-actions"><button class="btn btn--primary" type="submit">{{ _("Save language") }}</button></div>
+    <div class="card__foot actions-end"><button class="btn btn--primary" type="submit">{{ _("Save language") }}</button></div>
   </form>
-  <p id="idioma-help" class="card__body help" style="margin:0;padding-top:0">{{ _("Used for new history entries, Telegram and email alerts, and terminal commands. Entries already stored stay in the language they were written in.") }}</p>
 </section>
 
 <section class="card" aria-labelledby="calendario">
@@ -86,30 +94,36 @@
       {% endfor %}
     </ul>
     {% if calendar_error %}<p class="notice notice--error" style="margin:0">{{ m.icon('alert') }} {{ _("No calendar: {error}", error=calendar_error) }}</p>{% endif %}
-    <form class="form-inline" method="post" action="/ajustes/operacion/football-data">{{ csrf_field() }}
+    <p id="fd-help" class="help" style="margin:0">{{ _("Both sources are used at once: a match counts if it appears in either. With only one responding there is still a calendar. It is read every 3 h.") }}</p>
+  </div>
+  <form method="post" action="/ajustes/operacion/football-data">{{ csrf_field() }}
+    <div class="card__body form-inline card__fields" style="padding-top:0">
       <div>
         <label for="fd-token">{{ _("football-data.org key") }}</label>
         <input id="fd-token" type="password" name="token" autocomplete="off" spellcheck="false" required aria-describedby="fd-help"{% if fd.configured %} placeholder="{{ _('Saved · {hint}', hint=fd.hint) }}"{% endif %}>
       </div>
-      <div class="form-actions"><button class="btn btn--primary" type="submit">{{ _('Replace and test') if fd.configured else _('Save and test') }}</button></div>
-    </form>
-    {% if fd.configured and fd.source == 'panel' %}
-    <form method="post" action="/ajustes/operacion/football-data/eliminar" class="actions-end">{{ csrf_field() }}<button class="btn btn--danger btn--sm" type="submit">{{ m.icon('trash') }} {{ _("Delete key") }}</button></form>
-    {% endif %}
-    <p id="fd-help" class="help" style="margin:0">{{ _("Both sources are used at once: a match counts if it appears in either. With only one responding there is still a calendar. It is read every 3 h.") }}</p>
-  </div>
+    </div>
+    <div class="card__foot actions-end">
+      {% if fd.configured and fd.source == 'panel' %}<button class="btn btn--danger" type="submit" formaction="/ajustes/operacion/football-data/eliminar" formnovalidate>{{ m.icon('trash') }} {{ _("Delete key") }}</button>{% endif %}
+      <button class="btn btn--primary" type="submit">{{ _('Replace and test') if fd.configured else _('Save and test') }}</button>
+    </div>
+  </form>
 </section>
 
 <section class="card" aria-labelledby="cuota">
   <div class="card__head"><h2 id="cuota">{{ m.icon('chart') }} {{ _("Gcore quota") }}</h2></div>
-  <form class="card__body form-inline" method="post" action="/ajustes/operacion/cuota">{{ csrf_field() }}
-    <div>
-      <label for="gcore_quota_gb">{{ _("Free traffic per month (GB)") }}</label>
-      <input id="gcore_quota_gb" type="number" name="gcore_quota_gb" value="{{ quota_gb }}" min="1" max="1000000" required aria-describedby="cuota-help">
+  <form method="post" action="/ajustes/operacion/cuota">{{ csrf_field() }}
+    <div class="card__body stack-gap">
+      <p id="cuota-help" class="help" style="margin:0">{{ _("It is compared with the total monthly traffic of each account (served to users + fetched from the origin), read every hour. It alerts when passing 70 %, 90 % and 100 %, and when 2 free CDN resources are left.") }}</p>
+      <div class="form-inline card__fields">
+        <div>
+          <label for="gcore_quota_gb">{{ _("Free traffic per month (GB)") }}</label>
+          <input id="gcore_quota_gb" type="number" name="gcore_quota_gb" value="{{ quota_gb }}" min="1" max="1000000" required aria-describedby="cuota-help">
+        </div>
+      </div>
     </div>
-    <div class="form-actions"><button class="btn btn--primary" type="submit">{{ _("Save quota") }}</button></div>
+    <div class="card__foot actions-end"><button class="btn btn--primary" type="submit">{{ _("Save quota") }}</button></div>
   </form>
-  <p id="cuota-help" class="card__body help" style="margin:0;padding-top:0">{{ _("It is compared with the total monthly traffic of each account (served to users + fetched from the origin), read every hour. It alerts when passing 70 %, 90 % and 100 %, and when 2 free CDN resources are left.") }}</p>
 </section>
 
 {% import "_ui030.html" as u030 %}{{ u030.error_reporting_card(error_reporting) }}
@@ -127,22 +141,26 @@
 
 <section class="card" aria-labelledby="retencion">
   <div class="card__head"><h2 id="retencion">{{ m.icon('history') }} {{ _("History retention") }}</h2><span class="mono muted">{{ _n("{n} event", "{n} events", ev_stats.count) }}{% if ev_stats.oldest %} · {{ _m("since {when}", when=ev_stats.oldest|when) }}{% endif %}</span></div>
-  <form class="card__body form-inline" method="post" action="/ajustes/operacion/retencion">{{ csrf_field() }}
-    <div>
-      <label for="events_max_days">{{ _("Keep events (days)") }}</label>
-      <input id="events_max_days" type="number" name="events_max_days" value="{{ ev_days }}" min="7" max="3650" required>
+  <form method="post" action="/ajustes/operacion/retencion">{{ csrf_field() }}
+    <div class="card__body stack-gap">
+      <p id="retencion-help" class="help" style="margin:0">{{ _("Whichever limit is reached first applies. The cleanup runs at startup, every 6 hours and when saving. certbot logs are limited to 10 copies; the server logs are managed by systemd or Docker.") }}</p>
+      <div class="form-inline card__fields">
+        <div>
+          <label for="events_max_days">{{ _("Keep events (days)") }}</label>
+          <input id="events_max_days" type="number" name="events_max_days" value="{{ ev_days }}" min="7" max="3650" required aria-describedby="retencion-help">
+        </div>
+        <div>
+          <label for="events_max_rows">{{ _("Maximum number of events") }}</label>
+          <input id="events_max_rows" type="number" name="events_max_rows" value="{{ ev_rows }}" min="500" max="1000000" step="500" required aria-describedby="retencion-help">
+        </div>
+      </div>
     </div>
-    <div>
-      <label for="events_max_rows">{{ _("Maximum number of events") }}</label>
-      <input id="events_max_rows" type="number" name="events_max_rows" value="{{ ev_rows }}" min="500" max="1000000" step="500" required>
-    </div>
-    <div class="form-actions"><button class="btn btn--primary" type="submit">{{ _("Save retention") }}</button></div>
+    <div class="card__foot actions-end"><button class="btn btn--primary" type="submit">{{ _("Save retention") }}</button></div>
   </form>
-  <p class="card__body help" style="margin:0;padding-top:0">{{ _("Whichever limit is reached first applies. The cleanup runs at startup, every 6 hours and when saving. certbot logs are limited to 10 copies; the server logs are managed by systemd or Docker.") }}</p>
 </section>
 
 <section class="card" aria-labelledby="exportar">
   <div class="card__head"><h2 id="exportar">{{ m.icon('download') }} {{ _("Inventory copy") }}</h2></div>
-  <div class="card__body"><a class="btn" href="/ajustes/inventario.yaml">{{ m.icon('download') }} {{ _("Export inventory (YAML, no secrets)") }}</a></div>
+  <div class="card__foot actions-end"><a class="btn" href="/ajustes/inventario.yaml">{{ m.icon('download') }} {{ _("Export inventory (YAML, no secrets)") }}</a></div>
 </section>
 {% endblock %}

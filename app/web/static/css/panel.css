@@ -324,6 +324,9 @@ input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--yellow);
 .card__foot .server-row__meta { margin: 0 auto 0 0; align-self: center; font-family: var(--font-mono); }
 .server-row + .server-row { border-top: 2px solid var(--border); }
 .help { font-size: 0.85rem; color: var(--muted); margin: 6px 0 0; }
+.card__intro { margin: 0; }
+/* Campos de una tarjeta de ajustes: ancho de campo, no de fila; las acciones van en el pie */
+.form-inline.card__fields > div:not(.form-actions) { flex: 0 1 22rem; }
 fieldset.plain { border: 0; margin: 0; min-width: 0; }
 .checklist { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .checklist li { display: flex; align-items: center; gap: 4px; min-height: 44px; flex-wrap: wrap; }
