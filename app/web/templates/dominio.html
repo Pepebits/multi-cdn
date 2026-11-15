@@ -9,7 +9,7 @@
   <span class="live" aria-hidden="true"></span>
   {{ m.icon('alert') }}
   <strong>{{ _('Origin exposed.') }}</strong>
-  <span>{{ _('A hostname resolves to the server IP without going through a CDN: go back to Cloudflare or switch to Gcore below.') }}</span>
+  <span>{{ _('A hostname resolves to the server IP without going through a CDN: return to Cloudflare or switch to Gcore below.') }}</span>
 </div>
 {% endif %}
 {% endblock %}
@@ -46,11 +46,11 @@
     {% set fo_hosts = d.hosts|selectattr('failover')|list %}
     {% set all_on_gcore = fo_hosts and fo_hosts|rejectattr('provider', 'equalto', 'gcore')|list|length == 0 %}
     {% if d.status == 'origin' %}
-    <p class="notice notice--error" style="margin:0">{{ m.icon('alert') }} {{ _('To hide the origin again use either action: back to Cloudflare restores the proxy, switch to Gcore moves it to the backup CDN.') }}</p>
+    <p class="notice notice--error" style="margin:0">{{ m.icon('alert') }} {{ _('To hide the origin again use either action: Return to Cloudflare restores the proxy, Switch to Gcore puts it behind the backup CDN.') }}</p>
     {% endif %}
     <div class="row">
       {% if d.status != 'cloudflare' and d.status != 'unknown' %}
-      <button class="btn{{ ' btn--primary' if all_on_gcore else '' }}" type="button" data-open="volver">{{ m.icon('refresh') }}{{ _('Back to Cloudflare…') }}</button>
+      <button class="btn{{ ' btn--primary' if all_on_gcore else '' }}" type="button" data-open="volver">{{ m.icon('refresh') }}{{ _('Return to Cloudflare…') }}</button>
       {% endif %}
       {% if d.gcore_ready and all_on_gcore %}
       <button class="btn" type="button" aria-disabled="true" aria-describedby="ya-en-gcore">{{ m.icon('switch') }}{{ _('Switch to Gcore…') }}</button>
@@ -81,8 +81,8 @@
     <dl class="kv">
       <div><dt>{{ _('CDN resource') }}</dt><dd>{{ cfg.gcore_resource_id }}</dd></div>
       <div><dt>{{ _('DNS target') }}</dt><dd>{{ cfg.hostnames|map(attribute='gcore_target')|select|first|default('—') }}</dd></div>
-      <div><dt>{{ _('Certificate') }}</dt><dd>{{ _('valid until {date}', date=cfg.cert_not_after[:10] if cfg.cert_not_after else '—') }}</dd></div>
-      <div><dt>{{ _('Automatic renewal') }}</dt><dd>{{ _('from {date} (30 days before expiry)', date=renew_from.strftime('%d/%m/%Y')) if renew_from else '—' }}</dd></div>
+      <div><dt>{{ _('Certificate') }}</dt><dd>{{ _m('valid until {date}', date=cert_until|day) }}</dd></div>
+      <div><dt>{{ _('Automatic renewal') }}</dt><dd>{{ _m('from {date} (30 days before expiry)', date=renew_from|day) if renew_from else '—' }}</dd></div>
     </dl>
     {% endif %}
     <p class="help" style="margin:0">{{ m.icon('info') }} {{ _m("Creates or updates on Gcore the origin, the certificate (Let's Encrypt via DNS-01 on Cloudflare) and the CDN resource. <strong>It does not change the public DNS</strong>: the domain stays on Cloudflare until you switch.") }}</p>
@@ -136,7 +136,7 @@
           {% set st = feed.state(ip, isp_keys[row.name]) if feed else none %}
           <td>{{ m.isp_pill('blocked' if st and st.blocked else ('free' if st else 'nodata')) }}</td>
           {% endfor %}
-          <td class="mono">{{ row.since|dt }}</td>
+          <td class="mono">{{ row.since|when }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -252,7 +252,7 @@
 </section>
 
 <section class="card" aria-labelledby="eliminar">
-  <div class="card__head"><h2 id="eliminar">{{ m.icon('trash') }} {{ _('Remove from the inventory') }}</h2></div>
+  <div class="card__head"><h2 id="eliminar">{{ m.icon('trash') }} {{ _('Delete domain') }}</h2></div>
   <div class="card__body row">
     <p style="margin:0;flex:1">{{ _('The controller will stop watching this domain. First you choose whether it stays on Cloudflare, on Gcore or unchanged.') }}</p>
     <button class="btn btn--danger" type="button" data-open="del-0">{{ m.icon('trash') }}{{ _('Delete…') }}</button>
@@ -298,7 +298,7 @@
 <dialog id="volver" aria-labelledby="volver-titulo">
   <form method="post" action="/dominios/{{ d.name }}/volver">{{ csrf_field() }}
     <div class="dialog__head">
-      <h2 id="volver-titulo">{{ m.icon('refresh') }} {{ _('Move {domain} back to Cloudflare', domain=d.name) }}</h2>
+      <h2 id="volver-titulo">{{ m.icon('refresh') }} {{ _('Return {domain} to Cloudflare', domain=d.name) }}</h2>
       <button class="btn" type="button" data-close aria-label="{{ _('Close') }}">✕</button>
     </div>
     <div class="dialog__body">
@@ -315,7 +315,7 @@
     </div>
     <div class="dialog__foot">
       <button class="btn" type="button" data-close>{{ _('Cancel') }}</button>
-      <button class="btn btn--primary" type="submit" data-submit disabled>{{ m.icon('refresh') }}{{ _('Back to Cloudflare') }}</button>
+      <button class="btn btn--primary" type="submit" data-submit disabled>{{ m.icon('refresh') }}{{ _('Return to Cloudflare') }}</button>
     </div>
   </form>
 </dialog>

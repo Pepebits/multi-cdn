@@ -185,3 +185,10 @@ Every status is shown with color + text label + icon, never color alone.
 - **Audit timeline**: vertical list, each entry with mono timestamp, actor (AUTO / usuario), signals that triggered it, DNS diff.
 - **Match banner**: full-width yellow banner when a match window is active, with red live dot and countdown in mono.
 - **Primary button** yellow; **secondary** white; **confirm/healthy** teal; **destructive** white with red border.
+
+## Dates and wording
+
+- **Dates**: one format everywhere, in UTC: `14 Nov, 22:50 UTC` (es: `14 nov, 22:50 UTC`), year only when it is not the current one. Templates use the `when` filter (`hhmm` drops the day when it is today, `day` is the date alone); Python uses `i18n.format_when()`. The panel script adds the relative time and the local time as a tooltip.
+- **Switching**: EN "Switch to Gcore" / "Return to Cloudflare", noun "switch"; ES "Cambiar a Gcore" / "Volver a Cloudflare", noun "cambio" (never "conmutar" or "pasar a").
+- **Delete vs Remove**: "Delete" / "Eliminar" only destroys something (domain, credential, server, Gcore resource); "Remove" / "Quitar" takes it out of a list or setting without destroying it (a hostname, a notification value).
+- **Phones (≤ 480px)**: ISP states as compact chips, short priority tag, 6-digit code inputs on one line.

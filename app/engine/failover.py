@@ -33,7 +33,7 @@ from ..providers import cloudflare as cf
 from ..providers import gcore
 from ..providers.cloudflare import OriginExposureError, plan_to_gcore
 from .. import alerts
-from ..i18n import N_, tn, tnn, tr
+from ..i18n import N_, format_when, notify_lang, tn, tnn, tr
 from ..signals.hayahora import ISPS
 
 log = logging.getLogger("multicdn.engine")
@@ -384,8 +384,9 @@ def check_readiness(state, now: datetime) -> None:
                          kind="config", now=now)
 
 
-def _fmt(t: datetime) -> str:
-    return t.astimezone(UTC).strftime("%H:%M UTC")
+def _fmt(t: datetime, now: datetime | None = None, lang: str | None = None) -> str:
+    """Hour in UTC, with the day only when it is not today (the panel's one date format)."""
+    return format_when(t, lang, now=now, compact=True)
 
 
 @dataclass
@@ -410,7 +411,7 @@ def decide(view, cfg, st: DomainState, *, dry_run: bool, mass: int, now: datetim
         reasons.append(tn("mass block underway ({count} Cloudflare IPs blocked)", count=mass))
     if cfg.policy == "preventive" and match is not None:
         reasons.append(tn("{competition} match ({match}, {time})", competition=match.competition, match=match.name,
-                          time=_fmt(match.kickoff)))
+                          time=_fmt(match.kickoff, now, notify_lang())))
     if reasons or not feed_ok:
         st.clear_since = None
     elif st.clear_since is None:
@@ -423,7 +424,7 @@ def decide(view, cfg, st: DomainState, *, dry_run: bool, mass: int, now: datetim
     if reasons and on_cf:
         return Decision("switch", reasons)
     if not reasons and feed_ok and on_backup and now - st.clear_since >= wait:
-        return Decision("return", [tn("no blocks since {time}", time=_fmt(st.clear_since))])
+        return Decision("return", [tn("no blocks since {time}", time=_fmt(st.clear_since, now, notify_lang()))])
     return Decision("none", reasons)
 
 
@@ -554,14 +555,9 @@ def describe(state, name: str, now: datetime | None = None) -> dict:
         return {"tone": "warn", "text": text, "short": text, "resumable": True, "action": "resume"}
     if st.hold_until and now < st.hold_until:
         maintenance = st.hold_reason == "mantenimiento"
-        if st.hold_until - now > timedelta(hours=20):
-            date = f"{st.hold_until.astimezone(UTC):%d/%m %H:%M} UTC"
-            text = tr("Paused until {date} for maintenance", date=date) if maintenance \
-                else tr("Paused until {date} after a manual change", date=date)
-        else:
-            time = _fmt(st.hold_until)
-            text = tr("Paused until {time} for maintenance", time=time) if maintenance \
-                else tr("Paused until {time} after a manual change", time=time)
+        time = _fmt(st.hold_until, now)
+        text = tr("Paused until {time} for maintenance", time=time) if maintenance \
+            else tr("Paused until {time} after a manual change", time=time)
         return {"tone": "warn", "text": text, "short": text, "resumable": True, "action": "resume"}
     calendar = getattr(state, "calendar", None)
     if cfg.policy == "preventive":
@@ -570,7 +566,7 @@ def describe(state, name: str, now: datetime | None = None) -> dict:
         nxt = calendar.upcoming(now) if calendar else None
         if nxt:
             text = tr("{text}. Next match: {match}, {when}", text=text, match=nxt.name,
-                      when=f"{nxt.kickoff.astimezone(UTC):%d/%m %H:%M} UTC")
+                      when=format_when(nxt.kickoff, now=now))
     else:
         text = tr("Active: switches to Gcore if its Cloudflare IPs get blocked")
     on_backup = any((r := state.resolutions.get(h.name)) and r.provider == "gcore" for h in cfg.hostnames if h.failover)
@@ -581,8 +577,8 @@ def describe(state, name: str, now: datetime | None = None) -> dict:
     if on_backup and match:
         text = tr("On Gcore during the {match} match; then waits {minutes} min without blocks", match=match.name, minutes=wait)
     elif on_backup and st.clear_since:
-        text = tr("On Gcore. No blocks since {since}: back to Cloudflare around {eta}", since=_fmt(st.clear_since),
-                  eta=_fmt(st.clear_since + return_after(state, cfg.priority)))
+        text = tr("On Gcore. No blocks since {since}: return to Cloudflare around {eta}", since=_fmt(st.clear_since, now),
+                  eta=_fmt(st.clear_since + return_after(state, cfg.priority), now))
     elif on_backup:
         text = tr("On Gcore while the block lasts; returns to Cloudflare after {minutes} min without blocks", minutes=wait)
     if st.last_error:
@@ -630,11 +626,11 @@ def change_indicator(state, name: str, now: datetime | None = None) -> dict | No
         eta = st.clear_since + return_after(state, cfg.priority)
         if eta > now:
             return {"kind": "pending", "target": "cloudflare", "when": eta,
-                    "text": tr("Back to Cloudflare around {time}", time=_fmt(eta))}
+                    "text": tr("Return to Cloudflare around {time}", time=_fmt(eta, now))}
     if not on_backup and cfg.policy == "preventive" and calendar:
         nxt = calendar.upcoming(now)
         if nxt and nxt.kickoff - lead - now < UPCOMING_WINDOW:
             when = max(now, nxt.kickoff - lead)
             return {"kind": "pending", "target": "gcore", "when": when,
-                    "text": tr("Switches to Gcore at {time} ({match})", time=_fmt(when), match=nxt.name)}
+                    "text": tr("Switch to Gcore at {time} ({match})", time=_fmt(when, now), match=nxt.name)}
     return None

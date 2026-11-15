@@ -600,7 +600,7 @@ td .change { margin-top: 6px; }
 .overview-line .is-warn { text-decoration: underline; text-decoration-thickness: 2px; }
 .auto-short { margin: 8px 0 0; font-size: .85rem; }
 td .auto-short { margin-top: 6px; }
-time.rel { font-weight: 400; }
+time.rel:not([data-abs]) { font-weight: 400; }
 
 /* Primeros pasos plegado cuando ya hay dominios */
 details.setup > summary { display: flex; justify-content: flex-start; align-items: center; gap: 12px;
@@ -631,4 +631,38 @@ details.setup[open] > summary { margin-bottom: 0; border-bottom: 2px solid var(-
 @media (pointer: coarse) {
   .theme-switch button, .lang-switch__opts a { min-width: 44px; min-height: 44px; }
   .btn--sm, .btn--sm-plain, .autorefresh { min-height: 44px; }
+}
+
+/* Prioridad: forma corta en el móvil (el lector de pantalla siempre lee la larga) */
+.tag__short { display: none; }
+
+/* Códigos TOTP: una línea, ancho de 6 cifras (o del código de recuperación en el login) */
+input.otp {
+  width: 100%; max-width: 11rem; white-space: nowrap; overflow: hidden;
+  font: 700 1.35rem/1.2 var(--font-mono); letter-spacing: 0.18em; font-variant-numeric: tabular-nums;
+}
+input.otp--wide { max-width: 15rem; }
+
+/* El pie no se sale de la pantalla en el móvil */
+.footer__controls { flex-wrap: wrap; }
+
+@media (max-width: 480px) {
+  .tag__long { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .tag__short { display: inline; }
+  .footer__controls, .footer__controls .autorefresh { margin-left: 0; }
+
+  /* Operadoras: fichas en dos o tres líneas en vez de una fila de 44 px por operadora */
+  .isp .isp__chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; }
+  .isp__chips li, .isp__chips li + li { min-height: 0; gap: 6px; padding: 3px 8px; border: 2px solid var(--border);
+    font: 700 0.8rem/1.3 var(--font-body); }
+  .isp__chips .pill { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .isp__row::before { font: 800 0.75rem/1 var(--font-mono); }
+  .isp__row--blocked { background: var(--danger-solid-bg); color: var(--danger-solid-fg); }
+  .isp__row--blocked::before { content: "✕"; content: "✕" / ""; }
+  .isp__row--free { background: var(--ok-solid-bg); color: var(--ok-solid-fg); }
+  .isp__row--free::before { content: "✓"; content: "✓" / ""; }
+  .isp__row--nodata { background: var(--grey-bg); color: var(--text); }
+  .isp__row--nodata::before { content: "–"; content: "–" / ""; }
 }

@@ -35,7 +35,7 @@ def test_alerts_once_on_problem_and_on_recovery(client):
     assert alerts(state) == ["Firewall del origen: la última actualización falló: la lista gc4 ha llegado vacía"]
     write(client, NOW)
     firewall_status.check(state, NOW + timedelta(days=2))  # sin error pero con la lista vieja
-    assert "no se actualizan desde 09/11 11:30" in alerts(state)[0]
+    assert "no se actualizan desde 9 nov, 11:30 UTC" in alerts(state)[0]
     write(client, NOW, last_ok="2026-11-11T11:00:00Z")
     firewall_status.check(state, NOW + timedelta(days=2))
     assert alerts(state)[0] == "Firewall del origen: rangos actualizados de nuevo"

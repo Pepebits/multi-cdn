@@ -14,7 +14,7 @@
 <nav class="periods" aria-label="{{ _('Period') }}">
   <span class="periods__label">{{ m.icon('calendar') }} {{ _("Period") }}</span>
   {% for p in periods %}<a class="periods__opt" href="/estadisticas?dias={{ p }}" {% if p == days %}aria-current="page"{% endif %}>{{ _("{n} days", n=p) }}</a>{% endfor %}
-  <span class="mono muted">{{ start.strftime('%d/%m %H:%M') }} – {{ end.strftime('%d/%m %H:%M') }} UTC</span>
+  <span class="mono muted">{{ start|when }} – {{ end|when }}</span>
 </nav>
 
 <section aria-labelledby="cifras">
@@ -66,7 +66,7 @@
     </div>
     {% call data_table(_('Blocked Cloudflare IPs')) %}
       <table class="data"><thead><tr><th scope="col">{{ _("Day (UTC)") }}</th><th scope="col" class="num">{{ _("Peak blocked IPs") }}</th></tr></thead>
-      <tbody>{% for d, v in daily_mass %}<tr><td>{{ d.strftime('%d/%m/%Y') }}</td><td class="num">{{ v }}</td></tr>{% endfor %}</tbody></table>
+      <tbody>{% for d, v in daily_mass %}<tr><td>{{ d|day }}</td><td class="num">{{ v }}</td></tr>{% endfor %}</tbody></table>
     {% endcall %}
     {% else %}
     <p class="empty">{{ m.icon('info') }} {{ feed_note or _('No feed data in this period.') }}</p>
@@ -131,7 +131,7 @@
     </div>
     {% call data_table(_('Gcore traffic per day')) %}
       <table class="data"><thead><tr><th scope="col">{{ _("Day") }}</th>{% for t in tseries %}<th scope="col" class="num">{{ t.name }}</th>{% endfor %}</tr></thead>
-      <tbody>{% for d in day_list %}{% set i = loop.index0 %}<tr><td>{{ d.strftime('%d/%m/%Y') }}</td>{% for t in tseries %}<td class="num">{{ t['values'][i]|bytes }}</td>{% endfor %}</tr>{% endfor %}</tbody></table>
+      <tbody>{% for d in day_list %}{% set i = loop.index0 %}<tr><td>{{ d|day }}</td>{% for t in tseries %}<td class="num">{{ t['values'][i]|bytes }}</td>{% endfor %}</tr>{% endfor %}</tbody></table>
     {% endcall %}
     {% else %}
     <p class="empty">{{ m.icon('info') }} {% if traffic_error %}{{ _("No Gcore traffic in this period.") }}{% else %}{{ _("No Gcore traffic in this period or no Gcore account.") }}{% endif %}</p>
@@ -144,12 +144,12 @@
   {% if episodes %}
   <div class="table-wrap">
     <table class="data">
-      <thead><tr><th scope="col">{{ _("Domain") }}</th><th scope="col">{{ _("Start (UTC)") }}</th><th scope="col">{{ _("Duration") }}</th><th scope="col">{{ _("ISPs") }}</th><th scope="col" class="num">{{ _("On Gcore") }}</th><th scope="col">{{ _("Match") }}</th></tr></thead>
+      <thead><tr><th scope="col">{{ _("Domain") }}</th><th scope="col">{{ _("Start") }}</th><th scope="col">{{ _("Duration") }}</th><th scope="col">{{ _("ISPs") }}</th><th scope="col" class="num">{{ _("On Gcore") }}</th><th scope="col">{{ _("Match") }}</th></tr></thead>
       <tbody>
       {% for e in episodes %}
         <tr>
           <td>{{ e.domain }}</td>
-          <td class="num-plain">{{ e.start.strftime('%d/%m %H:%M') }}</td>
+          <td class="num-plain">{{ e.start|when }}</td>
           <td>{{ e.duration }}{% if not e.end %} <span class="pill pill--blocked">{{ _("Ongoing") }}</span>{% endif %}</td>
           <td><span title="{{ e.isp_names }}">{{ _("{n} of 5", n=e.isps) }}</span></td>
           <td class="num">{{ e.gcore_pct }} %</td>

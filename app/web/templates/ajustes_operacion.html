@@ -17,8 +17,8 @@
 <section class="card" aria-labelledby="automatico">
   <div class="card__head"><h2 id="automatico">{{ m.icon('switch') }} {{ _("Automatic CDN switching") }}</h2><span class="pill {{ 'pill--free' if auto_on else 'pill--nodata' }}">{{ _('Enabled') if auto_on else _('Disabled') }}</span></div>
   <div class="card__body stack-gap">
-    <p style="margin:0">{{ _m("Each domain with the <strong>reactive</strong> policy moves to Gcore when its Cloudflare IPs are blocked. With the <strong>preventive</strong> policy, also on a mass block and ahead of each LaLiga or LaLiga Hypermotion match. Before switching it checks that Gcore serves each hostname. It returns to Cloudflare after a while without blocks. Both times are set per priority in <a href=\"#tiempos\">Switching times</a>.") }}</p>
-    <p class="help" style="margin:0">{{ _m("At least 15 min between switches; with more than 4 switches in 6 h that domain is paused. A manual switch pauses it for 1 h. The <strong>manual</strong> policy never changes anything. With the feed down it can move to Gcore for a match, but it does not return until the feed confirms there is no block. In dry run mode switches are only recorded.") }}</p>
+    <p style="margin:0">{{ _m("Each domain with the <strong>reactive</strong> policy switches to Gcore when its Cloudflare IPs are blocked. With the <strong>preventive</strong> policy, also on a mass block and ahead of each LaLiga or LaLiga Hypermotion match. Before switching it checks that Gcore serves each hostname. It returns to Cloudflare after a while without blocks. Both times are set per priority in <a href=\"#tiempos\">Switching times</a>.") }}</p>
+    <p class="help" style="margin:0">{{ _m("At least 15 min between switches; with more than 4 switches in 6 h that domain is paused. A manual switch pauses it for 1 h. The <strong>manual</strong> policy never changes anything. With the feed down it can switch to Gcore for a match, but it does not return until the feed confirms there is no block. In dry run mode switches are only recorded.") }}</p>
     <form method="post" action="/ajustes/operacion/automatico" class="actions-end">{{ csrf_field() }}
       <input type="hidden" name="enabled" value="{{ '0' if auto_on else '1' }}">
       <button class="btn{{ '' if auto_on else ' btn--primary' }}" type="submit">{% if auto_on %}{{ m.icon('pause') }} {{ _("Disable for all domains") }}{% else %}{{ m.icon('play') }} {{ _("Enable") }}{% endif %}</button>
@@ -76,7 +76,7 @@
 </section>
 
 <section class="card" aria-labelledby="calendario">
-  <div class="card__head"><h2 id="calendario">{{ m.icon('calendar') }} {{ _("Match calendar") }}</h2>{% if calendar %}<span class="mono muted">{{ _n("{n} match", "{n} matches", calendar.matches|length) }} · {{ _("read at {time}", time=calendar.fetched_at|hhmm) }}</span>{% endif %}</div>
+  <div class="card__head"><h2 id="calendario">{{ m.icon('calendar') }} {{ _("Match calendar") }}</h2>{% if calendar %}<span class="mono muted">{{ _n("{n} match", "{n} matches", calendar.matches|length) }} · {{ _m("read at {time}", time=calendar.fetched_at|hhmm) }}</span>{% endif %}</div>
   <div class="card__body stack-gap">
     <ul class="checks">
       {% for source, covers in [('ESPN', _('LaLiga and LaLiga Hypermotion · no key')), ('football-data.org', _('LaLiga · free key'))] %}
@@ -124,7 +124,7 @@
 </section>
 
 <section class="card" aria-labelledby="retencion">
-  <div class="card__head"><h2 id="retencion">{{ m.icon('history') }} {{ _("History retention") }}</h2><span class="mono muted">{{ _n("{n} event", "{n} events", ev_stats.count) }}{% if ev_stats.oldest %} · {{ _("since {when}", when=ev_stats.oldest|dt) }}{% endif %}</span></div>
+  <div class="card__head"><h2 id="retencion">{{ m.icon('history') }} {{ _("History retention") }}</h2><span class="mono muted">{{ _n("{n} event", "{n} events", ev_stats.count) }}{% if ev_stats.oldest %} · {{ _m("since {when}", when=ev_stats.oldest|when) }}{% endif %}</span></div>
   <form class="card__body form-inline" method="post" action="/ajustes/operacion/retencion">{{ csrf_field() }}
     <div>
       <label for="events_max_days">{{ _("Keep events (days)") }}</label>

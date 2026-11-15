@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from .i18n import tn
+from .i18n import format_when, notify_lang, tn
 
 MAX_AGE = timedelta(hours=48)   # el temporizador va cada 24 h
 WHILE_ON_BACKUP = timedelta(hours=1)  # con tráfico por Gcore, rangos de como mucho 1 h
@@ -44,7 +44,7 @@ class FirewallStatus:
         if self.last_ok is None:
             return tn("no list has been applied yet")
         if now - self.last_ok > MAX_AGE:
-            return tn("the ranges have not been updated since {date} UTC", date=f"{self.last_ok:%d/%m %H:%M}")
+            return tn("the ranges have not been updated since {date}", date=format_when(self.last_ok, notify_lang(), now=now))
         return None
 
 

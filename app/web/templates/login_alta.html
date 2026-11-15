@@ -12,7 +12,7 @@
   <input type="hidden" name="next" value="{{ next }}">
   <div>
     <label for="code">{{ _("App code") }}</label>
-    <input id="code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" required autofocus>
+    <input id="code" class="otp" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="go" required autofocus>
   </div>
   <div class="actions-end"><button class="btn btn--primary" type="submit">{{ _("Activate and sign in") }}</button></div>
 </form>

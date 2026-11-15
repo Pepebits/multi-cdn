@@ -69,7 +69,7 @@
       </div>
       <div class="meta">
         <span class="pill pill--neutral">{% if dry_run %}{{ _("Dry run") }}{% else %}{{ _("Production") }}{% endif %}</span>
-        <span class="pill pill--neutral">{% if dns_checked_at %}{{ _("DNS checked {time}", time=dns_checked_at|hhmm) }}{% else %}{{ _("DNS not checked yet") }}{% endif %}</span>
+        <span class="pill pill--neutral">{% if dns_checked_at %}{{ _m("DNS checked {time}", time=dns_checked_at|hhmm) }}{% else %}{{ _("DNS not checked yet") }}{% endif %}</span>
       </div>
     </header>
 
@@ -80,7 +80,7 @@
     </main>
 
     <footer class="footer">
-      <span title="{{ _('Block data from hayahora.futbol, an unofficial source. All times in the panel are in UTC.') }}">{% if feed_error %}{{ _("hayahora feed (unofficial): unavailable") }}{% elif feed %}{{ _("hayahora feed (unofficial): updated {time}", time=feed.last_update|hhmm) }}{% else %}{{ _("hayahora feed (unofficial): loading") }}{% endif %}</span>
+      <span title="{{ _('Block data from hayahora.futbol, an unofficial source. All times in the panel are in UTC.') }}">{% if feed_error %}{{ _("hayahora feed (unofficial): unavailable") }}{% elif feed %}{{ _m("hayahora feed (unofficial): updated {time}", time=feed.last_update|hhmm) }}{% else %}{{ _("hayahora feed (unofficial): loading") }}{% endif %}</span>
       <div class="footer__controls">
       <button class="autorefresh" type="button" id="autorefresh" aria-pressed="true">{{ _("Auto refresh") }}</button>
       <div class="theme-switch" role="group" aria-label="{{ _('Color theme') }}">

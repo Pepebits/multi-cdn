@@ -119,11 +119,11 @@ async def switch(name: str, target: str, *, assume_yes: bool = False, force: boo
             if problem:
                 out(tn("WARNING: {problem}", problem=problem))
                 if not force:
-                    out(tn("Not switching. Repeat with --force if you still want to move it to Gcore."))
+                    out(tn("Not switching. Repeat with --force if you still want to switch it to Gcore."))
                     return 1
             else:
                 out(tn("Gcore responds on all its edges."))
-        if not assume_yes and ask(tn("Type {domain} to move it to {target}: ", domain=name,
+        if not assume_yes and ask(tn("Type {domain} to switch it to {target}: ", domain=name,
                                      target=TARGETS[target])).strip() != name:
             out(tn("Cancelled: nothing has changed"))
             return 1

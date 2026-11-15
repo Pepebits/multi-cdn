@@ -66,7 +66,7 @@
         <p class="stat__note">{{ feed_error }}</p>
       {% elif feed %}
         <p class="stat__value">{{ _('Delayed') if feed_stale else _('Up to date') }}</p>
-        <p class="stat__note">{{ _("Last data {time}", time=feed.last_update|hhmm) }}</p>
+        <p class="stat__note">{{ _m("Last data {time}", time=feed.last_update|hhmm) }}</p>
       {% else %}
         <p class="stat__value">—</p><p class="stat__note">{{ _("Loading…") }}</p>
       {% endif %}
@@ -82,7 +82,7 @@
         <p class="stat__value">{{ _("Match in progress") }}</p>
         <p class="stat__note">{{ match_now.name }} · {{ match_now.kickoff|hhmm }}</p>
       {% elif match_next %}
-        <p class="stat__value">{{ match_next.kickoff.strftime('%d/%m %H:%M') }} <small>UTC</small></p>
+        <p class="stat__value">{{ match_next.kickoff|when }}</p>
         <p class="stat__note">{{ _("Next: {match}", match=match_next.name) }} <time class="rel" datetime="{{ match_next.kickoff.isoformat() }}" hidden></time></p>
       {% elif calendar_error %}
         <p class="stat__value stat__value--danger">{{ _("No calendar") }}</p>

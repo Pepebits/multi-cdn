@@ -10,9 +10,9 @@
     {% if f.configured %}
       <span class="pill pill--free">{{ _("Configured") }}</span>
       <span class="mono">{{ f.hint }}</span>
-      <span class="muted">{% if f.source == 'entorno' %}{{ _("from an environment variable") }}{% else %}{{ _("saved {when}", when=f.updated_at|dt) }}{% endif %}</span>
+      <span class="muted">{% if f.source == 'entorno' %}{{ _("from an environment variable") }}{% else %}{{ _m("saved {when}", when=f.updated_at|when) }}{% endif %}</span>
       {% if f.source == 'panel' %}
-      <button class="btn btn--danger btn--sm" type="submit" formaction="/ajustes/notificaciones/{{ f.name }}/eliminar" formnovalidate>{{ _("Delete") }}<span class="visually-hidden"> {{ _(f.label) }}</span></button>
+      <button class="btn btn--danger btn--sm" type="submit" formaction="/ajustes/notificaciones/{{ f.name }}/eliminar" formnovalidate>{{ _("Remove") }}<span class="visually-hidden"> {{ _(f.label) }}</span></button>
       {% endif %}
     {% else %}
       <span class="pill pill--nodata">{{ _("Not configured") }}</span>
@@ -55,7 +55,7 @@
     <div class="card__body stack-gap">
       <p style="margin:0">{{ _m("Every 5 min the panel tells an external service that it is still working. If it stops doing so (panel hung, VPS down) or one of its tasks stops, that service alerts you by email or Telegram. Create a check on healthchecks.io with <strong>period 5 min and grace 10 min</strong> and paste its ping URL here.") }}</p>
       {{ field(fields.heartbeat_url, 'password') }}
-      {% if beat %}<p class="help" style="margin:0">{{ _("Last heartbeat: {when}", when=beat.at|dt) }} · {{ _('all good') if beat.ok else _('failure reported') }} · {{ _('sent') if beat.result == 'ok' else _('not sent ({result})', result=beat.result) }} · {{ beat.detail }}</p>
+      {% if beat %}<p class="help" style="margin:0">{{ _m("Last heartbeat: {when}", when=beat.at|when) }} · {{ _('all good') if beat.ok else _('failure reported') }} · {{ _('sent') if beat.result == 'ok' else _('not sent ({result})', result=beat.result) }} · {{ beat.detail }}</p>
       {% else %}<p class="help" style="margin:0">{{ _("Right now:") }} {{ _('all good') if beat_health[0] else _('with failures') }} · {{ beat_health[1]|join('; ') }}</p>{% endif %}
     </div>
     <div class="card__foot actions-end">

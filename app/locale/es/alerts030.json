@@ -8,7 +8,7 @@
   "no Cloudflare credential": "sin credencial de Cloudflare",
   "the Cloudflare token cannot be read": "no se puede leer el token de Cloudflare",
   "no Cloudflare zone": "sin zona de Cloudflare",
-  "no hostname is marked to switch": "ningún hostname está marcado para conmutar",
+  "no hostname is marked to switch": "ningún hostname está marcado para cambiar de CDN",
   "not prepared on Gcore": "sin preparar en Gcore",
   "Cannot switch automatically: {reasons}": "No puede cambiar automáticamente: {reasons}",
   "automatic switching NOT ready: {reasons}": "cambio automático NO disponible: {reasons}",

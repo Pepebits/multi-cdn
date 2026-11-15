@@ -95,3 +95,23 @@ def test_getting_started_checklist(client):
     assert '<a href="/ajustes/cuentas"><strong>Connect Cloudflare</strong></a>' in page
     client.cookies.set("lang", "es")
     assert "Primeros pasos" in client.get("/").text
+
+
+def test_one_date_format_in_utc():
+    from datetime import UTC, date, datetime, timedelta, timezone
+    now = datetime(2026, 11, 15, 12, 0, tzinfo=UTC)
+    t = datetime(2026, 11, 14, 23, 50, tzinfo=timezone(timedelta(hours=1)))  # 22:50 UTC
+    assert i18n.format_when(t, "en", now=now) == "14 Nov, 22:50 UTC"
+    assert i18n.format_when(t, "es", now=now) == "14 nov, 22:50 UTC"
+    assert i18n.format_when(t.replace(year=2025), "en", now=now) == "14 Nov 2025, 22:50 UTC"
+    assert i18n.format_when(t, "en", now=now, time=False) == "14 Nov"
+    assert i18n.format_when(date(2027, 2, 3), "es", now=now) == "3 feb 2027"
+    assert i18n.format_when(now, "en", now=now, compact=True) == "12:00 UTC"
+    assert i18n.format_when(t, "en", now=now, compact=True) == "14 Nov, 22:50 UTC"
+    assert i18n.format_when(None) == "—"
+
+
+def test_dates_render_as_time_elements(client):
+    client.cookies.set("lang", "en")
+    page = client.get("/historial").text
+    assert 'class="rel" data-abs>' in page and " UTC</time>" in page

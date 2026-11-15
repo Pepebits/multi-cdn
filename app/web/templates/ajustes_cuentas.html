@@ -37,7 +37,7 @@
             {% endif %}
           </span>
         </div>
-        {% if c.check_msg %}<p class="help" style="margin:0">{{ c.check_msg }}{% if c.checked_at %} · {{ c.checked_at|dt }}{% endif %}</p>{% endif %}
+        {% if c.check_msg %}<p class="help" style="margin:0">{{ c.check_msg }}{% if c.checked_at %} · {{ c.checked_at|when }}{% endif %}</p>{% endif %}
         {% if c.scope %}<p class="help" style="margin:4px 0 0">{{ _("Visible zones:") }} <span class="mono">{{ c.scope }}</span></p>{% endif %}
         {% set u = usage.get(c.id) %}
         {% if u %}
@@ -47,7 +47,7 @@
           {% else %}
           <p style="margin:0"><strong>{{ _("Traffic in {month}:", month=u.month[5:] ~ '/' ~ u.month[:4]) }}</strong> {{ _("{used} of {quota} GB ({percent} %)", used=u.total|bytes, quota=u.quota_gb, percent=('%.1f'|format(u.percent)|replace('.', ',') if ui_lang() == 'es' else '%.1f'|format(u.percent))) }}</p>
           <div class="meter" role="img" aria-label="{{ _('{percent} % of the monthly quota', percent='%.1f'|format(u.percent)) }}"><span style="width:{{ [u.percent, 100]|min }}%"></span></div>
-          <p class="help" style="margin:0">{{ _("Served to users {sent} · fetched from the origin {upstream}", sent=u.sent|bytes, upstream=u.upstream|bytes) }}{% if u.max_resources %} · {{ _("CDN resources {used} of {max}", used=u.resources, max=u.max_resources) }}{% endif %} · {{ _("read at {time}", time=u.checked_at|hhmm) }}</p>
+          <p class="help" style="margin:0">{{ _("Served to users {sent} · fetched from the origin {upstream}", sent=u.sent|bytes, upstream=u.upstream|bytes) }}{% if u.max_resources %} · {{ _("CDN resources {used} of {max}", used=u.resources, max=u.max_resources) }}{% endif %} · {{ _m("read at {time}", time=u.checked_at|hhmm) }}</p>
           {% endif %}
         </div>
         {% endif %}

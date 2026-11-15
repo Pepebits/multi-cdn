@@ -7,7 +7,7 @@
   <input type="hidden" name="next" value="{{ next }}">
   <div>
     <label for="code">{{ _("Code") }}</label>
-    <input id="code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}|[a-z0-9]{5}-[a-z0-9]{5}" required autofocus aria-describedby="code-help">
+    <input id="code" class="otp otp--wide" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}|[a-z0-9]{5}-[a-z0-9]{5}" maxlength="11" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="go" required autofocus aria-describedby="code-help">
     <p id="code-help" class="help">{{ _m("No phone? Use one of your recovery codes (format <span class=\"mono\">xxxxx-xxxxx</span>).") }}</p>
   </div>
   <div class="actions-end">

@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 from contextvars import ContextVar
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from markupsafe import Markup, escape
@@ -131,6 +132,47 @@ def tnn(singular: str, plural: str, n: int, /, **kw) -> str:
 def tr_markup(text: str, /, **kw) -> Markup:
     """For a template string that contains trusted markup: the arguments are escaped."""
     return Markup(translate(text, ui_lang())).format(**{k: escape(v) for k, v in kw.items()})
+
+
+MONTHS = {
+    "en": ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"),
+    "es": ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"),
+}
+
+
+def format_when(value: datetime | date | None, lang: str | None = None, /, *, now: datetime | None = None,
+                time: bool = True, compact: bool = False) -> str:
+    """The one date format of the panel, always in UTC: "14 Nov, 22:50 UTC" (es: "14 nov, 22:50 UTC").
+
+    The year is added only when it is not the current one. `time=False` gives just the day
+    ("14 Nov"); `compact=True` drops the day when it is today ("22:50 UTC"). `lang` defaults to
+    the interface language; pass notify_lang() for stored or sent text."""
+    if value is None:
+        return "—"
+    now = (now or datetime.now(UTC)).astimezone(UTC)
+    if isinstance(value, datetime):
+        value = (value if value.tzinfo else value.replace(tzinfo=UTC)).astimezone(UTC)
+    months = MONTHS.get(lang or ui_lang(), MONTHS["en"])
+    day = f"{value.day} {months[value.month - 1]}" + (f" {value.year}" if value.year != now.year else "")
+    if not time or not isinstance(value, datetime):
+        return day
+    clock = f"{value:%H:%M} UTC"
+    if compact and value.date() == now.date():
+        return clock
+    return f"{day}, {clock}"
+
+
+def when_markup(value: datetime | date | None, *, time: bool = True, compact: bool = False) -> Markup:
+    """format_when() inside <time datetime="…">; the panel script adds the relative time and the
+    browser's local time as a tooltip (class "rel" with data-abs)."""
+    if value is None:
+        return Markup("—")
+    # Breaks only after the comma: "15 nov," and "22:28 UTC" never split.
+    text = format_when(value, time=time, compact=compact).replace(" ", "\u00a0").replace(",\u00a0", ", ")
+    if isinstance(value, datetime):
+        iso = (value if value.tzinfo else value.replace(tzinfo=UTC)).astimezone(UTC).isoformat(timespec="seconds")
+        return Markup('<time datetime="{}" class="rel" data-abs>{}</time>').format(iso, text)
+    return Markup('<time datetime="{}">{}</time>').format(value.isoformat(), text)
 
 
 def install(env) -> None:

@@ -107,8 +107,10 @@ if (document.querySelector('.joblog[data-running]')) setTimeout(() => location.r
 // En pantallas estrechas las gráficas se desplazan dentro de su tarjeta: empezar por lo más reciente.
 document.querySelectorAll('.viz__frame').forEach(f => { f.scrollLeft = f.scrollWidth; });
 
-// Horas del panel (en UTC): añadir cuánto falta y la hora local del navegador, p. ej.
-// "· in 52 min (02:48 local)". Si no hay JavaScript queda el texto en UTC.
+// Horas del panel (en UTC): cuánto falta o cuánto hace y la hora local del navegador.
+// - <time class="rel" hidden> vacío (cuentas atrás): se rellena, p. ej. "· in 52 min (02:48 local)".
+// - <time class="rel" data-abs> (filtro `when`): el texto en UTC se queda; lo relativo va en el title.
+// Si no hay JavaScript queda el texto en UTC.
 (() => {
   const times = document.querySelectorAll('time.rel[datetime]');
   if (!times.length || !window.Intl || !Intl.RelativeTimeFormat) return;
@@ -119,8 +121,12 @@ document.querySelectorAll('.viz__frame').forEach(f => { f.scrollLeft = f.scrollW
     const when = new Date(t.getAttribute('datetime'));
     if (isNaN(when)) return;
     const mins = Math.round((when - Date.now()) / 60000);
-    const span = Math.abs(mins) >= 120 ? rel.format(Math.round(mins / 60), 'hour') : rel.format(mins, 'minute');
-    const clock = when.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' });
+    const span = Math.abs(mins) >= 2880 ? rel.format(Math.round(mins / 1440), 'day')
+      : Math.abs(mins) >= 120 ? rel.format(Math.round(mins / 60), 'hour') : rel.format(mins, 'minute');
+    const clock = Math.abs(mins) >= 1200
+      ? when.toLocaleString(lang, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+      : when.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' });
+    if (t.hasAttribute('data-abs')) { t.title = `${span} (${clock} ${local})`; return; }
     t.textContent = `· ${span} (${clock} ${local})`;
     t.hidden = false;
   });

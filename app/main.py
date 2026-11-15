@@ -176,7 +176,7 @@ def check_stale_feed(state: State) -> None:
         state.feed_stale_alerted = True
         state.events.add(actor="auto", kind="alert", summary=tn(
             "Block feed is answering with old data (last update {time}): automatic switching is not deciding",
-            time=f"{state.feed.last_update.astimezone(UTC):%d/%m %H:%M} UTC"))
+            time=i18n.format_when(state.feed.last_update, i18n.notify_lang())))
     elif not stale and state.feed_stale_alerted:
         state.feed_stale_alerted = False
         state.events.add(actor="auto", kind="alert", summary=tn("Block feed up to date again"))
@@ -241,7 +241,7 @@ def check_block_transitions(state: State) -> None:
         if blocked and d.name not in state.blocked_domains:
             state.blocked_domains.add(d.name)
             if d.status == "cloudflare":
-                where = (tn("still on Cloudflare: the automatic switch moves it to Gcore") if is_auto
+                where = (tn("still on Cloudflare: automatic switching will switch it to Gcore") if is_auto
                          else tn("still on Cloudflare: consider switching to Gcore"))
             elif d.status == "gcore":
                 where = tn("already served by Gcore")
@@ -564,16 +564,12 @@ def _actor(request: Request) -> str:
     return session.user.username if session else "panel"
 
 
-def _fmt_time(value: datetime | None) -> str:
-    return value.astimezone(UTC).strftime("%H:%M UTC") if value else "—"
-
-
-def _fmt_datetime(value: datetime | None) -> str:
-    return value.astimezone(UTC).strftime("%d/%m %H:%M UTC") if value else "—"
-
-
-templates.env.filters["hhmm"] = _fmt_time
-templates.env.filters["dt"] = _fmt_datetime
+# One date format in the whole panel (i18n.format_when): "14 Nov, 22:50 UTC" inside <time>.
+# `when` is the full date; `hhmm` drops the day when it is today (status lines that refresh
+# often); `day` is the date alone. All return markup: inside a translated string use _m().
+templates.env.filters["when"] = i18n.when_markup
+templates.env.filters["hhmm"] = lambda value: i18n.when_markup(value, compact=True)
+templates.env.filters["day"] = lambda value: i18n.when_markup(value, time=False)
 templates.env.filters["bytes"] = human_bytes
 
 
@@ -818,6 +814,8 @@ async def dominio(request: Request, name: str):
         view.alerts.append(tr("{hosts}: more than one A/AAAA record on Cloudflare. The switch to Gcore turns the record into a "
                               "CNAME, which Cloudflare rejects while the others exist: keep a single record per hostname",
                               hosts=", ".join(multi)))
+    cert_not_after = s.inventory.domains[name].cert_not_after
+    cert_until = datetime.fromisoformat(cert_not_after) if cert_not_after else None
     return templates.TemplateResponse(request, "dominio.html", _common(
         request, "dominios", d=view, cfg=s.inventory.domains[name],
         servers=list(s.inventory.servers), events=s.events.list(domain=name, limit=10),
@@ -825,8 +823,8 @@ async def dominio(request: Request, name: str):
         auto=failover.describe(s, name), maintenance_options={k: tr(v) for k, v in MAINTENANCE_OPTIONS.items()},
         origin_header=origin_header_view(s, name),
         inventory_servers={sid: bool(srv.origin_ipv4) for sid, srv in s.inventory.servers.items()},
-        renew_from=(datetime.fromisoformat(s.inventory.domains[name].cert_not_after) - RENEW_BEFORE
-                    if s.inventory.domains[name].cert_not_after else None),
+        cert_until=cert_until,
+        renew_from=cert_until - RENEW_BEFORE if cert_until else None,
     ))
 
 
@@ -1024,13 +1022,13 @@ async def _delete_domain(request, s, name, domain, back, dns_action, delete_gcor
         return t(where) + (" · " + t(GCORE_DELETED) if gcore_deleted else "")
 
     s.events.add(actor=_actor(request), kind="config", domain=name, transition=None,
-                 summary=tn("Removed from the inventory; {outcome}", outcome=outcome(tn)),
+                 summary=tn("Domain deleted; {outcome}", outcome=outcome(tn)),
                  dns_diff=diff, simulated=client.dry_run and bool(diff))
     await _after_inventory_change(s)
     if client.dry_run and diff:
-        msg = tr("{domain} removed from the inventory; {outcome} (simulated DNS changes)", domain=name, outcome=outcome(tr))
+        msg = tr("{domain} deleted; {outcome} (simulated DNS changes)", domain=name, outcome=outcome(tr))
     else:
-        msg = tr("{domain} removed from the inventory; {outcome}", domain=name, outcome=outcome(tr))
+        msg = tr("{domain} deleted; {outcome}", domain=name, outcome=outcome(tr))
     return _back(request.url_for("dominios"), ok=msg)
 
 
@@ -1242,11 +1240,11 @@ async def estadisticas(request: Request, dias: int = 7):
                              "match": match})
         rows.append({
             "name": name,
-            "segments": [(g.start, g.end, g.kind, f"{tr(CDN_LABEL[g.kind])}: {g.start:%d/%m %H:%M}–{g.end:%d/%m %H:%M} UTC "
+            "segments": [(g.start, g.end, g.kind, f"{tr(CDN_LABEL[g.kind])}: {i18n.format_when(g.start)} – {i18n.format_when(g.end)} "
                                                   f"({stats.fmt_duration(g.end - g.start)})") for g in segs],
             "blocks": [(max(iv.start, start), iv.end or now,
-                        tr("Blocked IPs: {start}–{end} UTC · up to {n} ISPs", start=f"{iv.start:%d/%m %H:%M}",
-                           end=f"{(iv.end or now):%d/%m %H:%M}", n=iv.max_isps)) for iv in ivs],
+                        tr("Blocked IPs: {start} – {end} · up to {n} ISPs", start=i18n.format_when(iv.start),
+                           end=i18n.format_when(iv.end or now), n=iv.max_isps)) for iv in ivs],
             "has_ips": bool(known.get(name)),
         })
     episodes.sort(key=lambda e: e["start"], reverse=True)
@@ -1462,8 +1460,8 @@ async def notificacion_eliminar(request: Request, name: str):
     if name not in CREDENTIALS:
         raise HTTPException(404)
     s.secrets.delete(name)
-    s.events.add(actor=_actor(request), kind="config", summary=tn("Notifications: {field} deleted", field=tn(CREDENTIALS[name][0])))
-    return _back(request.url_for("ajustes_notificaciones"), ok=tr("{field} deleted", field=tr(CREDENTIALS[name][0])))
+    s.events.add(actor=_actor(request), kind="config", summary=tn("Notifications: {field} removed", field=tn(CREDENTIALS[name][0])))
+    return _back(request.url_for("ajustes_notificaciones"), ok=tr("{field} removed", field=tr(CREDENTIALS[name][0])))
 
 
 @app.post("/ajustes/notificaciones/probar/{canal}")

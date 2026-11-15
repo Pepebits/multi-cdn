@@ -17,7 +17,7 @@ from pathlib import Path
 
 from cryptography import x509
 
-from .i18n import tn, tr
+from .i18n import format_when, tn, tr
 
 CERTBOT = Path(sys.executable).parent / "certbot"
 
@@ -52,7 +52,7 @@ async def issue(cert_name: str, hostnames: list[str], cloudflare_token: str, log
     """Emite (o renueva si hace falta) un certificado que cubre `hostnames`."""
     existing = read_cert(cert_name)
     if existing and sorted(hostnames) == existing.names and (existing.not_after - datetime.now(UTC)).days > 30:
-        log(tr("Certificate valid until {date}: reused", date=f"{existing.not_after:%d/%m/%Y}"))
+        log(tr("Certificate valid until {date}: reused", date=format_when(existing.not_after, time=False)))
         return existing
     base = _base_dir()
     for sub in ("config", "work", "logs"):
@@ -84,5 +84,5 @@ async def issue(cert_name: str, hostnames: list[str], cloudflare_token: str, log
     cert = read_cert(cert_name)
     if cert is None:
         raise RuntimeError(tn("certbot finished but the certificate cannot be found"))
-    log(tr("Certificate issued, valid until {date}", date=f"{cert.not_after:%d/%m/%Y}"))
+    log(tr("Certificate issued, valid until {date}", date=format_when(cert.not_after, time=False)))
     return cert

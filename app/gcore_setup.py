@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 
 from . import certs
 from .error_reporting import scrub_origin
-from .i18n import tn, tnn, tr
+from .i18n import format_when, notify_lang, tn, tnn, tr
 from .providers import gcore
 
 
@@ -169,11 +169,11 @@ async def _prepare(state, name: str, job: Job, renewal: bool = False) -> None:
         job.log(msg, "ok" if ok else "warn")
 
     if renewal:
-        summary = tn("Certificate renewed on Gcore, valid until {date}", date=f"{cert.not_after:%d/%m/%Y}")
+        summary = tn("Certificate renewed on Gcore, valid until {date}", date=format_when(cert.not_after, notify_lang(), time=False))
     elif existed:  # recurso ya existente: configuración y cabecera secreta al día, mismo DNS
-        summary = tn("Updated on Gcore: resource {id}, certificate until {date}", id=resource_id, date=f"{cert.not_after:%d/%m/%Y}")
+        summary = tn("Updated on Gcore: resource {id}, certificate until {date}", id=resource_id, date=format_when(cert.not_after, notify_lang(), time=False))
     else:
-        summary = tn("Prepared on Gcore: resource {id}, certificate until {date}", id=resource_id, date=f"{cert.not_after:%d/%m/%Y}")
+        summary = tn("Prepared on Gcore: resource {id}, certificate until {date}", id=resource_id, date=format_when(cert.not_after, notify_lang(), time=False))
     state.events.add(actor="auto", kind="config", domain=name, summary=summary,
                      signals=[tn("target {target}", target=target), tn("origin multicdn-{server}", server=server_id)])
     job.log(tr("Done. Public DNS was not touched: the domain is still served through Cloudflare."), "ok")
@@ -204,7 +204,7 @@ def cert_expiry_alerts(state, now: datetime | None = None) -> list[str]:
         key, mark = f"cert_alert:{name}", f"{domain.cert_not_after}:{level}"
         if state.events.get_value(key) == mark:
             continue
-        date = f"{not_after:%d/%m/%Y}"
+        date = format_when(not_after, notify_lang(), now=now, time=False)
         when = tn("expired on {date}", date=date) if level == 0 \
             else tnn("expires on {date} (in {n} day)", "expires on {date} (in {n} days)", days, date=date)
         state.events.add(actor="auto", kind="alert", domain=name,

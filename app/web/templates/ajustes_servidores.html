@@ -67,18 +67,18 @@
   <div class="card__body stack-gap">
     {% if fw %}
     <dl class="kv">
-      <div><dt>{{ _("Last list applied") }}</dt><dd>{{ fw.last_ok|dt if fw.last_ok else '—' }}</dd></div>
+      <div><dt>{{ _("Last list applied") }}</dt><dd>{{ fw.last_ok|when if fw.last_ok else '—' }}</dd></div>
       <div><dt>{{ _("CDN ranges") }}</dt><dd>{{ _("{ipv4} IPv4 · {ipv6} IPv6 (last update: +{added} / −{removed})", ipv4=fw.ipv4, ipv6=fw.ipv6, added=fw.added, removed=fw.removed) }}</dd></div>
       <div><dt>{{ _("Caddy (trusted proxies)") }}</dt><dd>{{ fw.caddy or '—' }}</dd></div>
-      <div><dt>{{ _("Last check") }}</dt><dd>{{ fw.checked_at|dt if fw.checked_at else '—' }}</dd></div>
+      <div><dt>{{ _("Last check") }}</dt><dd>{{ fw.checked_at|when if fw.checked_at else '—' }}</dd></div>
     </dl>
     {% if fw_problem %}<p class="notice notice--error" style="margin:0">{{ m.icon('alert') }} {{ fw_problem }}</p>{% endif %}
     {% if fw_changes %}
     <details>
       <summary>{{ _("Recent changes in the lists") }}</summary>
       <div class="table-wrap"><table>
-        <thead><tr><th scope="col">{{ _("Applied (UTC)") }}</th><th scope="col" class="num">{{ _("Ranges added") }}</th><th scope="col" class="num">{{ _("Ranges removed") }}</th></tr></thead>
-        <tbody>{% for ts, a, r in fw_changes %}<tr><td class="num-plain">{{ ts|dt }}</td><td class="num">{{ a }}</td><td class="num">{{ r }}</td></tr>{% endfor %}</tbody>
+        <thead><tr><th scope="col">{{ _("Applied") }}</th><th scope="col" class="num">{{ _("Ranges added") }}</th><th scope="col" class="num">{{ _("Ranges removed") }}</th></tr></thead>
+        <tbody>{% for ts, a, r in fw_changes %}<tr><td class="num-plain">{{ ts|when }}</td><td class="num">{{ a }}</td><td class="num">{{ r }}</td></tr>{% endfor %}</tbody>
       </table></div>
     </details>
     {% endif %}

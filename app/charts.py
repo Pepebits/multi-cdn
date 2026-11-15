@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 from datetime import datetime, timedelta
 
-from .i18n import N_, tr
+from .i18n import N_, format_when, tr
 
 W = 960
 LEFT, RIGHT, TOP, BOTTOM = 52, 12, 14, 30
@@ -74,7 +74,7 @@ def line_chart(points: list[tuple[datetime, int]], start: datetime, end: datetim
     for t, v in points:
         x0, x1 = sc.x(t), sc.x(t + step)
         match = next((label for b0, b1, label in bands if b0 < t + step and b1 > t), None)
-        tip = f"{t:%d/%m %H:%M}–{t + step:%H:%M} UTC · {fmt_num(v)} IPs" + (f" · {match}" if match else "")
+        tip = f"{format_when(t, time=False)}, {t:%H:%M}–{t + step:%H:%M} UTC · {fmt_num(v)} IPs" + (f" · {match}" if match else "")
         hits.append({"x": x0, "w": max(1.0, round(x1 - x0, 1)), "cx": sc.x(t + step / 2), "cy": y(v), "tip": tip})
     peak = max(points, key=lambda p: p[1]) if points else None
     return {
@@ -147,7 +147,7 @@ def columns(days: list[datetime], series: list[dict], start: datetime, end: date
             x = round(cx - bar_w / 2, 1)
             bars.append({"x": x, "y": round(y_top, 1), "w": bar_w, "h": round(h, 1),
                          "path": _rounded_top(x, round(y_top, 1), bar_w, round(h, 1)) if last else None,
-                         "slot": s["slot"], "tip": f"{day:%d/%m} · {s['name']}: {fmt(v)}"})
+                         "slot": s["slot"], "tip": f"{format_when(day, time=False)} · {s['name']}: {fmt(v)}"})
             y_cursor = y_top
     return {"height": height, "base": base, "bars": bars,
             "yticks": [{"y": round(base - v / top * sc.plot_h, 1), "label": fmt(int(v))} for v in _frange(0, top, ystep)],

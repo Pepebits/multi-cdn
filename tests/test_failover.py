@@ -76,7 +76,7 @@ def test_switches_on_block_and_returns_after_quiet_period(st):
     st.feed = feed(False, T0 + timedelta(minutes=41))
     run(st, T0 + timedelta(minutes=41))
     sw = switches(st)
-    assert len(sw) == 2 and sw[0].transition == "GCORE → CF" and "sin bloqueos desde las 20:20" in sw[0].summary
+    assert len(sw) == 2 and sw[0].transition == "GCORE → CF" and "sin bloqueos desde 20:20" in sw[0].summary
     assert not st.engine.get("example.com").sim_backup
 
 
@@ -119,7 +119,7 @@ def test_flapping_pauses_the_domain(st):
     st.feed = feed(True, t)
     run(st, t)
     assert st.engine.get("example.com").paused and len(switches(st)) == failover.FLAP_MAX
-    assert "pausada" in st.events.list(limit=1)[0].summary
+    assert "en pausa" in st.events.list(limit=1)[0].summary
 
 
 def test_manual_change_holds_automation(st, client):
@@ -214,7 +214,7 @@ def test_cli_origin_secrets_fingerprints_caddy_file_and_rotation(tmp_path, monke
 
 def test_panel_shows_engine_state_and_global_switch(st, client):
     page = client.get("/dominios/example.com").text
-    assert "Cambio automático:" in page and "Activo: pasa a Gcore" in page and "bloqueo masivo" in page
+    assert "Cambio automático:" in page and "Activo: cambia a Gcore" in page and "bloqueo masivo" in page
     assert "Política manual" in client.get("/dominios/example.net").text
     r = client.post("/ajustes/operacion/automatico", data={"enabled": "0"}, follow_redirects=True)
     assert "Desactivado" in r.text and not failover.auto_enabled(st)
@@ -338,15 +338,15 @@ def test_change_indicator_pending_return_and_preventive_match(st):
     es.clear_since = now - timedelta(minutes=10)
     st.engine.save(es)
     c = failover.change_indicator(st, "example.com", now)
-    assert c["kind"] == "pending" and c["text"] == f"Vuelta a Cloudflare hacia las {(es.clear_since + timedelta(minutes=20)):%H:%M} UTC"
+    assert c["kind"] == "pending" and c["text"] == f"Vuelta a Cloudflare prevista: {(es.clear_since + timedelta(minutes=20)):%H:%M} UTC"
     st.engine.maintenance("example.com", None)
     assert failover.change_indicator(st, "example.com", now) is None  # en pausa: no se promete nada
     st.engine.resume("example.com")
     st.resolutions = {h: Resolution(h, (CF_IP,), None, "cloudflare") for h in ("example.com", "www.example.com")}
     st.calendar = calendar_at(now + timedelta(hours=2))
     c = failover.change_indicator(st, "example.com", now)
-    assert c["target"] == "gcore" and "Pasa a Gcore a las" in c["text"] and "Celta Vigo – Levante" in c["text"]
-    assert "Pasa a Gcore" in __import__("app.main", fromlist=["x"]).templates.env.get_template("_macros.html").module.change_badge(c)
+    assert c["target"] == "gcore" and "Cambio a Gcore previsto:" in c["text"] and "Celta Vigo – Levante" in c["text"]
+    assert "Cambio a Gcore" in __import__("app.main", fromlist=["x"]).templates.env.get_template("_macros.html").module.change_badge(c)
 
 
 def test_cli_english_command_names(tmp_path, monkeypatch, capsys):

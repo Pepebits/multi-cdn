@@ -12,7 +12,7 @@
     {% for x in sessions %}
     <li>
       <span><strong>{{ _('This session') if x.id_hash == current_hash else _('Other session') }}</strong>
-        <span class="help" style="display:block;margin:2px 0 0">{{ _("From {ip} · started {started} · last used {last}", ip=x.ip or '—', started=x.created_at|dt, last=x.last_seen|dt) }}</span>
+        <span class="help" style="display:block;margin:2px 0 0">{{ _m("From {ip} · started {started} · last used {last}", ip=x.ip or '—', started=x.created_at|when, last=x.last_seen|when) }}</span>
         <span class="help mono" style="display:block;margin:0">{{ (x.user_agent or '')[:90] }}</span></span>
       <form method="post" action="/ajustes/cuenta/sesiones/{{ x.id_hash }}/cerrar">{{ csrf_field() }}
         <button class="btn btn--danger btn--sm" type="submit">{{ m.icon('logout') }} {{ _("Close") }}<span class="visually-hidden"> {{ _('this session') if x.id_hash == current_hash else _('the session from {ip}', ip=x.ip or _('unknown origin')) }}</span></button>
@@ -27,7 +27,7 @@
   <form method="post" action="/ajustes/cuenta/password">{{ csrf_field() }}
     <div class="card__body form-grid">
       <div><label for="current">{{ _("Current password") }}</label><input id="current" type="password" name="current" autocomplete="current-password" required></div>
-      <div><label for="code-pw">{{ _("TOTP code") }}</label><input id="code-pw" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" required></div>
+      <div><label for="code-pw">{{ _("TOTP code") }}</label><input id="code-pw" class="otp" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" autocapitalize="none" autocorrect="off" spellcheck="false" required></div>
       <div><label for="new">{{ _("New password") }}</label><input id="new" type="password" name="new" autocomplete="new-password" minlength="12" required aria-describedby="new-help"><p id="new-help" class="help">{{ _("At least 12 characters. Your other sessions will be closed.") }}</p></div>
       <div><label for="new2">{{ _("Repeat the new one") }}</label><input id="new2" type="password" name="new2" autocomplete="new-password" minlength="12" required></div>
     </div>
@@ -38,7 +38,7 @@
 <section class="card" aria-labelledby="recuperacion">
   <div class="card__head"><h2 id="recuperacion">{{ m.icon('key') }} {{ _("Recovery codes") }}</h2><span class="mono muted">{{ _("{n} left", n=recovery_left) }}</span></div>
   <form class="card__body form-inline" method="post" action="/ajustes/cuenta/recuperacion">{{ csrf_field() }}
-    <div><label for="code-rc">{{ _("TOTP code") }}</label><input id="code-rc" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" required></div>
+    <div><label for="code-rc">{{ _("TOTP code") }}</label><input id="code-rc" class="otp" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" autocapitalize="none" autocorrect="off" spellcheck="false" required></div>
     <div class="form-actions"><button class="btn" type="submit">{{ m.icon('refresh') }} {{ _("Generate new codes") }}</button></div>
   </form>
   <p class="card__body help" style="margin:0;padding-top:0">{{ _("The previous ones stop working. If you lose your phone and the codes, access is recovered from the server:") }} <span class="mono">uv run python -m app.cli reset-totp {{ user.username }}</span></p>
