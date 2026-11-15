@@ -18,9 +18,8 @@
   <div class="card__head"><h2 id="automatico">{{ m.icon('switch') }} {{ _("Automatic CDN switching") }}</h2><span class="pill {{ 'pill--free' if auto_on else 'pill--nodata' }}">{{ _('Enabled') if auto_on else _('Disabled') }}</span></div>
   <div class="card__body stack-gap">
     <p style="margin:0">{{ _m("Each domain with the <strong>reactive</strong> policy switches to Gcore when its Cloudflare IPs are blocked. With the <strong>preventive</strong> policy, also on a mass block and ahead of each LaLiga or LaLiga Hypermotion match. Before switching it checks that Gcore serves each hostname. It returns to Cloudflare after a while without blocks. Both times are set per priority in <a href=\"#tiempos\">Switching times</a>.") }}</p>
-    {{ m.more("automatico-help", _m("At least 15 min between switches; with more than 4 switches in 6 h that domain is paused. A manual switch pauses it for 1 h. The <strong>manual</strong> policy never changes anything. With the feed down it can switch to Gcore for a match, but it does not return until the feed confirms there is no block. In dry run mode switches are only recorded.")) }}
   </div>
-  <form method="post" action="/ajustes/operacion/automatico" class="card__foot actions-end">{{ csrf_field() }}
+  <form method="post" action="/ajustes/operacion/automatico" class="card__foot actions-end">{{ csrf_field() }}{{ m.more("automatico-help", _m("At least 15 min between switches; with more than 4 switches in 6 h that domain is paused. A manual switch pauses it for 1 h. The <strong>manual</strong> policy never changes anything. With the feed down it can switch to Gcore for a match, but it does not return until the feed confirms there is no block. In dry run mode switches are only recorded.")) }}
     <input type="hidden" name="enabled" value="{{ '0' if auto_on else '1' }}">
     <button class="btn{{ '' if auto_on else ' btn--primary' }}" type="submit">{% if auto_on %}{{ m.icon('pause') }} {{ _("Disable for all domains") }}{% else %}{{ m.icon('play') }} {{ _("Enable") }}{% endif %}</button>
   </form>
@@ -29,7 +28,6 @@
 <section class="card" aria-labelledby="tiempos">
   <div class="card__head"><h2 id="tiempos">{{ m.icon('clock') }} {{ _("Switching times") }}</h2></div>
   <form method="post" action="/ajustes/operacion/tiempos">{{ csrf_field() }}
-    <div class="card__body card__intro">{{ m.more("tiempos-help", _("The defaults come from two months of block history: blocks start a median of 68 min before kick-off (90 % within the previous 2 h), and a released IP was blocked again within 15 min only 0.05 % of the time. A longer lead protects more of the match at the cost of more time and traffic on Gcore.")) }}</div>
     <div class="table-wrap">
       <table class="table">
         <thead><tr><th scope="col">{{ _("Priority") }}</th><th scope="col">{{ _("Switch before a match (min)") }}</th><th scope="col">{{ _("Return after no blocks for (min)") }}</th></tr></thead>
@@ -44,7 +42,7 @@
         </tbody>
       </table>
     </div>
-    <div class="card__foot actions-end">
+    <div class="card__foot actions-end">{{ m.more("tiempos-help", _("The defaults come from two months of block history: blocks start a median of 68 min before kick-off (90 % within the previous 2 h), and a released IP was blocked again within 15 min only 0.05 % of the time. A longer lead protects more of the match at the cost of more time and traffic on Gcore.")) }}
       <button class="btn" type="submit" name="reset" value="1" formnovalidate>{{ m.icon('refresh') }} {{ _("Restore defaults") }}</button>
       <button class="btn btn--primary" type="submit">{{ _("Save times") }}</button>
     </div>
@@ -55,7 +53,6 @@
   <div class="card__head"><h2 id="feed">{{ m.icon('refresh') }} {{ _("Block feed polling") }}</h2><span class="pill {{ 'pill--free' if feed_now == feed_idle else 'pill--nodata' }}">{{ _("now every {seconds} s", seconds=feed_now) }}</span></div>
   <form method="post" action="/ajustes/operacion/feed">{{ csrf_field() }}
     <div class="card__body stack-gap">
-      {{ m.more("feed-help", _("Interval while nothing is going on. It reads every 90 s during a match window (with the longest lead of Switching times), while any hostname is on Gcore, during blocks, without a match calendar and after a failed read. Each read downloads about 0.4 MB. Preventive switching before a match does not depend on this interval.")) }}
       <div class="form-inline card__fields">
         <div>
           <label for="feed-interval">{{ _("Read the feed every") }}</label>
@@ -63,7 +60,7 @@
         </div>
       </div>
     </div>
-    <div class="card__foot actions-end"><button class="btn btn--primary" type="submit">{{ _("Save interval") }}</button></div>
+    <div class="card__foot actions-end">{{ m.more("feed-help", _("Interval while nothing is going on. It reads every 90 s during a match window (with the longest lead of Switching times), while any hostname is on Gcore, during blocks, without a match calendar and after a failed read. Each read downloads about 0.4 MB. Preventive switching before a match does not depend on this interval.")) }}<button class="btn btn--primary" type="submit">{{ _("Save interval") }}</button></div>
   </form>
 </section>
 
@@ -114,7 +111,6 @@
   <div class="card__head"><h2 id="cuota">{{ m.icon('chart') }} {{ _("Gcore quota") }}</h2></div>
   <form method="post" action="/ajustes/operacion/cuota">{{ csrf_field() }}
     <div class="card__body stack-gap">
-      {{ m.more("cuota-help", _("It is compared with the total monthly traffic of each account (served to users + fetched from the origin), read every hour. It alerts when passing 70 %, 90 % and 100 %, and when 2 free CDN resources are left.")) }}
       <div class="form-inline card__fields">
         <div>
           <label for="gcore_quota_gb">{{ _("Free traffic per month (GB)") }}</label>
@@ -122,7 +118,7 @@
         </div>
       </div>
     </div>
-    <div class="card__foot actions-end"><button class="btn btn--primary" type="submit">{{ _("Save quota") }}</button></div>
+    <div class="card__foot actions-end">{{ m.more("cuota-help", _("It is compared with the total monthly traffic of each account (served to users + fetched from the origin), read every hour. It alerts when passing 70 %, 90 % and 100 %, and when 2 free CDN resources are left.")) }}<button class="btn btn--primary" type="submit">{{ _("Save quota") }}</button></div>
   </form>
 </section>
 
@@ -143,7 +139,6 @@
   <div class="card__head"><h2 id="retencion">{{ m.icon('history') }} {{ _("History retention") }}</h2><span class="mono muted">{{ _n("{n} event", "{n} events", ev_stats.count) }}{% if ev_stats.oldest %} · {{ _m("since {when}", when=ev_stats.oldest|when) }}{% endif %}</span></div>
   <form method="post" action="/ajustes/operacion/retencion">{{ csrf_field() }}
     <div class="card__body stack-gap">
-      {{ m.more("retencion-help", _("Whichever limit is reached first applies. The cleanup runs at startup, every 6 hours and when saving. certbot logs are limited to 10 copies; the server logs are managed by systemd or Docker.")) }}
       <div class="form-inline card__fields">
         <div>
           <label for="events_max_days">{{ _("Keep events (days)") }}</label>
@@ -155,7 +150,7 @@
         </div>
       </div>
     </div>
-    <div class="card__foot actions-end"><button class="btn btn--primary" type="submit">{{ _("Save retention") }}</button></div>
+    <div class="card__foot actions-end">{{ m.more("retencion-help", _("Whichever limit is reached first applies. The cleanup runs at startup, every 6 hours and when saving. certbot logs are limited to 10 copies; the server logs are managed by systemd or Docker.")) }}<button class="btn btn--primary" type="submit">{{ _("Save retention") }}</button></div>
   </form>
 </section>
 

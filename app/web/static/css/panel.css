@@ -730,3 +730,6 @@ details.more > summary::before { display: none; }
 details.more > summary:hover { background: none; }
 details.more[open] > summary { margin-bottom: 0; }
 @media (pointer: coarse) { details.more > summary { min-height: 44px; } }
+/* "Más información" a la izquierda del pie; abierto, ocupa la fila entera encima de los botones */
+.card__foot > details.more { margin-right: auto; align-self: center; }
+.card__foot > details.more[open] { flex: 1 1 100%; order: -1; margin-right: 0; }
