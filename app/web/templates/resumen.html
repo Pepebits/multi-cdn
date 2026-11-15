@@ -22,7 +22,7 @@
   'domains': (_("Import your domains"), _("Pick the Cloudflare zones and which hostnames switch.")),
   'prepare': (_("Prepare a domain on Gcore"), _("Origin, certificate and CDN resource, ready before any block.")),
   'alerts': (_("Set up alerts"), _("Telegram or email, plus the external heartbeat.")),
-  'live': (_("Go live"), _("Set MULTICDN_DRY_RUN=false in the server's .env and restart: until then every change is simulated.")),
+  'live': (_("Go live"), _m("Set <code>MULTICDN_DRY_RUN=false</code> in the server's <code>.env</code> and restart: until then every change is simulated.")),
 } %}
 {% set done = steps|selectattr('done')|list|length %}
 {% set collapsed = domains|length > 0 %}

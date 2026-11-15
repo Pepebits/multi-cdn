@@ -34,7 +34,6 @@
   "Restore defaults": "Restaurar valores por defecto",
   "Return after no blocks for (min)": "Volver tras sin bloqueos durante (min)",
   "Save times": "Guardar tiempos",
-  "Set MULTICDN_DRY_RUN=false in the server's .env and restart: until then every change is simulated.": "Pon MULTICDN_DRY_RUN=false en el .env del servidor y reinicia: hasta entonces todo cambio se simula.",
   "Set up alerts": "Configura los avisos",
   "Step by step, with the exact permissions and commands: <a href=\"https://github.com/Pepebits/multi-cdn/blob/main/deploy/README.md\" rel=\"external\">deployment guide</a>. This card disappears when every step is done.": "Paso a paso, con los permisos y comandos exactos: <a href=\"https://github.com/Pepebits/multi-cdn/blob/main/deploy/README.md\" rel=\"external\">guía de despliegue</a> (en inglés). Esta tarjeta desaparece cuando todos los pasos están hechos.",
   "Switch before a match (min)": "Cambiar antes del partido (min)",
@@ -54,5 +53,6 @@
   "{n} need attention": "{n} requieren atención",
   "{n} needs attention": "{n} requiere atención",
   "{n} of {total} domains on Gcore": "{n} de {total} dominios en Gcore",
-  "{priority}: {lead} min before a match, back after {wait} min without blocks": "{priority}: {lead} min antes del partido, vuelta tras {wait} min sin bloqueos"
+  "{priority}: {lead} min before a match, back after {wait} min without blocks": "{priority}: {lead} min antes del partido, vuelta tras {wait} min sin bloqueos",
+  "Set <code>MULTICDN_DRY_RUN=false</code> in the server's <code>.env</code> and restart: until then every change is simulated.": "Pon <code>MULTICDN_DRY_RUN=false</code> en el <code>.env</code> del servidor y reinicia: hasta entonces todo cambio se simula."
 }

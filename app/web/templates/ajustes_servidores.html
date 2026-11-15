@@ -84,7 +84,7 @@
     {% endif %}
     <p class="help" style="margin:0">{{ _("It is updated every 24 h, right before each switch to Gcore and every hour while any domain is served by Gcore. If an update fails or the list goes 48 h without being renewed, it alerts by Telegram.") }}</p>
     {% else %}
-    <p style="margin:0">{{ m.icon('alert') }} {{ _m("The server does not have <span class=\"mono\">multicdn-firewall.sh</span> installed yet: the web ports of the origin accept connections from anyone. Instructions in <span class=\"mono\">deploy/README.md</span>.") }}</p>
+    <p style="margin:0">{{ m.icon('alert') }} {{ _m("The server does not have <code>multicdn-firewall.sh</code> installed yet: the web ports of the origin accept connections from anyone. Instructions in <code>deploy/README.md</code>.") }}</p>
     {% endif %}
   </div>
 </section>

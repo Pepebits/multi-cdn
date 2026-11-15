@@ -191,3 +191,8 @@
 </span>
 {%- endif -%}
 {%- endmacro %}
+
+{# Secondary help, folded: "(i) More info" opens it below. Works with touch and keyboard, no script. #}
+{% macro more(id, text) -%}
+<details class="more"><summary>{{ icon('info') }} {{ _("More info") }}</summary><p id="{{ id }}" class="help">{{ text }}</p></details>
+{%- endmacro %}

@@ -41,6 +41,6 @@
     <div><label for="code-rc">{{ _("TOTP code") }}</label><input id="code-rc" class="otp" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" autocapitalize="none" autocorrect="off" spellcheck="false" required></div>
     <div class="form-actions"><button class="btn" type="submit">{{ m.icon('refresh') }} {{ _("Generate new codes") }}</button></div>
   </form>
-  <p class="card__body help" style="margin:0;padding-top:0">{{ _("The previous ones stop working. If you lose your phone and the codes, access is recovered from the server:") }} <span class="mono">uv run python -m app.cli reset-totp {{ user.username }}</span></p>
+  <p class="card__body help" style="margin:0;padding-top:0">{{ _("The previous ones stop working. If you lose your phone and the codes, access is recovered from the server:") }} <code>docker compose exec panel python -m app.cli reset-totp {{ user.username }}</code></p>
 </section>
 {% endblock %}

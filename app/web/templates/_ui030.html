@@ -43,9 +43,9 @@
     </dl>
     <p class="help er-note">{{ m.icon('lock') }} {{ _("Only errors are sent. IP addresses (the origin's included), emails and token-looking values are removed before anything leaves the server; no cookies, headers, request bodies or local variables.") }}</p>
     {% elif er.configured %}
-    <p class="notice notice--warn er-note">{{ m.icon('alert') }} {{ _m("<span class=\"mono\">MULTICDN_SENTRY_DSN</span> is set but the sentry-sdk package is not installed: nothing is sent.") }}</p>
+    <p class="notice notice--warn er-note">{{ m.icon('alert') }} {{ _m("<code>MULTICDN_SENTRY_DSN</code> is set but the sentry-sdk package is not installed: nothing is sent.") }}</p>
     {% else %}
-    <p class="help er-note">{{ _m("Off: nothing is sent anywhere. To receive code errors in Sentry or GlitchTip, set <span class=\"mono\">MULTICDN_SENTRY_DSN</span> in the server's <span class=\"mono\">.env</span> and restart (see the <a href=\"https://github.com/Pepebits/multi-cdn/blob/main/deploy/README.md#error-reporting-optional\" rel=\"external\">deployment guide</a>).") }}</p>
+    <p class="help er-note">{{ _m("Off: nothing is sent anywhere. To receive code errors in Sentry or GlitchTip, set <code>MULTICDN_SENTRY_DSN</code> in the server's <code>.env</code> and restart (see the <a href=\"https://github.com/Pepebits/multi-cdn/blob/main/deploy/README.md#error-reporting-optional\" rel=\"external\">deployment guide</a>).") }}</p>
     {% endif %}
   </div>
 </section>

@@ -325,6 +325,16 @@ input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--yellow);
 .server-row + .server-row { border-top: 2px solid var(--border); }
 .help { font-size: 0.85rem; color: var(--muted); margin: 6px 0 0; }
 .card__intro { margin: 0; }
+/* Comandos, variables, ficheros y cabeceras */
+code { font-family: var(--font-mono); font-size: 0.9em; padding: 1px 5px; background: var(--surface);
+  border: 1px solid var(--line); color: var(--text); overflow-wrap: anywhere; }
+/* Ayuda secundaria plegada: (i) Más información */
+.more > summary { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; list-style: none;
+  font-size: 0.85rem; font-weight: 600; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
+.more > summary::-webkit-details-marker { display: none; }
+.more > summary:hover, .more[open] > summary { color: var(--text); }
+.more > summary:focus-visible { outline: 3px solid var(--text); outline-offset: 2px; }
+.more > .help { margin: 8px 0 0; }
 /* Campos de una tarjeta de ajustes: ancho de campo, no de fila; las acciones van en el pie */
 .form-inline.card__fields > div:not(.form-actions) { flex: 0 1 22rem; }
 fieldset.plain { border: 0; margin: 0; min-width: 0; }
@@ -713,3 +723,10 @@ input.otp--wide { max-width: 15rem; }
   .dtl__days li { padding-left: 2px; }
 }
 @media (forced-colors: active) { .dtl__bar .c-seg { forced-color-adjust: none; } }
+
+/* "(i) Más información": enlace discreto, no un botón (anula el estilo general de details) */
+details.more > summary { min-height: 0; padding: 2px 0; border: 0; background: none; box-shadow: none; }
+details.more > summary::before { display: none; }
+details.more > summary:hover { background: none; }
+details.more[open] > summary { margin-bottom: 0; }
+@media (pointer: coarse) { details.more > summary { min-height: 44px; } }

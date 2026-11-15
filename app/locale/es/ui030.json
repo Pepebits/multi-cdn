@@ -1,5 +1,5 @@
 {
-  "<span class=\"mono\">MULTICDN_SENTRY_DSN</span> is set but the sentry-sdk package is not installed: nothing is sent.": "<span class=\"mono\">MULTICDN_SENTRY_DSN</span> está configurado, pero el paquete sentry-sdk no está instalado: no se envía nada.",
+  "<code>MULTICDN_SENTRY_DSN</code> is set but the sentry-sdk package is not installed: nothing is sent.": "<code>MULTICDN_SENTRY_DSN</code> está configurado, pero el paquete sentry-sdk no está instalado: no se envía nada.",
   "Cloudflare IPs blocked": "IPs de Cloudflare bloqueadas",
   "Cloudflare IPs blocked: {when} · up to {n} ISPs": "IPs de Cloudflare bloqueadas: {when} · hasta {n} operadoras",
   "Cloudflare cannot be read with the credential \"{label}\": a switch would fail": "No se puede leer Cloudflare con la credencial «{label}»: un cambio fallaría",
@@ -16,7 +16,7 @@
   "Not working": "No funciona",
   "Nothing in these days: no time on Gcore, no blocks and no matches.": "Nada en estos días: ni tiempo en Gcore, ni bloqueos, ni partidos.",
   "Off": "Desactivado",
-  "Off: nothing is sent anywhere. To receive code errors in Sentry or GlitchTip, set <span class=\"mono\">MULTICDN_SENTRY_DSN</span> in the server's <span class=\"mono\">.env</span> and restart (see the <a href=\"https://github.com/Pepebits/multi-cdn/blob/main/deploy/README.md#error-reporting-optional\" rel=\"external\">deployment guide</a>).": "Desactivado: no se envía nada a ningún sitio. Para recibir los errores del código en Sentry o GlitchTip, pon <span class=\"mono\">MULTICDN_SENTRY_DSN</span> en el <span class=\"mono\">.env</span> del servidor y reinicia (consulta la <a href=\"https://github.com/Pepebits/multi-cdn/blob/main/deploy/README.md#error-reporting-optional\" rel=\"external\">guía de despliegue</a>).",
+  "Off: nothing is sent anywhere. To receive code errors in Sentry or GlitchTip, set <code>MULTICDN_SENTRY_DSN</code> in the server's <code>.env</code> and restart (see the <a href=\"https://github.com/Pepebits/multi-cdn/blob/main/deploy/README.md#error-reporting-optional\" rel=\"external\">deployment guide</a>).": "Desactivado: no se envía nada a ningún sitio. Para recibir los errores del código en Sentry o GlitchTip, pon <code>MULTICDN_SENTRY_DSN</code> en el <code>.env</code> del servidor y reinicia (consulta la <a href=\"https://github.com/Pepebits/multi-cdn/blob/main/deploy/README.md#error-reporting-optional\" rel=\"external\">guía de despliegue</a>).",
   "On": "Activado",
   "On Gcore {n} time, {total} in total.": "En Gcore {n} vez, {total} en total.",
   "On Gcore {n} times, {total} in total.": "En Gcore {n} veces, {total} en total.",
@@ -50,5 +50,6 @@
   "{n} match in the calendar.": "{n} partido en el calendario.",
   "{n} matches in the calendar.": "{n} partidos en el calendario.",
   "{n} open problem": "{n} problema abierto",
-  "{n} open problems": "{n} problemas abiertos"
+  "{n} open problems": "{n} problemas abiertos",
+  "More info": "Más información"
 }

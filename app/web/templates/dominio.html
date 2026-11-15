@@ -107,7 +107,7 @@
 <section class="card" aria-labelledby="cabecera-titulo" id="cabecera">
   <div class="card__head"><h2 id="cabecera-titulo">{{ m.icon('lock') }} {{ _('Secret header to the origin') }}</h2></div>
   <div class="card__body stack-gap">
-    <p class="help" style="margin:0">{{ m.icon('info') }} {{ _m('Each CDN adds <span class="mono">X-Origin-Auth</span> with its own secret to the requests that reach the server. When both are up to date, Caddy can reject everything that does not carry it (see <span class="mono">deploy/README.md</span>): that way not even another Cloudflare or Gcore account can reach your origin.') }}</p>
+    <p class="help" style="margin:0">{{ m.icon('info') }} {{ _m('Each CDN adds <code>X-Origin-Auth</code> with its own secret to the requests that reach the server. When both are up to date, Caddy can reject everything that does not carry it (see <code>deploy/README.md</code>): that way not even another Cloudflare or Gcore account can reach your origin.') }}</p>
     <ul class="checks">
       <li><span>{{ _('Cloudflare (zone transform rule)') }}</span><span class="pill pill--{{ origin_header.cloudflare[0] }}">{{ origin_header.cloudflare[1] }}</span></li>
       <li><span>{{ _('Gcore (CDN resource header; applied with “{action}”)', action=_('Update on Gcore') if cfg.gcore_resource_id else _('Prepare on Gcore')) }}</span><span class="pill pill--{{ origin_header.gcore[0] }}">{{ origin_header.gcore[1] }}</span></li>
