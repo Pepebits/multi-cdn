@@ -414,7 +414,7 @@ wheels = [
 
 [[package]]
 name = "multicdn"
-version = "0.2.2"
+version = "0.3.0"
 source = { virtual = "." }
 dependencies = [
     { name = "certbot" },
@@ -427,6 +427,7 @@ dependencies = [
     { name = "python-multipart" },
     { name = "pyyaml" },
     { name = "segno" },
+    { name = "sentry-sdk" },
     { name = "uvicorn" },
 ]
 
@@ -447,6 +448,7 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.9" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "segno", specifier = ">=1.6.6" },
+    { name = "sentry-sdk", specifier = ">=2.75" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
 
@@ -650,6 +652,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/1c/2e/b396f750c53f570055bf5a9fc1ace09bed2dff013c73b7afec5702a581ba/segno-1.6.6.tar.gz", hash = "sha256:e60933afc4b52137d323a4434c8340e0ce1e58cec71439e46680d4db188f11b3", size = 1628586, upload-time = "2025-03-12T22:12:53.324Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d6/02/12c73fd423eb9577b97fc1924966b929eff7074ae6b2e15dd3d30cb9e4ae/segno-1.6.6-py3-none-any.whl", hash = "sha256:28c7d081ed0cf935e0411293a465efd4d500704072cdb039778a2ab8736190c7", size = 76503, upload-time = "2025-03-12T22:12:48.106Z" },
+]
+
+[[package]]
+name = "sentry-sdk"
+version = "2.75.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "certifi" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d2/95/121b20d75e738d249a0e26e6476a2acb178673e8228002748fc0cd85ce55/sentry_sdk-2.75.0.tar.gz", hash = "sha256:c38ac2d4b2435c11da821e173bb9d9088c98f41ae92f559ce0e424170a8e1a29", size = 1092308, upload-time = "2026-11-12T13:24:13.977Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ec/ee/fbfe67386d64a7218013c8346b88b89d72f279b4ddb434ed5e94bea3d389/sentry_sdk-2.75.0-py3-none-any.whl", hash = "sha256:9a10e97de2cbd42ad7e4a6e02a0d5af19de9811eb02445077d41ba14c08e170c", size = 555165, upload-time = "2026-11-12T13:24:11.923Z" },
 ]
 
 [[package]]

@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
-from . import heartbeat, i18n, notify, origin_health
+from . import error_reporting, heartbeat, i18n, notify, origin_health
 from .auth import AuthStore, totp_uri
 from .gcore_setup import RENEW_BEFORE, Job, prepare_domain, renew_and_check
 from .gcore_usage import refresh_usage
@@ -89,10 +89,14 @@ class State:
     engine_ok_at: datetime | None = None  # último ciclo completo del motor sin errores
     feed_stale_alerted: bool = False
     engine_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    cf_ok_at: dict = field(default_factory=dict)  # dominio -> última lectura correcta de Cloudflare
 
     def __post_init__(self) -> None:
         self.engine = EngineStore(self.store.conn)
         self.reload()
+        # Los textos de error de los proveedores pierden la IP de origen antes de guardarse o avisarse.
+        error_reporting.set_origin_ips(lambda: self.inventory.origin_ips)
 
     def views(self):
         return build_all(self.inventory, self.resolutions, self.feed, self.engine.known_ips())
@@ -325,6 +329,7 @@ async def _loop(interval: int, fn, *args) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_dotenv()
+    error_reporting.watch_background_tasks()
     db_path = os.environ.get("MULTICDN_DB", "data/multicdn.db")
     secrets = SecretStore(db_path)
     store = InventoryStore(secrets)
@@ -387,6 +392,11 @@ async def csrf_protect(request: Request) -> None:
     if session is None or not token or not hmac.compare_digest(token, session.csrf):
         raise HTTPException(403, tr("Invalid CSRF token: reload the page and try again"))
 
+
+# Optional Sentry/GlitchTip: before the app exists, so its middleware is instrumented.
+load_dotenv()
+error_reporting.setup_logging()
+error_reporting.init("panel")
 
 app = FastAPI(title="Multi-CDN", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None,
               dependencies=[Depends(csrf_protect)])
@@ -556,9 +566,11 @@ async def recheck_dns_soon(state: State) -> None:
     """Tras un cambio de CDN, comprobar el DNS público enseguida y unas cuantas veces más."""
     for delay in (10, 20, 30, 60):
         await asyncio.sleep(delay)
-        with suppress(Exception):
+        try:
             await refresh_cloudflare(state)
             await refresh_dns(state)
+        except Exception:
+            log.exception("DNS re-check after a switch failed")
 
 
 async def _after_inventory_change(state: State) -> None:

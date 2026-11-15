@@ -19,6 +19,8 @@ RUN rm -rf /usr/local/lib/python3.15/site-packages/pip /usr/local/bin/pip* \
 WORKDIR /app
 COPY --from=build /app/.venv /app/.venv
 COPY app ./app
+# Version for error reports (release multi-cdn@<version>).
+COPY pyproject.toml ./
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

@@ -26,6 +26,7 @@ reports/
 # Planes internos y maquetas con datos reales: solo en local, nunca al repositorio público
 plan-inicial-multicdn.md
 plan-multicdn-v2.md
+plan-*.md
 docs/design/
 docs/plan-login.md
 

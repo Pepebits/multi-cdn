@@ -1,6 +1,6 @@
 [project]
 name = "multicdn"
-version = "0.2.2"
+version = "0.3.0"
 description = "Multi-CDN failover controller and private panel (Cloudflare + Gcore)"
 readme = "README.md"
 license = "Apache-2.0"
@@ -17,6 +17,7 @@ dependencies = [
     "cryptography>=50.0.2",
     "certbot>=5.9.0",
     "segno>=1.6.6",
+    "sentry-sdk>=2.75",
 ]
 
 [dependency-groups]

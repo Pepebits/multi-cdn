@@ -108,6 +108,9 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    load_dotenv()
+    from .error_reporting import init as init_error_reporting
+    init_error_reporting("cli")  # logging stays quiet: the CLI prints its own output
     if args.cmd in ("status", "switch"):
         from . import runbook
         if args.cmd == "status":

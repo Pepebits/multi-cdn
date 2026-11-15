@@ -96,7 +96,7 @@ class Notifier:
             results["email"] = await asyncio.to_thread(self._email, subject, body)
         for channel, outcome in results.items():
             if outcome != "ok":
-                log.warning("%s notification not sent: %s", channel, outcome)
+                log.error("%s notification not sent: %s", channel, outcome)
         return results
 
     async def _telegram(self, text: str) -> str:

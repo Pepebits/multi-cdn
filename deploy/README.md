@@ -221,6 +221,27 @@ In **Settings → Operation** you can also:
   source;
 - adjust the Gcore quota.
 
+### Error reporting (optional)
+
+Off by default: the panel sends nothing anywhere. To receive code errors in
+[Sentry](https://sentry.io) or a self-hosted [GlitchTip](https://glitchtip.com), create a
+Python/FastAPI project there, copy its DSN into `.env` and restart:
+
+```bash
+MULTICDN_SENTRY_DSN=https://<key>@errors.example.com/<project>
+# MULTICDN_SENTRY_ENVIRONMENT=production
+```
+
+```bash
+docker compose up -d
+```
+
+Only errors are sent: unhandled exceptions in the panel and the terminal commands, failed
+switches, failed notifications and background tasks that crash. Before anything leaves the
+server, every IP address (your origin's included), email and token-looking value is replaced,
+and requests go without cookies, headers, bodies or local variables. Performance tracing stays
+off unless you set `MULTICDN_SENTRY_TRACES_SAMPLE_RATE` (0 to 1).
+
 ## 9. Protect the origin
 
 Goal: the server answers on ports 80/443 **only to the CDNs**, even if someone learns its IP.

@@ -35,7 +35,7 @@ from ..providers.cloudflare import OriginExposureError, plan_to_gcore
 from ..i18n import N_, tn, tnn, tr
 from ..signals.hayahora import ISPS
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("multicdn.engine")
 
 # Tiempos por prioridad, en minutos; se cambian en Ajustes → Operación. Valores por defecto
 # sacados del historial del feed (15/09–08/11/2026, 6.103 fines de bloqueo y 95 partidos):
@@ -424,6 +424,7 @@ async def _act(state, view, cfg, st: DomainState, decision: Decision, now: datet
         """Avisa una vez por tipo de fallo mientras dure la necesidad de cambiar (el detalle puede
         variar de un ciclo a otro); el texto del panel se mantiene al día."""
         if code != st.error_code:
+            log.error("engine: switch failed on %s (%s): %s", name, code, msg)
             state.events.add(actor="auto", kind="error", domain=name, summary=msg, dns_diff=diff or [], signals=signals)
         st.error_code, st.last_error = code, msg
 

@@ -34,6 +34,8 @@ time.
 - 🧱 **Origin firewall**: only the CDNs can reach ports 80/443, plus a secret header so
   nobody else can use a CDN to reach your server.
 - 🔔 **Alerts**: Telegram, email and an external heartbeat if the panel itself goes down.
+- 🐞 **Optional error reporting** to Sentry or GlitchTip: off unless you set a DSN, and
+  scrubbed of IPs, emails and tokens before anything is sent.
 - 📊 **Statistics**: blocks, switches and Gcore traffic against its free quota.
 - 🌍 **English and Spanish**: the panel follows your browser; switch in the footer.
 

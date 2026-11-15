@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-11-15
+
+### Added
+- **Optional error reporting to Sentry or GlitchTip** (`MULTICDN_SENTRY_DSN`). Off by default:
+  without a DSN nothing is initialised or sent. Only errors are reported (unhandled exceptions
+  in the panel and CLI, failed switches, failed notifications, crashed background tasks), and
+  every IP address, email and token is removed before sending; no cookies, headers, bodies or
+  local variables.
+- The panel's own log lines now reach `docker compose logs` with date and level
+  (`MULTICDN_LOG_LEVEL`, default INFO). Before, informational lines were dropped.
+
+### Changed
+- A failed switch and an undelivered notification are logged as errors, and the DNS re-check
+  after a switch logs its failures instead of hiding them.
+
 ## [0.2.2] - 2026-11-14
 
 Interface improvements from a review of the panel in every state, on desktop and phone.
@@ -117,6 +132,7 @@ during the court-ordered blocks of Cloudflare IPs, by moving DNS to a second CDN
 - **Docker image** (~160 MB, Alpine, Python 3.15, non-root, read-only friendly) published to
   GitHub Container Registry and Docker Hub.
 
+[0.3.0]: https://github.com/Pepebits/multi-cdn/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/Pepebits/multi-cdn/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Pepebits/multi-cdn/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Pepebits/multi-cdn/compare/v0.1.0...v0.2.0
