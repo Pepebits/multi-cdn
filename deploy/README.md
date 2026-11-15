@@ -222,6 +222,8 @@ In **Settings → Operation** you can also:
   moves to Gcore (default 120 min for critical domains, 90 for the rest) and how long without
   blocks before returning to Cloudflare (default 20 and 15 min). The defaults come from two
   months of real block history;
+- choose how often the block feed is read when nothing is going on (default 5 min; it is read
+  every 90 s on its own around matches, during blocks or while a domain is on Gcore);
 - set the language of history entries and alerts;
 - add a [football-data.org](https://www.football-data.org) token for a second match calendar
   source;

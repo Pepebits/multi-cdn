@@ -35,3 +35,6 @@ HANDOFF.md
 CODE_REVIEW.md
 linkedin-post.md
 linkedin-post-en.md
+
+# Local agent worktrees
+.claude/

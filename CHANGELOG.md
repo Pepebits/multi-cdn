@@ -6,18 +6,58 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.3.0] - 2026-11-15
 
+Reliability and observability, from a review of a week of production logs.
+
 ### Added
 - **Optional error reporting to Sentry or GlitchTip** (`MULTICDN_SENTRY_DSN`). Off by default:
   without a DSN nothing is initialised or sent. Only errors are reported (unhandled exceptions
   in the panel and CLI, failed switches, failed notifications, crashed background tasks), and
   every IP address, email and token is removed before sending; no cookies, headers, bodies or
   local variables.
+- **Alert when Cloudflare cannot be read** with a credential (expired or revoked token) and when
+  it works again; the external heartbeat reports it too. Before, it was only discovered at
+  switch time.
+- "Block feed available again (down N min)" when the feed recovers.
+- **Alert for domains with an automatic policy that cannot switch** (no Cloudflare credential,
+  zone or readable token, no hostname marked, not prepared on Gcore); the domain page and
+  `cli status` show the reason.
+- **Feed polling interval** in Settings → Operation (90 s to 5 min when nothing is going on).
+- `MULTICDN_TRUSTED_PROXIES` (set it to 1 behind `tailscale serve`) to take the client address
+  from the proxy.
 - The panel's own log lines now reach `docker compose logs` with date and level
   (`MULTICDN_LOG_LEVEL`, default INFO). Before, informational lines were dropped.
 
 ### Changed
+- **The feed is read every 5 min when nothing is going on, instead of every 90 s** (about 120 MB
+  a day instead of 400 on days without matches). It is still read every 90 s during match
+  windows, while a domain is on Gcore, during blocks, without a match calendar or while the feed
+  is failing. A block outside a match window can be noticed up to 3.5 min later; choose 90 s in
+  Settings → Operation to keep the previous behaviour.
+- `/healthz` answers 503 when the panel's own loops (DNS check, Cloudflare reading, switching
+  engine) have stopped, so `docker ps` shows the container as unhealthy. Third-party failures
+  do not count, and there is a 3 min grace period after start.
+- The "block feed unavailable" alert waits for a second failed read in a row.
+- The panel no longer trusts `X-Forwarded-For` unless `MULTICDN_TRUSTED_PROXIES` says so:
+  behind Tailscale without it, sign-ins show the gateway address.
 - A failed switch and an undelivered notification are logged as errors, and the DNS re-check
   after a switch logs its failures instead of hiding them.
+
+### Fixed
+- The origin IP is removed from provider error texts before they reach the history, the
+  notifications and the panel's messages; existing history entries are cleaned at start-up.
+- The return to Cloudflare only rewrites hostnames that were moved to Gcore (or, on a manual
+  return, are exposed), not every hostname that is not on Cloudflare.
+- Preparing a domain twice on the same day with a different certificate no longer reuses the
+  previous Gcore certificate.
+- While on Gcore the firewall ranges are refreshed at most every 60 min (it was about 70).
+- The external heartbeat no longer counts a redirect as delivered.
+
+### Security
+- Login lockouts can no longer be evaded or aimed at someone else with a forged
+  `X-Forwarded-For`.
+- TOTP attempts are limited during enrolment, password change and recovery-code regeneration.
+- `next` redirects reject control characters; the heartbeat URL must be a public https host
+  name (no IP addresses, ports, credentials or private addresses).
 
 ## [0.2.2] - 2026-11-14
 
