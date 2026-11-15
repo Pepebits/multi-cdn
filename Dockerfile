@@ -30,5 +30,7 @@ VOLUME ["/app/data"]
 EXPOSE 8765
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/healthz', timeout=5)"
-# --forwarded-allow-ips: solo se publica en 127.0.0.1 del host; tailscale serve añade X-Forwarded-*.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8765", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# Without proxy headers: the client must not choose its own address with X-Forwarded-For. The app
+# takes the scheme from X-Forwarded-Proto and, with MULTICDN_TRUSTED_PROXIES=1, the client IP
+# from the right-most X-Forwarded-For entry (app/proxy.py).
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8765", "--no-proxy-headers"]

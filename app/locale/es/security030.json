@@ -1,0 +1,3 @@
+{
+  "The ping URL must point to a public server: {host} does not resolve to a public address": "La URL de ping debe apuntar a un servidor público: {host} no resuelve a una dirección pública"
+}

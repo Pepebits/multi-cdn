@@ -129,6 +129,12 @@ Install Tailscale on your computer and phone with the same account. The origin f
 step 9 already lets the `tailscale0` interface through. Write the server's Tailscale name in
 *Settings → Servers*.
 
+Behind `tailscale serve` links and cookies are HTTPS on their own (the panel reads
+`X-Forwarded-Proto`). For the history and the login lockout to see each device's address
+instead of the proxy's, add `MULTICDN_TRUSTED_PROXIES=1` to `.env` and restart
+(`docker compose up -d`). Leave it at 0 if the panel's port can be reached any other way:
+with 1, whoever connects directly could choose the address the panel records.
+
 Self-hosted equivalents: plain WireGuard, Headscale or NetBird.
 
 Cloudflare Zero Trust (Access + Tunnel) is free and handy, but the panel would sit behind

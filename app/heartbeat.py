@@ -7,8 +7,13 @@ el servicio externo avisa al cumplirse el plazo. Configura allí: periodo 5 min,
 
 from __future__ import annotations
 
+import asyncio
+import ipaddress
+import socket
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -28,8 +33,71 @@ class Beat:
     detail: str      # lo que se envió
 
 
+_LOCAL_SUFFIXES = (".local", ".internal", ".localhost")
+
+
 def valid_url(url: str) -> bool:
-    return url.startswith("https://") and " " not in url and len(url) < 300
+    """https://<public hostname>[:443]/…: no IP literal, no local names, no credentials. The
+    panel calls it from the server, so it must not be usable to reach the server's own network."""
+    if not url or len(url) >= 300 or "\\" in url or any(c.isspace() or ord(c) < 0x20 or ord(c) == 0x7F for c in url):
+        return False
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError:
+        return False
+    host = (parts.hostname or "").rstrip(".")
+    if parts.scheme != "https" or not host or parts.username is not None or parts.password is not None:
+        return False
+    if port not in (None, 443) or "." not in host or host == "localhost" or host.endswith(_LOCAL_SUFFIXES):
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return False
+    except ValueError:
+        pass
+    # A name, not a number in another notation (127.1, 0x7f.1): top-level domains have letters.
+    return any(c.isalpha() for c in host.rsplit(".", 1)[-1])
+
+
+Resolver = Callable[[str], Awaitable[Iterable[str]]]
+
+
+async def _resolve(host: str) -> list[str]:
+    infos = await asyncio.get_running_loop().getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+    return [info[4][0] for info in infos]
+
+
+def is_public_address(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    return ip.is_global and not (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
+                                 or ip.is_multicast or ip.is_unspecified)
+
+
+async def host_is_public(host: str, origin_ips: Iterable[str] = (), resolver: Resolver | None = None) -> bool:
+    """When the URL is saved: every address the name resolves to is public and none is an
+    origin IP. A name that does not resolve is rejected too."""
+    origins = set()
+    for raw in origin_ips or ():
+        try:
+            origins.add(ipaddress.ip_address(str(raw)))
+        except ValueError:
+            pass
+    try:
+        addresses = list(await (resolver or _resolve)(host))
+    except (OSError, UnicodeError):
+        return False
+    if not addresses:
+        return False
+    for raw in addresses:
+        try:
+            ip = ipaddress.ip_address(str(raw).split("%")[0])
+        except ValueError:
+            return False
+        if not is_public_address(ip) or ip in origins or (getattr(ip, "ipv4_mapped", None) in origins):
+            return False
+    return True
 
 
 ENGINE_MAX = timedelta(minutes=10)
@@ -71,8 +139,9 @@ async def beat(state, now: datetime | None = None) -> Beat | None:
     ok, messages = health(state, now)
     detail = "; ".join(messages)
     try:
-        r = await state.client.post(url.rstrip("/") + ("" if ok else "/fail"), content=detail.encode(), timeout=15)
-        result = "ok" if r.status_code < 400 else f"HTTP {r.status_code}"
+        r = await state.client.post(url.rstrip("/") + ("" if ok else "/fail"), content=detail.encode(), timeout=15,
+                                    follow_redirects=False)
+        result = "ok" if r.status_code < 300 else f"HTTP {r.status_code}"  # a redirect is not followed: not delivered
     except httpx.HTTPError as exc:
         result = type(exc).__name__
     state.last_beat = Beat(now, ok, result, detail)

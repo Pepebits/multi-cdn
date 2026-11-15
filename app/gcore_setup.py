@@ -5,11 +5,13 @@ No toca el DNS público: el dominio sigue en Cloudflare hasta que se conmute.
 
 from __future__ import annotations
 
+import hashlib
 import secrets as pysecrets
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 from . import certs
+from .error_reporting import scrub_origin
 from .i18n import tn, tnn, tr
 from .providers import gcore
 
@@ -24,7 +26,7 @@ class Job:
     ok: bool = False
 
     def log(self, text: str, level: str = "info") -> None:
-        self.lines.append((level, text))
+        self.lines.append((level, scrub_origin(str(text))))  # shown in the panel: never the origin IP
 
 
 def fingerprint(secret: str) -> str:
@@ -79,6 +81,14 @@ def origin_secret(secret_store, cdn: str = "gcore") -> str:
 RENEW_BEFORE = timedelta(days=30)
 
 
+def certificate_name(name: str, cert) -> str:
+    """Name of the certificate on Gcore. upload_certificate() reuses one with the same name, so
+    the name includes a hash of the chain: a re-issue on the same day is uploaded, not mistaken
+    for the previous one; the same certificate (a retried preparation) is reused."""
+    digest = hashlib.sha256(cert.fullchain.encode()).hexdigest()[:8]
+    return f"multicdn-{name}-{cert.not_after:%Y%m%d}-{digest}"
+
+
 async def prepare_domain(state, name: str, job: Job, renewal: bool = False) -> None:
     try:
         await _prepare(state, name, job, renewal)
@@ -129,7 +139,7 @@ async def _prepare(state, name: str, job: Job, renewal: bool = False) -> None:
     job.log(tr("Origin group multicdn-{server} ready (id {id}, HTTPS :443)", server=server_id, id=group_id))
 
     cert = await certs.issue(name, names, cf_token, job.log)
-    ssl_name = f"multicdn-{name}-{cert.not_after:%Y%m%d}"
+    ssl_name = certificate_name(name, cert)
     ssl_id = await gcore.upload_certificate(gc_token, ssl_name, cert.fullchain, cert.privkey)
     job.log(tr("Certificate uploaded to Gcore as {name} (id {id})", name=ssl_name, id=ssl_id))
 

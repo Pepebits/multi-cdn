@@ -423,6 +423,8 @@ async def _act(state, view, cfg, st: DomainState, decision: Decision, now: datet
     def fail(code: str, msg: str, diff=None) -> None:
         """Avisa una vez por tipo de fallo mientras dure la necesidad de cambiar (el detalle puede
         variar de un ciclo a otro); el texto del panel se mantiene al día."""
+        from ..error_reporting import scrub_origin
+        msg = scrub_origin(msg)  # provider errors may carry the origin IP (ADR-003)
         if code != st.error_code:
             log.error("engine: switch failed on %s (%s): %s", name, code, msg)
             state.events.add(actor="auto", kind="error", domain=name, summary=msg, dns_diff=diff or [], signals=signals)

@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
-from . import error_reporting, heartbeat, i18n, notify, origin_health
+from . import error_reporting, heartbeat, i18n, notify, origin_health, proxy
 from .auth import AuthStore, totp_uri
 from .gcore_setup import RENEW_BEFORE, Job, prepare_domain, renew_and_check
 from .gcore_usage import refresh_usage
@@ -350,6 +350,8 @@ async def lifespan(app: FastAPI):
     )
     state.client = httpx.AsyncClient(headers={"User-Agent": "multicdn-controller"})
     app.state.mc = state
+    if scrubbed := events.scrub_history():  # origin IPs stored before 0.3.0 (ADR-003)
+        log.info("history: origin IP removed from %s entries", scrubbed)
     restore_block_state(state)
     state.auth.purge_expired()
     await prune_events(state)
@@ -406,12 +408,12 @@ i18n.install(templates.env)
 
 
 @app.get("/lang/{lang}")
-def set_language(lang: str, next: str = "/"):
+def set_language(request: Request, lang: str, next: str = "/"):
     """Footer language selector: remembered in this browser for a year."""
     response = RedirectResponse(_safe_next(next), status_code=303)
     if code := i18n.normalize(lang):
         response.set_cookie(i18n.COOKIE, code, max_age=365 * 86400, httponly=True, samesite="lax",
-                            secure=os.environ.get("MULTICDN_COOKIE_SECURE", "").lower() == "true")
+                            secure=_cookie_secure(request))
     return response
 
 
@@ -426,7 +428,10 @@ def load_notify_lang(events: EventStore) -> None:
 
 
 def _safe_next(value: str | None) -> str:
-    return value if value and value.startswith("/") and not value.startswith("//") and "\\" not in value else "/"
+    if not value or not value.startswith("/") or value.startswith("//") or "\\" in value:
+        return "/"
+    # Browsers drop tabs and newlines from URLs: "/\t/evil.example" would become "//evil.example".
+    return "/" if any(ord(c) < 0x20 or ord(c) == 0x7F for c in value) else value
 
 
 @app.middleware("http")
@@ -464,9 +469,14 @@ async def security(request: Request, call_next):
     return response
 
 
+# Outside the security middleware: the scheme is already the one the browser used (ADR-004).
+app.add_middleware(proxy.ForwardedScheme)
+
+
 def _back(url, anchor: str = "", **params) -> RedirectResponse:
     """Vuelve a `url` con el mensaje en la query; el ancla va después (si no, se pierde la query)."""
-    query = urlencode({k: v for k, v in params.items() if v})
+    # Provider errors end up here: the origin IP never goes into a URL (ADR-003).
+    query = urlencode({k: error_reporting.scrub_origin(str(v)) for k, v in params.items() if v})
     target = f"{url}?{query}" if query else str(url)
     return RedirectResponse(target + (f"#{anchor}" if anchor else ""), status_code=303)
 
@@ -1330,6 +1340,10 @@ async def latido_guardar(request: Request, heartbeat_url: str = Form("")):
     value = heartbeat_url.strip()
     if not heartbeat.valid_url(value):
         return _back(url, error=tr("Paste the full ping URL (https://hc-ping.com/…)"))
+    host = urlparse(value).hostname or ""
+    if os.environ.get("MULTICDN_OFFLINE") != "1" and not await heartbeat.host_is_public(host, s.inventory.origin_ips):
+        return _back(url, error=tr("The ping URL must point to a public server: {host} does not resolve to a public address",
+                                   host=host))
     s.secrets.set("heartbeat_url", value)
     s.events.add(actor=_actor(request), kind="config", summary=tn("External heartbeat: URL updated"))
     return await latido_probar(request)
@@ -1590,14 +1604,14 @@ async def exportar(request: Request):
 # ---------------------------------------------------------------- Autenticación
 
 def _client_ip(request: Request) -> str:
-    return request.client.host if request.client else "?"
+    return proxy.client_ip(request)
 
 
 def _cookie_secure(request: Request) -> bool:
-    mode = os.environ.get("MULTICDN_COOKIE_SECURE", "auto")
-    if mode in ("0", "1"):
-        return mode == "1"
-    return request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+    mode = os.environ.get("MULTICDN_COOKIE_SECURE", "auto").strip().lower()
+    if mode in ("0", "1", "false", "true"):
+        return mode in ("1", "true")
+    return request.url.scheme == "https"  # behind tailscale serve: from X-Forwarded-Proto (proxy.ForwardedScheme)
 
 
 def _with_session(response: Response, request: Request, token: str | None) -> Response:
@@ -1613,6 +1627,34 @@ def _auth_page(request: Request, template: str, **ctx) -> HTMLResponse:
 
 
 LOCK_MSG = N_("Too many failed attempts. Wait a few minutes before trying again.")
+
+
+def _locked_out(request: Request, session) -> Response:
+    """Lockout inside a session: the session is closed and the browser goes back to /login."""
+    _state(request).auth.delete_session(session.id_hash)
+    return _with_session(RedirectResponse(f"/login?{urlencode({'error': tr(LOCK_MSG)})}", status_code=303), request, None)
+
+
+def _totp_attempt(request: Request, session, passed, failure: str | None = None, actor: str = "auto") -> bool | Response:
+    """A code check inside a session (TOTP enrolment, password change, new recovery codes).
+    It counts towards the same lockout as the login, so a stolen session cookie cannot be used
+    to try codes without limit. True if `passed()`; False if not (the caller shows its error);
+    a response that closes the session when the user or the IP is (or becomes) locked."""
+    s = _state(request)
+    user, ip = session.user, _client_ip(request)
+    keys = (f"u:{user.username}", f"ip:{ip}")
+    if s.auth.locked(*keys):
+        return _locked_out(request, session)
+    if passed():
+        s.auth.register_success(*keys)
+        return True
+    s.auth.register_failure(*keys)
+    s.events.add(actor=actor, kind="auth", summary=failure or tn("Wrong code for {user} from {ip}", user=user.username, ip=ip))
+    if s.auth.locked(*keys):
+        s.events.add(actor="auto", kind="auth",
+                     summary=tn("Access blocked after failed attempts ({user} from {ip})", user=user.username, ip=ip))
+        return _locked_out(request, session)
+    return False
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -1715,7 +1757,10 @@ async def login_alta_post(request: Request, code: str = Form(""), next: str = Fo
     if not pending or pending.stage != "enroll":
         return RedirectResponse("/login", status_code=303)
     user = pending.user
-    if not s.auth.check_totp(user.id, code):
+    passed = _totp_attempt(request, pending, lambda: s.auth.check_totp(user.id, code))
+    if isinstance(passed, Response):
+        return passed
+    if not passed:
         return RedirectResponse(f"/login/alta?{urlencode({'error': tr('Wrong code: check the clock of your phone'), 'next': _safe_next(next)})}",
                                 status_code=303)
     s.auth.enable_totp(user.id)
@@ -1752,8 +1797,13 @@ async def cuenta_password(request: Request, current: str = Form(""), code: str =
     s = _state(request)
     me = request.state.session
     url = request.url_for("ajustes_cuenta")
-    if s.auth.check_password(me.user.username, current) is None or not s.auth.check_totp(me.user.id, code):
-        s.events.add(actor=me.user.username, kind="auth", summary=tn("Password change rejected: wrong credentials"))
+    passed = _totp_attempt(
+        request, me,
+        lambda: s.auth.check_password(me.user.username, current) is not None and s.auth.check_totp(me.user.id, code),
+        failure=tn("Password change rejected: wrong credentials"), actor=me.user.username)
+    if isinstance(passed, Response):
+        return passed
+    if not passed:
         return _back(url, error=tr("The current password or the code is not correct"))
     if new != new2:
         return _back(url, error=tr("The new passwords do not match"))
@@ -1776,7 +1826,10 @@ async def cuenta_password(request: Request, current: str = Form(""), code: str =
 async def cuenta_recuperacion(request: Request, code: str = Form("")):
     s = _state(request)
     me = request.state.session
-    if not s.auth.check_totp(me.user.id, code):
+    passed = _totp_attempt(request, me, lambda: s.auth.check_totp(me.user.id, code))
+    if isinstance(passed, Response):
+        return passed
+    if not passed:
         return _back(request.url_for("ajustes_cuenta"), error=tr("Wrong TOTP code"))
     codes = s.auth.new_recovery_codes(me.user.id)
     s.events.add(actor=me.user.username, kind="auth", summary=tn("Recovery codes regenerated"))

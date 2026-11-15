@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from .error_reporting import scrub_origin
 from .i18n import tr
 
 SCHEMA = """
@@ -53,6 +54,8 @@ class EventStore:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(SCHEMA)
         self.listeners: list = []  # p. ej. el Notifier
+        # Provider texts lose the origin IP before being stored or sent as alerts (ADR-003).
+        self.scrubber = scrub_origin
 
     def add(
         self,
@@ -66,6 +69,9 @@ class EventStore:
         signals: list[str] | None = None,
         simulated: bool = False,
     ) -> None:
+        summary = self._scrub(summary)
+        dns_diff = [[self._scrub(c) if isinstance(c, str) else c for c in row] for row in dns_diff or []]
+        signals = [self._scrub(x) if isinstance(x, str) else x for x in signals or []]
         self.conn.execute(
             "INSERT INTO events (ts, domain, actor, kind, summary, transition, dns_diff, signals, simulated)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -76,19 +82,60 @@ class EventStore:
                 kind,
                 summary,
                 transition,
-                json.dumps(dns_diff or []),
-                json.dumps(signals or []),
+                json.dumps(dns_diff),
+                json.dumps(signals),
                 int(simulated),
             ),
         )
         self.conn.commit()
         event = {"actor": actor, "kind": kind, "summary": summary, "domain": domain, "transition": transition,
-                 "dns_diff": dns_diff or [], "signals": signals or [], "simulated": simulated}
+                 "dns_diff": dns_diff, "signals": signals, "simulated": simulated}
         for listener in self.listeners:
             try:
                 listener(event)
             except Exception:  # un aviso fallido nunca debe impedir registrar el evento
                 pass
+
+    def _scrub(self, text):
+        return self.scrubber(text) if self.scrubber and text else text
+
+    def scrub_history(self) -> int:
+        """Applies the scrubber to what is already stored (events written before 0.3.0 and the
+        engine's last error). Idempotent; run at every start. Returns the rows changed."""
+        changed = []
+        for row_id, summary, diff, signals in self.conn.execute("SELECT id, summary, dns_diff, signals FROM events"):
+            new_summary = self._scrub(summary)
+            new_diff = self._scrub_json(diff)
+            new_signals = self._scrub_json(signals)
+            if (new_summary, new_diff, new_signals) != (summary, diff, signals):
+                changed.append((new_summary, new_diff, new_signals, row_id))
+        self.conn.executemany("UPDATE events SET summary=?, dns_diff=?, signals=? WHERE id=?", changed)
+        n = len(changed)
+        if self.conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='failover_state'").fetchone():
+            rows = self.conn.execute("SELECT domain, last_error FROM failover_state WHERE last_error IS NOT NULL").fetchall()
+            errors = [(new, domain) for domain, old in rows if (new := self._scrub(old)) != old]
+            self.conn.executemany("UPDATE failover_state SET last_error=? WHERE domain=?", errors)
+            n += len(errors)
+        self.conn.commit()
+        return n
+
+    def _scrub_json(self, raw: str | None) -> str | None:
+        """Scrubs the strings of a stored JSON list (dns_diff rows or signals), keeping it as is if unchanged."""
+        if not raw:
+            return raw
+        try:
+            value = json.loads(raw)
+        except ValueError:
+            return self._scrub(raw)
+
+        def walk(v):
+            if isinstance(v, str):
+                return self._scrub(v)
+            if isinstance(v, list):
+                return [walk(x) for x in v]
+            return v
+        new = walk(value)
+        return raw if new == value else json.dumps(new)
 
     # ---------- ajustes y retención ----------
     def get_setting(self, key: str) -> int:
