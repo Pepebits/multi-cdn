@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
-from . import error_reporting, heartbeat, i18n, notify, origin_health, proxy
+from . import alerts, error_reporting, heartbeat, i18n, notify, origin_health, proxy
 from .auth import AuthStore, totp_uri
 from .gcore_setup import RENEW_BEFORE, Job, prepare_domain, renew_and_check
 from .gcore_usage import refresh_usage
@@ -44,7 +44,11 @@ from .views import build_all, build_domain
 
 log = logging.getLogger("multicdn")
 WEB = Path(__file__).parent / "web"
-FEED_INTERVAL = 90
+FEED_FAST = 90          # seconds between feed reads while something is going on (ADR-001)
+FEED_INTERVAL_OPTIONS = (90, 120, 180, 300)  # idle interval, Settings → Operation; never above 300 (is_stale: 10 min)
+FEED_FAST_MASS = 10     # Cloudflare IPs blocked at ≥3 ISPs that already count as "something going on" (not validated)
+FEED_DOWN_AFTER = timedelta(seconds=90)    # second failure in a row
+CF_READ_AFTER = timedelta(minutes=8)
 DNS_INTERVAL = 60
 CF_SYNC_INTERVAL = 300
 PRUNE_INTERVAL = 6 * 3600
@@ -52,7 +56,6 @@ RENEW_INTERVAL = 24 * 3600
 CALENDAR_INTERVAL = 3 * 3600
 USAGE_INTERVAL = 3600
 BACKUP_INTERVAL = 24 * 3600
-FIREWALL_CHECK_INTERVAL = 600
 HEARTBEAT_INTERVAL = 300
 ORIGIN_HEALTH_INTERVAL = 120
 
@@ -91,6 +94,8 @@ class State:
     engine_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     cf_ok_at: dict = field(default_factory=dict)  # dominio -> última lectura correcta de Cloudflare
+    feed_etag: str | None = None  # ETag of the last feed read (conditional GET)
+    feed_mode: str | None = None  # "fast" | "idle": feed polling mode, to log only its changes
 
     def __post_init__(self) -> None:
         self.engine = EngineStore(self.store.conn)
@@ -113,20 +118,54 @@ class State:
         return CloudflareDNS(token, self.inventory.origin_ips, self.dry_run_env)
 
 
-async def refresh_feed(state: State) -> None:
-    was_down = state.feed_error is not None
+async def refresh_feed(state: State, now: datetime | None = None) -> None:
     try:
-        state.feed = await hayahora.fetch_feed(state.client)
+        snapshot, etag = await hayahora.fetch_feed(state.client, state.feed_etag if state.feed else None)
+        if snapshot is not None:
+            state.feed = snapshot
+        else:  # 304: same data, read just now
+            state.feed.fetched_at = datetime.now(UTC)
+        state.feed_etag = etag
         state.feed_error = None
     except Exception as exc:  # el feed no es oficial: nunca debe tumbar el controlador
         state.feed_error = f"{type(exc).__name__}: {exc}"
         log.warning("hayahora feed unavailable: %s", state.feed_error)
-        if not was_down:
-            state.events.add(actor="auto", kind="alert", summary=tn("Block feed unavailable ({error})", error=type(exc).__name__))
+        # An isolated failure is retried in 90 s; alert from the second one in a row.
+        alerts.problem(state, "feed_down", tn("Block feed unavailable ({error})", error=type(exc).__name__),
+                       after=FEED_DOWN_AFTER, now=now)
         return
+    alerts.clear(state, "feed_down", lambda lasted: tn("Block feed available again (down {minutes} min)",
+                                                       minutes=alerts.minutes(lasted)), now=now)
     check_stale_feed(state)
     check_block_transitions(state)
     await run_engine(state)
+
+
+def feed_interval(state: State, now: datetime | None = None, *, quiet: bool = False) -> int:
+    """Seconds until the next feed read (ADR-001): 90 s while something is going on, else the
+    idle interval from Settings → Operation (300 s by default). Logs each change of mode."""
+    now = now or datetime.now(UTC)
+    calendar = state.calendar
+    feed = state.feed
+    reason = None
+    if feed is None or state.feed_error or feed.is_stale(now):
+        reason = "feed failing or stale"
+    elif calendar is None or calendar.is_stale(now):
+        reason = "no match calendar"
+    elif calendar.active(now, max(failover.match_lead(state, p) for p in failover.PRIORITIES)):
+        reason = "match window"
+    elif any(r.provider == "gcore" for r in state.resolutions.values()) \
+            or any(state.engine.get(n).sim_backup for n in state.inventory.domains):
+        reason = "serving from Gcore"
+    elif state.blocked_domains or feed.blocked_ips() >= FEED_FAST_MASS:
+        reason = "blocks underway"
+    idle = state.events.get_setting("feed_interval")
+    seconds = FEED_FAST if reason else (idle if idle in FEED_INTERVAL_OPTIONS else FEED_INTERVAL_OPTIONS[-1])
+    mode = "fast" if reason else "idle"
+    if not quiet and mode != state.feed_mode:
+        log.info("feed polling: every %s s (%s)", seconds, reason or "idle")
+        state.feed_mode = mode
+    return seconds
 
 
 def check_stale_feed(state: State) -> None:
@@ -253,8 +292,9 @@ async def refresh_dns(state: State) -> None:
             state.exposure_alerted.discard(res.hostname)
 
 
-async def refresh_cloudflare(state: State) -> None:
-    """Lee los registros reales en Cloudflare (tipo, proxy, túnel) de los dominios con credencial."""
+async def refresh_cloudflare(state: State, alert: bool = True) -> None:
+    """Lee los registros reales en Cloudflare (tipo, proxy, túnel) de los dominios con credencial.
+    alert=False: no alerts (the terminal, app.cli, reads too; only the panel alerts)."""
     changed = False
     for name, domain in state.inventory.domains.items():
         token = state.creds.secret(domain.cloudflare_credential)
@@ -269,8 +309,9 @@ async def refresh_cloudflare(state: State) -> None:
             counts = Counter(r["name"] for r in listed)
             multi = sorted(h.name for h in domain.hostnames if h.failover and counts[h.name] > 1)
             state.cf_multi_records[name] = multi
+            state.cf_ok_at[name] = datetime.now(UTC)
         except (RuntimeError, httpx.HTTPError) as exc:
-            state.cf_sync_errors[name] = str(exc) or type(exc).__name__
+            state.cf_sync_errors[name] = error_reporting.scrub_origin(str(exc) or type(exc).__name__)[:200]
             continue
         for h in domain.hostnames:
             r = records.get(h.name)
@@ -284,6 +325,36 @@ async def refresh_cloudflare(state: State) -> None:
     apply_cf_live(state)
     if changed:
         state.reload()
+    if alert:
+        check_cloudflare_read(state)
+
+
+def check_cloudflare_read(state: State, now: datetime | None = None) -> None:
+    """One alert per Cloudflare credential whose reads keep failing (after 8 min), and one when
+    they work again: until then a switch to Gcore would fail too."""
+    by_cred: dict[int, list[str]] = {}
+    for name, domain in state.inventory.domains.items():
+        if domain.cloudflare_credential and domain.zone_id and state.creds.secret(domain.cloudflare_credential):
+            by_cred.setdefault(domain.cloudflare_credential, []).append(name)
+    for cred_id, names in by_cred.items():
+        try:
+            label = state.creds.get(cred_id).label
+        except ValueError:
+            label = str(cred_id)
+        failing = [n for n in names if n in state.cf_sync_errors]
+        key = f"cf_read:{cred_id}"
+        if failing:
+            alerts.problem(state, key, tn(
+                'Cloudflare cannot be read with the credential "{label}" ({error}): {n} domain(s) affected. '
+                "Switching would fail; check the token in Settings",
+                label=label, error=state.cf_sync_errors[failing[0]], n=len(failing)), after=CF_READ_AFTER, now=now)
+        else:
+            alerts.clear(state, key, lambda lasted, label=label: tn(
+                'Cloudflare can be read again with the credential "{label}" (failing for {minutes} min)',
+                label=label, minutes=alerts.minutes(lasted)), now=now)
+    for key in alerts.active(state, "cf_read:"):  # credential no longer used by any domain: drop it
+        if key.removeprefix("cf_read:") not in {str(c) for c in by_cred}:
+            alerts.clear(state, key, now=now)
 
 
 def apply_cf_live(state: State) -> None:
@@ -317,13 +388,19 @@ async def _delayed_loop(delay: int, interval: int, fn, *args) -> None:
     await _loop(interval, fn, *args)
 
 
-async def _loop(interval: int, fn, *args) -> None:
+async def _loop(interval, fn, *args) -> None:
+    """interval: seconds, or a callable that returns them after each run (adaptive interval)."""
     while True:
         try:
             await fn(*args)
         except Exception:
             log.exception("background task %s failed", getattr(fn, "__name__", fn))
-        await asyncio.sleep(interval)
+        try:
+            wait = interval() if callable(interval) else interval
+        except Exception:
+            log.exception("interval of background task %s failed", getattr(fn, "__name__", fn))
+            wait = FEED_FAST
+        await asyncio.sleep(wait)
 
 
 @asynccontextmanager
@@ -356,17 +433,18 @@ async def lifespan(app: FastAPI):
     state.auth.purge_expired()
     await prune_events(state)
     tasks = []
+    from . import firewall_status
     if os.environ.get("MULTICDN_OFFLINE") != "1":
         tasks = [
             asyncio.create_task(_loop(CALENDAR_INTERVAL, refresh_calendar, state)),
-            asyncio.create_task(_loop(FEED_INTERVAL, refresh_feed, state)),
+            asyncio.create_task(_loop(lambda: feed_interval(state), refresh_feed, state)),
             asyncio.create_task(_loop(DNS_INTERVAL, refresh_dns, state)),
             asyncio.create_task(_loop(CF_SYNC_INTERVAL, refresh_cloudflare, state)),
             asyncio.create_task(_loop(PRUNE_INTERVAL, prune_events, state)),
             asyncio.create_task(_delayed_loop(300, RENEW_INTERVAL, renew_and_check, state)),
             asyncio.create_task(_delayed_loop(20, USAGE_INTERVAL, refresh_usage, state)),
             asyncio.create_task(_delayed_loop(600, BACKUP_INTERVAL, daily_backup, state)),
-            asyncio.create_task(_loop(FIREWALL_CHECK_INTERVAL, check_firewall, state)),
+            asyncio.create_task(_loop(int(firewall_status.CHECK_INTERVAL.total_seconds()), check_firewall, state)),
             asyncio.create_task(_delayed_loop(120, HEARTBEAT_INTERVAL, heartbeat.beat, state)),
             asyncio.create_task(_delayed_loop(15, ORIGIN_HEALTH_INTERVAL, origin_health.check, state)),
         ]
@@ -938,6 +1016,7 @@ async def _delete_domain(request, s, name, domain, back, dns_action, delete_gcor
 
     s.store.delete_domain(name)
     s.engine.forget(name)
+    alerts.forget(s, f"auto_not_ready:{name}")
     where = DELETE_WHERE[dns_action]
     gcore_deleted = bool(delete_gcore and domain.gcore_resource_id)
 
@@ -1432,7 +1511,8 @@ async def ajustes_operacion(request: Request):
                      "return_after": int(failover.return_after(s, p).total_seconds() // 60),
                      "default_lead": failover.DEFAULT_MATCH_LEAD[p], "default_wait": failover.DEFAULT_RETURN_AFTER[p]}
                  for p in failover.PRIORITIES},
-        limits=failover.TIMING_LIMITS))
+        limits=failover.TIMING_LIMITS, feed_options=FEED_INTERVAL_OPTIONS,
+        feed_idle=s.events.get_setting("feed_interval"), feed_now=feed_interval(s, quiet=True)))
 
 
 @app.post("/ajustes/operacion/tiempos")
@@ -1464,6 +1544,23 @@ async def tiempos_guardar(request: Request):
 
 
 PRIORITY_NAME = {"critical": N_("Critical"), "medium": N_("Medium"), "low": N_("Low")}
+
+
+@app.post("/ajustes/operacion/feed")
+async def feed_guardar(request: Request, seconds: str = Form("")):
+    """Idle interval between block feed reads (ADR-001); the fast one (90 s) is fixed."""
+    s = _state(request)
+    url = request.url_for("ajustes_operacion")
+    try:
+        value = int(seconds)
+    except ValueError:
+        value = 0
+    if value not in FEED_INTERVAL_OPTIONS:
+        return _back(url, "feed", error=tr("Choose one of the listed intervals"))
+    s.events.set_setting("feed_interval", value)
+    s.events.add(actor=_actor(request), kind="config",
+                 summary=tn("Block feed read every {seconds} s when nothing is going on", seconds=value))
+    return _back(url, "feed", ok=tr("Feed interval saved"))
 
 
 @app.post("/ajustes/operacion/automatico")
@@ -1856,6 +1953,13 @@ async def api_estado(request: Request):
 
 
 @app.get("/healthz")
-async def healthz(request: Request):
+async def healthz(request: Request, response: Response):
+    """Are the panel's own loops alive? (ADR-002). Third-party failures (feed, calendar, tokens)
+    do not count. No free text in the body: it is public."""
     s = _state(request)
-    return {"ok": True, "feed": s.feed is not None, "dns_checked_at": s.dns_checked_at}
+    now = datetime.now(UTC)
+    grace = os.environ.get("MULTICDN_OFFLINE") == "1" or now - s.started_at < heartbeat.STARTUP_GRACE
+    stale = [] if grace else heartbeat.liveness(s, now)
+    if stale:
+        response.status_code = 503
+    return {"ok": not stale, "stale": stale, "feed": s.feed is not None, "dns_checked_at": s.dns_checked_at}

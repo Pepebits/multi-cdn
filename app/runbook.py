@@ -52,7 +52,7 @@ async def _observe(state) -> None:
     from .main import apply_cf_live, refresh_cloudflare
     from .signals import dnscheck
 
-    await refresh_cloudflare(state)
+    await refresh_cloudflare(state, alert=False)  # alerts come only from the panel
     if not state.cf_ranges:
         state.cf_ranges = await dnscheck.fetch_cloudflare_ranges(state.client)
     hosts = [h.name for d in state.inventory.domains.values() for h in d.hostnames]
@@ -75,6 +75,7 @@ def _no_switch() -> str:
 
 
 async def status(out=print) -> int:
+    from .engine import failover
     from .views import build_all
 
     state = _state()
@@ -83,6 +84,9 @@ async def status(out=print) -> int:
         out(_mode(state))
         for d in build_all(state.inventory, state.resolutions, state.feed, state.engine.known_ips()):
             out(f"\n{d.name}  ·  {d.status_label}")
+            cfg = state.inventory.domains[d.name]
+            if failover.auto_enabled(state) and cfg.policy != "manual" and (codes := failover.readiness(state, cfg)):
+                out("  " + tn("automatic switching NOT ready: {reasons}", reasons=failover.reasons_text(codes, tn)))
             for h in d.hosts:
                 out(f"  {h.name:34} {h.provider_label:18} {h.dns_text}{'' if h.failover else _no_switch()}")
         return 0

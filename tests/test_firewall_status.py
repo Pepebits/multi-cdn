@@ -71,6 +71,19 @@ def test_requests_hourly_refresh_while_serving_gcore(client):
     assert request.exists()
 
 
+def test_refresh_requested_at_50_min_so_ranges_stay_under_an_hour(client):
+    from app.signals.dnscheck import Resolution
+    state = client.app.state.mc
+    request = firewall_status.data_dir() / "firewall-refresh-request"
+    write(client, NOW)  # última lista: 11:30
+    state.resolutions = {"example.com": Resolution("example.com", ("198.51.100.61",), "cl-a.gcorecdn.com.", "gcore")}
+    firewall_status.check(state, NOW + timedelta(minutes=15))  # 45 min
+    assert not request.exists()
+    firewall_status.check(state, NOW + timedelta(minutes=21))  # 51 min: the next check would be past the hour
+    assert request.exists()
+    assert firewall_status.REFRESH_AFTER + firewall_status.CHECK_INTERVAL == firewall_status.WHILE_ON_BACKUP
+
+
 def test_settings_list_recent_changes(client):
     write(client, added=3, removed=1)
     (firewall_status.data_dir() / "firewall-changes.log").write_text("2026-11-08T11:30:00Z +1850 -0\n2026-11-09T11:30:00Z +3 -1\n")

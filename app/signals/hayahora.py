@@ -89,7 +89,12 @@ def parse_feed(payload: dict, fetched_at: datetime | None = None) -> FeedSnapsho
     )
 
 
-async def fetch_feed(client: httpx.AsyncClient) -> FeedSnapshot:
-    response = await client.get(FEED_URL, timeout=20)
+async def fetch_feed(client: httpx.AsyncClient, etag: str | None = None) -> tuple[FeedSnapshot | None, str | None]:
+    """Conditional GET: (snapshot, ETag). With 304 Not Modified the feed has not changed:
+    (None, etag), and the caller keeps its snapshot (the body is ~4.6 MB, ~0.4 MB gzipped)."""
+    headers = {"If-None-Match": etag} if etag else {}
+    response = await client.get(FEED_URL, timeout=20, headers=headers)
+    if response.status_code == 304:
+        return None, etag
     response.raise_for_status()
-    return parse_feed(response.json())
+    return parse_feed(response.json()), response.headers.get("ETag")

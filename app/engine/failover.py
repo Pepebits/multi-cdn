@@ -32,6 +32,7 @@ import httpx
 from ..providers import cloudflare as cf
 from ..providers import gcore
 from ..providers.cloudflare import OriginExposureError, plan_to_gcore
+from .. import alerts
 from ..i18n import N_, tn, tnn, tr
 from ..signals.hayahora import ISPS
 
@@ -260,17 +261,26 @@ async def switch_to_gcore(state, name: str) -> tuple[list, bool]:
     return diff, client.dry_run
 
 
-async def return_to_cloudflare(state, name: str, *, force_all: bool = False) -> tuple[list, bool]:
-    """Restaura con proxy en Cloudflare los hostnames que no estén ya en Cloudflare.
-    force_all: en simulación el DNS no ha cambiado; se simula la vuelta de los que conmutan."""
+async def return_to_cloudflare(state, name: str, *, force_all: bool = False,
+                               only_switchable: bool = False) -> tuple[list, bool]:
+    """Restaura con proxy en Cloudflare los hostnames que se movieron a Gcore (DNS público en
+    Gcore o registro real en Cloudflare hacia Gcore). Uno que resuelve al origen sin proxy solo
+    se restaura en la vuelta manual; el resto (otro destino, sin resolver) no se toca.
+    force_all: en simulación el DNS no ha cambiado; se simula la vuelta de los que conmutan.
+    only_switchable: solo los hostnames que conmutan (el motor automático)."""
     domain = state.inventory.domains[name]
     client = state.cloudflare_for(domain)
+    cf_live = getattr(state, "cf_live", {})
     diff: list = []
     try:
         for h in domain.hostnames:
+            if only_switchable and not h.failover:
+                continue
             current = state.resolutions.get(h.name)
             provider = current.provider if current else "unresolved"
-            if provider == "cloudflare" and not (force_all and h.failover):
+            moved = provider == "gcore" or bool((cf_live.get(h.name) or {}).get("to_backup"))
+            exposed = provider == "origin" and not only_switchable
+            if not ((force_all and h.failover) or moved or exposed):
                 continue
             server = state.inventory.servers.get(h.server)
             origin = server.origin_ipv4 if server else None
@@ -324,6 +334,56 @@ def eligible(domain) -> bool:
     return domain.policy != "manual" and bool(domain.cloudflare_credential and domain.zone_id)
 
 
+READINESS = {
+    "no_cf_credential": N_("no Cloudflare credential"),
+    "cf_token_unreadable": N_("the Cloudflare token cannot be read"),
+    "no_zone": N_("no Cloudflare zone"),
+    "no_switchable_host": N_("no hostname is marked to switch"),
+    "not_prepared": N_("not prepared on Gcore"),
+}
+NOT_READY_AFTER = timedelta(minutes=30)
+
+
+def readiness(state, cfg) -> list[str]:
+    """Why automatic switching could not act on this domain during a block (codes of READINESS);
+    empty if it can. The policy is not looked at: the caller decides whether it matters."""
+    codes = []
+    if not cfg.cloudflare_credential:
+        codes.append("no_cf_credential")
+    elif not state.creds.secret(cfg.cloudflare_credential):
+        codes.append("cf_token_unreadable")
+    if not cfg.zone_id:
+        codes.append("no_zone")
+    switchable = [h for h in cfg.hostnames if h.failover]
+    if not switchable:
+        codes.append("no_switchable_host")
+    elif not cfg.gcore_resource_id or any(not h.gcore_target for h in switchable):
+        codes.append("not_prepared")
+    return codes
+
+
+def reasons_text(codes: list[str], t=tr) -> str:
+    return ", ".join(t(READINESS[c]) for c in codes)
+
+
+def check_readiness(state, now: datetime) -> None:
+    """One alert per automatic domain that could not switch (after 30 min, again if the reasons
+    change), and a config entry once it can."""
+    for name, cfg in state.inventory.domains.items():
+        key = f"auto_not_ready:{name}"
+        if cfg.policy == "manual":
+            alerts.clear(state, key, now=now)  # never switches: nothing to report
+            continue
+        codes = readiness(state, cfg)
+        if codes:
+            alerts.problem(state, key, tn("Automatic switching cannot act on this domain: {reasons}. During a block it "
+                                          "would stay on Cloudflare", reasons=reasons_text(codes, tn)),
+                           domain=name, after=NOT_READY_AFTER, fingerprint=",".join(codes), now=now)
+        else:
+            alerts.clear(state, key, tn("Automatic switching can act on this domain again"), domain=name,
+                         kind="config", now=now)
+
+
 def _fmt(t: datetime) -> str:
     return t.astimezone(UTC).strftime("%H:%M UTC")
 
@@ -372,7 +432,13 @@ async def evaluate(state, now: datetime | None = None, on_switched=None) -> None
     from ..views import build_all  # evita import circular
 
     now = now or datetime.now(UTC)
-    if not auto_enabled(state) or state.dns_checked_at is None:
+    if not auto_enabled(state):
+        return
+    try:
+        check_readiness(state, now)
+    except Exception:
+        log.exception("engine: readiness check failed")
+    if state.dns_checked_at is None:
         return
     if any(eligible(d) for d in state.inventory.domains.values()) and state.cf_sync_at is None:
         return  # sin leer los registros reales de Cloudflare el estado no es fiable
@@ -452,7 +518,8 @@ async def _act(state, view, cfg, st: DomainState, decision: Decision, now: datet
         transition, summary = "CF → GCORE", tn("Automatic switch to Gcore: {reasons}", reasons="; ".join(decision.reasons))
     else:
         try:
-            diff, simulated = await return_to_cloudflare(state, name, force_all=state.dry_run and st.sim_backup is True)
+            diff, simulated = await return_to_cloudflare(state, name, force_all=state.dry_run and st.sim_backup is True,
+                                                         only_switchable=True)
         except SwitchFailed as exc:
             return fail("return_failed", tn("Automatic return to Cloudflare failed: {error}", error=exc), exc.diff)
         st.sim_backup = False if simulated else None
@@ -478,8 +545,8 @@ def describe(state, name: str, now: datetime | None = None) -> dict:
         return {"tone": "neutral", "text": tr("Automatic switching off in Settings → Operation"), "resumable": False, "action": None}
     if cfg.policy == "manual":
         return {"tone": "neutral", "text": tr("Manual policy: only alerts, never changes anything"), "resumable": False, "action": None}
-    if not eligible(cfg):
-        text = tr("No Cloudflare credential or zone: cannot switch automatically")
+    if codes := readiness(state, cfg):
+        text = tr("Cannot switch automatically: {reasons}", reasons=reasons_text(codes))
         return {"tone": "warn", "text": text, "short": text, "resumable": False, "action": None}
     if st.paused:
         text = tr("In maintenance until you resume it") if st.hold_reason == "mantenimiento" \

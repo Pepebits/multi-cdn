@@ -17,12 +17,13 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from .i18n import tn
+from .i18n import N_, tn
 
 INTERVAL = 300
 DNS_MAX = timedelta(minutes=5)
 CF_MAX = timedelta(minutes=15)
 FEED_WARN = timedelta(minutes=30)
+STARTUP_GRACE = timedelta(minutes=3)  # /healthz answers 200 while the loops make their first round
 
 
 @dataclass
@@ -108,19 +109,42 @@ def _engine_should_run(state) -> bool:
     return failover.auto_enabled(state) and any(failover.eligible(d) for d in state.inventory.domains.values())
 
 
+def _needs_cf(state) -> list[str]:
+    return [n for n, d in state.inventory.domains.items() if d.cloudflare_credential and d.zone_id]
+
+
+def liveness(state, now: datetime) -> list[str]:
+    """The panel's own loops that have stopped: "dns", "cloudflare", "engine" (ADR-002)."""
+    stale = []
+    if state.dns_checked_at is None or now - state.dns_checked_at > DNS_MAX:
+        stale.append("dns")
+    if _needs_cf(state) and (state.cf_sync_at is None or now - state.cf_sync_at > CF_MAX):
+        stale.append("cloudflare")
+    ok_at = getattr(state, "engine_ok_at", None)
+    if ok_at is not None and now - ok_at > ENGINE_MAX and _engine_should_run(state):
+        stale.append("engine")
+    return stale
+
+
+STALE_TEXT = {
+    "dns": N_("the DNS check has been stopped for more than 5 min"),
+    "cloudflare": N_("reading Cloudflare has been stopped for more than 15 min"),
+    "engine": N_("the switching engine has not completed a cycle for more than 10 min"),
+}
+
+
 def health(state, now: datetime | None = None) -> tuple[bool, list[str]]:
     """(¿funciona el panel?, mensajes). Solo las tareas del propio panel cuentan como fallo;
     lo que depende de terceros (feed, calendario) se informa pero no lo marca como caído."""
     now = now or datetime.now(UTC)
-    problems, notes = [], []
-    if state.dns_checked_at is None or now - state.dns_checked_at > DNS_MAX:
-        problems.append(tn("the DNS check has been stopped for more than 5 min"))
-    needs_cf = any(d.cloudflare_credential and d.zone_id for d in state.inventory.domains.values())
-    if needs_cf and (state.cf_sync_at is None or now - state.cf_sync_at > CF_MAX):
-        problems.append(tn("reading Cloudflare has been stopped for more than 15 min"))
-    ok_at = getattr(state, "engine_ok_at", None)
-    if ok_at is not None and now - ok_at > ENGINE_MAX and _engine_should_run(state):
-        problems.append(tn("the switching engine has not completed a cycle for more than 10 min"))
+    stale = liveness(state, now)
+    problems, notes = [tn(STALE_TEXT[k]) for k in stale], []
+    if "cloudflare" not in stale:
+        # The loop runs but its reads fail (token revoked, API down): a switch would fail too.
+        since = getattr(state, "started_at", None)
+        cf_ok_at = getattr(state, "cf_ok_at", {})
+        if any((last := cf_ok_at.get(n, since)) is None or now - last > CF_MAX for n in _needs_cf(state)):
+            problems.append(tn("reading Cloudflare has been failing for more than 15 min"))
     if state.feed is None or now - state.feed.fetched_at > FEED_WARN:
         notes.append(tn("block feed without recent data"))
     elif state.feed.is_stale(now):

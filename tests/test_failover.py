@@ -484,3 +484,91 @@ def test_stale_feed_alerts_once_and_on_recovery(st):
     check_stale_feed(st)
     alerts = [e.summary for e in st.events.list(limit=10) if e.kind == "alert"]
     assert len(alerts) == 2 and "datos viejos" in alerts[1] and "al día" in alerts[0]
+
+
+# ---------------------------------------------------------------- domains that cannot switch (0.3.0)
+
+def not_ready(state):
+    return state.events.list(domain="example.net", limit=20)
+
+
+def test_auto_domain_that_cannot_switch_alerts_once_after_30_min(st):
+    st.store.upsert_domain("example.net", policy="reactive", priority="low")
+    st.reload()
+    assert failover.readiness(st, st.inventory.domains["example.net"]) == ["no_cf_credential", "no_zone", "not_prepared"]
+    st.feed = feed(False)
+    run(st, T0)
+    run(st, T0 + timedelta(minutes=20))
+    assert not not_ready(st)
+    run(st, T0 + timedelta(minutes=31))
+    run(st, T0 + timedelta(minutes=40))
+    evs = not_ready(st)
+    assert len(evs) == 1 and evs[0].kind == "alert"
+    assert evs[0].summary == ("El cambio automático no puede actuar en este dominio: sin credencial de Cloudflare, "
+                              "sin zona de Cloudflare, sin preparar en Gcore. Durante un bloqueo se quedaría en Cloudflare")
+    assert failover.describe(st, "example.net")["text"].startswith("No puede cambiar automáticamente: sin credencial")
+    # A different reason alerts again
+    cf_id = st.inventory.domains["example.com"].cloudflare_credential
+    st.store.set_credentials("example.net", cf_id, None)
+    st.reload()
+    run(st, T0 + timedelta(minutes=45))
+    evs = not_ready(st)
+    assert len(evs) == 2 and "sin credencial" not in evs[0].summary and "sin zona" in evs[0].summary
+    # Fixed: a config entry
+    st.store.upsert_domain("example.net", policy="reactive", priority="low", zone_id="0" * 32)
+    st.store.set_gcore("example.net", 34, 23, (T0 + timedelta(days=80)).isoformat(), "cl-test2.gcorecdn.com", ["example.net"])
+    st.reload()
+    assert failover.readiness(st, st.inventory.domains["example.net"]) == []
+    run(st, T0 + timedelta(minutes=50))
+    evs = not_ready(st)
+    assert len(evs) == 3 and evs[0].kind == "config"
+    assert evs[0].summary == "El cambio automático vuelve a poder actuar en este dominio"
+
+
+def test_manual_policy_or_auto_off_never_alerts_not_ready(st):
+    st.feed = feed(False)
+    run(st, T0)
+    run(st, T0 + timedelta(hours=2))  # example.net is manual in this fixture
+    assert not not_ready(st)
+    st.store.upsert_domain("example.net", policy="reactive", priority="low")
+    st.reload()
+    st.events.set_setting("auto_switch", 0)
+    run(st, T0 + timedelta(hours=3))
+    run(st, T0 + timedelta(hours=4))
+    assert not not_ready(st)
+
+
+def test_deleting_a_domain_forgets_its_not_ready_alert(st, client):
+    from app import alerts
+    st.store.upsert_domain("example.net", policy="reactive", priority="low")
+    st.reload()
+    run(st, T0)
+    assert alerts.active(st, "auto_not_ready:example.net")
+    client.post("/dominios/example.net/eliminar", data={"confirm": "example.net", "dns_action": "none"})
+    assert "example.net" not in st.inventory.domains and not alerts.active(st, "auto_not_ready:example.net")
+
+
+# ---------------------------------------------------------------- the return restores only what moved (0.3.0)
+
+def test_return_restores_only_moved_hostnames(st):
+    gc = Resolution("x", ("198.51.100.20",), "cl-test.gcorecdn.com.", "gcore")
+    st.store.set_cloudflare_record("example.com", "rec-1", "ip", None)
+    st.store.set_cloudflare_record("www.example.com", "rec-2", "ip", None)
+    st.reload()
+    # www resolves to the origin (exposed): only a manual return fixes it.
+    st.resolutions = {"example.com": gc, "www.example.com": Resolution("www.example.com", ("192.0.2.10",), None, "origin")}
+    diff, _ = asyncio.run(failover.return_to_cloudflare(st, "example.com", only_switchable=True))
+    assert [row[0] for row in diff] == ["example.com"]
+    diff, _ = asyncio.run(failover.return_to_cloudflare(st, "example.com"))
+    assert [row[0] for row in diff] == ["example.com", "www.example.com"]
+    # Another target (not ours) is left alone; a flattened apex on Gcore counts as moved.
+    other = Resolution("x", ("198.51.100.30",), None, "other")
+    st.resolutions = {"example.com": other, "www.example.com": other}
+    st.cf_live = {"example.com": {"to_backup": True, "target": "cl-test.gcorecdn.com"}}
+    diff, _ = asyncio.run(failover.return_to_cloudflare(st, "example.com", only_switchable=True))
+    assert [row[0] for row in diff] == ["example.com"]
+    # Simulation: nothing really moved, force_all simulates the switchable ones.
+    st.cf_live = {}
+    st.resolutions = {h: Resolution(h, (CF_IP,), None, "cloudflare") for h in ("example.com", "www.example.com")}
+    diff, _ = asyncio.run(failover.return_to_cloudflare(st, "example.com", force_all=True, only_switchable=True))
+    assert [row[0] for row in diff] == ["example.com", "www.example.com"]

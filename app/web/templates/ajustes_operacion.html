@@ -51,6 +51,18 @@
   <p id="tiempos-help" class="card__body help" style="margin:0;padding-top:0">{{ m.icon('info') }} {{ _("The defaults come from two months of block history: blocks start a median of 68 min before kick-off (90 % within the previous 2 h), and a released IP was blocked again within 15 min only 0.05 % of the time. A longer lead protects more of the match at the cost of more time and traffic on Gcore.") }}</p>
 </section>
 
+<section class="card" aria-labelledby="feed">
+  <div class="card__head"><h2 id="feed">{{ m.icon('refresh') }} {{ _("Block feed polling") }}</h2><span class="pill {{ 'pill--free' if feed_now == feed_idle else 'pill--nodata' }}">{{ _("now every {seconds} s", seconds=feed_now) }}</span></div>
+  <form class="card__body form-inline" method="post" action="/ajustes/operacion/feed">{{ csrf_field() }}
+    <div>
+      <label for="feed-interval">{{ _("Read the feed every") }}</label>
+      <select id="feed-interval" name="seconds" aria-describedby="feed-help">{% for v in feed_options %}<option value="{{ v }}"{% if v == feed_idle %} selected{% endif %}>{{ _("{seconds} s (default)", seconds=v) if v == 300 else _("{seconds} s", seconds=v) }}</option>{% endfor %}</select>
+    </div>
+    <div class="form-actions"><button class="btn btn--primary" type="submit">{{ _("Save interval") }}</button></div>
+  </form>
+  <p id="feed-help" class="card__body help" style="margin:0;padding-top:0">{{ m.icon('info') }} {{ _("Interval while nothing is going on. It reads every 90 s during a match window (with the longest lead of Switching times), while any hostname is on Gcore, during blocks, without a match calendar and after a failed read. Each read downloads about 0.4 MB. Preventive switching before a match does not depend on this interval.") }}</p>
+</section>
+
 <section class="card" aria-labelledby="idioma">
   <div class="card__head"><h2 id="idioma">{{ m.icon('language') }} {{ _("Language of history and alerts") }}</h2><span class="mono muted">{{ LANGS[notify_lang] }}</span></div>
   <form class="card__body form-inline" method="post" action="/ajustes/operacion/idioma">{{ csrf_field() }}

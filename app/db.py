@@ -28,8 +28,8 @@ CREATE INDEX IF NOT EXISTS events_ts ON events(ts DESC);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """
 
-RETENTION_DEFAULTS = {"events_max_days": 180, "events_max_rows": 20000, "auto_switch": 1, "gcore_quota_gb": 1000}
-RETENTION_LIMITS = {"events_max_days": (7, 3650), "events_max_rows": (500, 1_000_000), "auto_switch": (0, 1), "gcore_quota_gb": (1, 1_000_000)}
+RETENTION_DEFAULTS = {"events_max_days": 180, "events_max_rows": 20000, "auto_switch": 1, "gcore_quota_gb": 1000, "feed_interval": 300}
+RETENTION_LIMITS = {"events_max_days": (7, 3650), "events_max_rows": (500, 1_000_000), "auto_switch": (0, 1), "gcore_quota_gb": (1, 1_000_000), "feed_interval": (90, 300)}
 
 
 @dataclass

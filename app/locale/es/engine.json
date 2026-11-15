@@ -38,7 +38,6 @@
   "In maintenance until you resume it": "En mantenimiento hasta que lo reanudes",
   "Manual policy: only alerts, never changes anything": "Política manual: solo avisa, no cambia nada",
   "Multi-CDN: test notification ✅": "Multi-CDN: prueba de notificación ✅",
-  "No Cloudflare credential or zone: cannot switch automatically": "Sin credencial o zona de Cloudflare: no puede cambiar automáticamente",
   "No hostname has an IP origin: Gcore cannot serve this domain": "Ningún hostname tiene origen por IP: Gcore no puede servir este dominio",
   "No hostname is marked to switch": "Ningún hostname está marcado para conmutar",
   "On Gcore during the {match} match; then waits {minutes} min without blocks": "En Gcore durante el partido {match}; después espera {minutes} min sin bloqueos",

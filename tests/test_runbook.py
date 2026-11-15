@@ -59,3 +59,13 @@ def test_unknown_domain_and_status(setup):
     out.clear()
     assert run(runbook.status(out=out.append)) == 0
     assert out[0].startswith("Modo: SIMULACIÓN") and any(line.strip().startswith("example.com") for line in out)
+
+
+def test_status_marks_auto_domains_that_cannot_switch(setup):
+    out = []
+    assert run(runbook.status(out=out.append)) == 0
+    marks = [line.strip() for line in out if "NO disponible" in line]
+    # example.net (reactive, no credential); example.com is ready
+    assert marks == ["cambio automático NO disponible: sin credencial de Cloudflare, sin zona de Cloudflare, sin preparar en Gcore"]
+    net = out.index(next(line for line in out if line.startswith("\nexample.net")))
+    assert "NO disponible" in out[net + 1]

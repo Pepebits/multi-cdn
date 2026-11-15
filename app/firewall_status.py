@@ -17,6 +17,10 @@ from .i18n import tn
 
 MAX_AGE = timedelta(hours=48)   # el temporizador va cada 24 h
 WHILE_ON_BACKUP = timedelta(hours=1)  # con tráfico por Gcore, rangos de como mucho 1 h
+CHECK_INTERVAL = timedelta(minutes=10)  # cada cuánto llama el panel a check()
+# Se pide el refresco un intervalo antes de la hora: entre comprobaciones pasan hasta 10 min,
+# así la edad real de los rangos no supera WHILE_ON_BACKUP.
+REFRESH_AFTER = WHILE_ON_BACKUP - CHECK_INTERVAL
 
 
 def data_dir() -> Path:
@@ -94,7 +98,7 @@ def check(state, now: datetime | None = None) -> None:
     if status is None:
         return  # el script no está instalado (p. ej. en local): nada que vigilar
     serving_backup = any(r.provider == "gcore" for r in state.resolutions.values())
-    if serving_backup and (status.last_ok is None or now - status.last_ok > WHILE_ON_BACKUP) \
+    if serving_backup and (status.last_ok is None or now - status.last_ok > REFRESH_AFTER) \
             and not (data_dir() / "firewall-refresh-request").exists():
         request_refresh()
     problem = status.problem(now)
