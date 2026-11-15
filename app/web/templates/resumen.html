@@ -49,6 +49,7 @@
 {% endmacro %}
 
 {% block content %}
+{% import "_ui030.html" as u030 %}{{ u030.open_problems(problems) }}
 {% if steps and not domains %}{{ setup_card() }}{% endif %}
 <section aria-labelledby="estado-general">
   <h2 id="estado-general" class="visually-hidden">{{ _("Overall status") }}</h2>

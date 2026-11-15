@@ -65,6 +65,8 @@
   </div>
 </section>
 
+{% import "_ui030.html" as u030 %}{{ u030.domain_timeline(tl, dry_run) }}
+
 <section class="card" aria-labelledby="gcore-titulo" id="gcore">
   <div class="card__head">
     <h2 id="gcore-titulo">{{ m.icon('cloud') }} {{ _('Gcore backup') }}</h2>

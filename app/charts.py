@@ -152,3 +152,49 @@ def columns(days: list[datetime], series: list[dict], start: datetime, end: date
     return {"height": height, "base": base, "bars": bars,
             "yticks": [{"y": round(base - v / top * sc.plot_h, 1), "label": fmt(int(v))} for v in _frange(0, top, ystep)],
             "xticks": sc.day_ticks(), "left": LEFT, "right": W - RIGHT, "width": W}
+
+
+CDN_KIND_LABEL = {"cloudflare": "Cloudflare", "gcore": "Gcore", "mixed": N_("Mixed"), "unknown": N_("No data")}
+
+
+def domain_lanes(tl: dict) -> dict:
+    """Lanes of the domain timeline (stats.domain_timeline) on whole UTC days. x and w are in
+    hours from the window start: each lane is an SVG with viewBox "0 0 <hours> 1" stretched to
+    the width of its box (preserveAspectRatio="none"), so it fits any screen without text in
+    the SVG; the day labels are HTML columns below."""
+    from .stats import fmt_duration
+    start, end, now = tl["start"], tl["end"], tl["now"]
+    hours = (end - start).total_seconds() / 3600
+
+    def x(t: datetime) -> float:
+        return round(max(0.0, min(hours, (t - start).total_seconds() / 3600)), 3)
+
+    def span(t0: datetime, t1: datetime) -> tuple[float, float]:
+        x0, x1 = x(t0), x(t1)
+        return x0, round(max(x1 - x0, hours / 400), 3)  # a 1-minute block stays visible
+
+    def when(t0: datetime, t1: datetime | None) -> str:
+        return f"{t0:%d/%m %H:%M}–{(t1 or now):%d/%m %H:%M} UTC ({fmt_duration((t1 or now) - t0)})"
+
+    served = []
+    for seg in tl["segments"]:
+        x0, w = span(seg.start, seg.end)
+        served.append({"x": x0, "w": w, "kind": seg.kind,
+                       "tip": f"{tr(CDN_KIND_LABEL[seg.kind])}: {when(seg.start, seg.end)}"})
+    blocks, matches = [], []
+    for p in tl["periods"]:
+        if p.kind == "blocked":
+            x0, w = span(p.start, p.end or min(now, end))
+            blocks.append({"x": x0, "w": w, "tip": tr("Cloudflare IPs blocked: {when} · up to {n} ISPs",
+                                                        when=when(p.start, p.end), n=p.detail)})
+        elif p.kind == "match":
+            x0, w = span(p.start, p.end)
+            matches.append({"x": x0, "w": w, "tip": f"{p.detail} · {p.start:%d/%m %H:%M} UTC"})
+    days = []
+    t = start
+    while t < end:
+        days.append({"label": f"{tr(DAYS[t.weekday()])} {t.day}", "date": t})
+        t += timedelta(days=1)
+    return {"hours": round(hours, 3), "served": served, "blocks": blocks, "matches": matches, "days": days,
+            "ticks": [round(24.0 * i, 3) for i in range(1, len(days))],
+            "now": x(now) if start < now < end else None}

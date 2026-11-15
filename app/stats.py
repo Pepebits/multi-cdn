@@ -204,3 +204,59 @@ def fmt_duration(td: timedelta) -> str:
         return f"{hours} h {minutes:02d} min" if minutes else f"{hours} h"
     days, hours = divmod(hours, 24)
     return f"{days} d {hours} h"
+
+
+# ---------------------------------------------------------------- línea temporal de un dominio
+
+@dataclass
+class Period:
+    """A stretch on Gcore, a block or a match, cut to the window. ``start_before``: it began
+    before the window (``start`` is then the window start); ``end`` None: still going on."""
+    kind: str  # gcore | blocked | match
+    start: datetime
+    end: datetime | None
+    start_before: bool = False
+    actor: str | None = None      # who moved it to Gcore: "auto" or the username
+    ended_by: str | None = None   # who brought it back
+    detail: str = ""              # blocked: max ISPs at once; match: competition and teams
+
+    def duration(self, now: datetime) -> timedelta:
+        return (self.end or now) - self.start
+
+
+def timeline_window(days: int, now: datetime) -> tuple[datetime, datetime]:
+    """Whole UTC days: today and the ``days - 1`` before it, so the day ticks are evenly spaced."""
+    end = now.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    return end - timedelta(days=days), end
+
+
+def domain_timeline(events, failover_hosts: list[str], current: dict[str, str], start: datetime, end: datetime,
+                    now: datetime, *, feed=None, ips=(), matches=(),
+                    match_length: timedelta = timedelta(hours=2, minutes=30)) -> dict:
+    """One domain over [start, end): the "served by" segments (cdn_segments, up to now), the
+    periods on Gcore with who started and ended them, the block intervals of its Cloudflare IPs
+    (feed history, block_intervals) and the matches of the calendar."""
+    upto = min(end, now)
+    segments = cdn_segments(events, failover_hosts, current, start, upto) if upto > start else []
+    changes = sorted((e for e in events if e.kind == "switch" and not e.simulated), key=lambda e: e.ts)
+
+    def who(e) -> str:
+        return "auto" if e.actor == "auto" else e.actor
+
+    periods: list[Period] = []
+    for seg in segments:
+        if seg.kind != "gcore":
+            continue
+        began = [e for e in changes if e.ts <= seg.start]
+        start_before = seg.start <= start and not any(e.ts == start for e in changes)
+        still = seg.end >= upto and upto == now
+        ended = None if still else next((e for e in changes if e.ts >= seg.end), None)
+        periods.append(Period("gcore", seg.start, None if still else seg.end, start_before,
+                              actor=who(began[-1]) if began else None, ended_by=who(ended) if ended else None))
+    for iv in (block_intervals(feed, list(ips), start, end) if feed is not None and ips else []):
+        periods.append(Period("blocked", max(iv.start, start), iv.end, iv.start < start, detail=str(iv.max_isps)))
+    for m in matches:
+        if m.kickoff + match_length > start and m.kickoff < end:
+            periods.append(Period("match", m.kickoff, m.kickoff + match_length, detail=f"{m.competition}: {m.name}"))
+    periods.sort(key=lambda p: (p.start, p.kind))
+    return {"start": start, "end": end, "now": now, "segments": segments, "periods": periods}

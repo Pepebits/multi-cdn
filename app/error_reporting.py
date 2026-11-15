@@ -19,6 +19,7 @@ import tomllib
 from pathlib import Path
 from collections.abc import Callable, Iterable
 from typing import Any
+from urllib.parse import urlsplit
 
 log = logging.getLogger("multicdn")
 
@@ -194,6 +195,31 @@ def init(component: str) -> bool:
     sentry_sdk.set_tag("component", component)
     log.info("error reporting on (%s)", component)
     return True
+
+
+def status() -> dict[str, Any]:
+    """What Settings → Operation shows: whether reporting is on and where to. Only the scheme and
+    host of the DSN, never its key, path or project id."""
+    dsn = os.environ.get("MULTICDN_SENTRY_DSN", "").strip()
+    if not dsn:
+        return {"enabled": False, "configured": False, "installed": None, "server": None, "environment": None}
+    try:
+        import importlib.util
+        installed = importlib.util.find_spec("sentry_sdk") is not None
+    except (ImportError, ValueError):
+        installed = False
+    server = None
+    try:
+        parts = urlsplit(dsn)
+        host = parts.hostname
+        if parts.scheme in ("http", "https") and host:
+            host = f"[{host}]" if ":" in host else host
+            port = parts.port
+            server = f"{parts.scheme}://{host}" + (f":{port}" if port and port not in (80, 443) else "")
+    except ValueError:
+        server = None
+    return {"enabled": installed, "configured": True, "installed": installed, "server": server,
+            "environment": os.environ.get("MULTICDN_SENTRY_ENVIRONMENT", "").strip() or "production"}
 
 
 def watch_background_tasks() -> None:

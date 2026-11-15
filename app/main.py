@@ -40,6 +40,7 @@ from .providers.cloudflare import CloudflareDNS, OriginExposureError, plan_to_gc
 from .secrets_store import CREDENTIALS, SecretStore
 from .signals import calendar as match_calendar
 from .signals import dnscheck, hayahora
+from .problems import open_problems
 from .views import build_all, build_domain
 
 log = logging.getLogger("multicdn")
@@ -569,6 +570,7 @@ def _actor(request: Request) -> str:
 # often); `day` is the date alone. All return markup: inside a translated string use _m().
 templates.env.filters["when"] = i18n.when_markup
 templates.env.filters["hhmm"] = lambda value: i18n.when_markup(value, compact=True)
+templates.env.filters["when_text"] = i18n.format_when
 templates.env.filters["day"] = lambda value: i18n.when_markup(value, time=False)
 templates.env.filters["bytes"] = human_bytes
 
@@ -705,6 +707,7 @@ async def resumen(request: Request):
         calendar_error=s.calendar_error,
         steps=steps if not all(st["done"] for st in steps) else None,
         calendar_loaded=s.calendar is not None,
+        problems=open_problems(s),
     ))
 
 
@@ -825,7 +828,31 @@ async def dominio(request: Request, name: str):
         inventory_servers={sid: bool(srv.origin_ipv4) for sid, srv in s.inventory.servers.items()},
         cert_until=cert_until,
         renew_from=cert_until - RENEW_BEFORE if cert_until else None,
+        tl=domain_timeline_view(s, name),
     ))
+
+
+TIMELINE_DAYS = 7
+
+
+def domain_timeline_view(s: State, name: str, days: int = TIMELINE_DAYS, now: datetime | None = None) -> dict:
+    """Domain page: the last `days` UTC days on Gcore, blocked and with matches (stats + charts)."""
+    from . import charts, stats
+    now = now or datetime.now(UTC)
+    cfg = s.inventory.domains[name]
+    start, end = stats.timeline_window(days, now)
+    hosts = [h.name for h in cfg.hostnames if h.failover] or [h.name for h in cfg.hostnames]
+    current = {h: r.provider for h in hosts if (r := s.resolutions.get(h))}
+    tl = stats.domain_timeline(s.events.list(domain=name, limit=5000), hosts, current, start, end, now,
+                               feed=s.feed, ips=s.engine.get(name).cf_ips,
+                               matches=s.calendar.matches if s.calendar else (),
+                               match_length=match_calendar.MATCH_LENGTH)
+    gcore = [p for p in tl["periods"] if p.kind == "gcore"]
+    return tl | {"days": days, "lanes": charts.domain_lanes(tl), "fmt_duration": stats.fmt_duration,
+                 "gcore_count": len(gcore), "blocked_count": sum(p.kind == "blocked" for p in tl["periods"]),
+                 "match_count": sum(p.kind == "match" for p in tl["periods"]),
+                 "gcore_total": stats.fmt_duration(sum((p.duration(now) for p in gcore), timedelta(0))),
+                 "has_feed": s.feed is not None, "has_ips": bool(s.engine.get(name).cf_ips)}
 
 
 @app.post("/dominios/{name}/hostnames/{host}/quitar")
@@ -1510,7 +1537,8 @@ async def ajustes_operacion(request: Request):
                      "default_lead": failover.DEFAULT_MATCH_LEAD[p], "default_wait": failover.DEFAULT_RETURN_AFTER[p]}
                  for p in failover.PRIORITIES},
         limits=failover.TIMING_LIMITS, feed_options=FEED_INTERVAL_OPTIONS,
-        feed_idle=s.events.get_setting("feed_interval"), feed_now=feed_interval(s, quiet=True)))
+        feed_idle=s.events.get_setting("feed_interval"), feed_now=feed_interval(s, quiet=True),
+        error_reporting=error_reporting.status()))
 
 
 @app.post("/ajustes/operacion/tiempos")

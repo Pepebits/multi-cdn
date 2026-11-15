@@ -1,0 +1,137 @@
+{#- 0.3.0 panel additions: open problems (overview), error reporting (Settings → Operation)
+    and the per-domain timeline (domain page). Self-contained: each page imports this file
+    and calls one macro. -#}
+{%- import "_macros.html" as m -%}
+
+{# A moment: the panel's single date format (UTC); panel.js adds how long ago and the local time. #}
+{% macro when(t) -%}{{ t|when }}{%- endmacro %}
+
+{% macro open_problems(problems) -%}
+{%- if problems -%}
+{% set errors = problems|selectattr('severity', 'equalto', 'error')|list|length %}
+<section class="card problems{{ ' problems--error' if errors else '' }}" aria-labelledby="problemas">
+  <div class="card__head problems__head">
+    <h2 id="problemas">{{ m.icon('alert') }} {{ _n("{n} open problem", "{n} open problems", problems|length) }}</h2>
+    <span class="mono">{{ _("right now") }}</span>
+  </div>
+  <ul class="problems__list">
+    {% for p in problems %}
+    <li class="problem problem--{{ p.severity }}">
+      <span class="problem__mark" aria-hidden="true">{{ m.icon('alert' if p.severity == 'error' else 'info') }}</span>
+      <div class="problem__body">
+        <p class="problem__text"><span class="visually-hidden">{{ _("Error:") if p.severity == 'error' else _("Warning:") }} </span>{{ p.text }}</p>
+        <p class="problem__meta">
+          {% if p.since %}<span>{{ _("since") }} {{ when(p.since) }}</span>{% endif %}
+          {% if p.href and p.where %}<a class="problem__fix" href="{{ p.href }}">{{ _("Go to {place}", place=p.where) }}</a>{% endif %}
+        </p>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro error_reporting_card(er) -%}
+<section class="card" aria-labelledby="errores">
+  <div class="card__head"><h2 id="errores">{{ m.icon('bell') }} {{ _("Error reporting") }}</h2><span class="pill {{ 'pill--free' if er.enabled else ('pill--blocked' if er.configured else 'pill--nodata') }}">{{ _('On') if er.enabled else (_('Not working') if er.configured else _('Off')) }}</span></div>
+  <div class="card__body stack-gap">
+    {% if er.enabled %}
+    <dl class="kv">
+      <div><dt>{{ _("Server") }}</dt><dd>{{ er.server or _("unknown (the DSN is not a URL)") }}</dd></div>
+      <div><dt>{{ _("Environment") }}</dt><dd>{{ er.environment }}</dd></div>
+    </dl>
+    <p class="help er-note">{{ m.icon('lock') }} {{ _("Only errors are sent. IP addresses (the origin's included), emails and token-looking values are removed before anything leaves the server; no cookies, headers, request bodies or local variables.") }}</p>
+    {% elif er.configured %}
+    <p class="notice notice--warn er-note">{{ m.icon('alert') }} {{ _m("<span class=\"mono\">MULTICDN_SENTRY_DSN</span> is set but the sentry-sdk package is not installed: nothing is sent.") }}</p>
+    {% else %}
+    <p class="help er-note">{{ _m("Off: nothing is sent anywhere. To receive code errors in Sentry or GlitchTip, set <span class=\"mono\">MULTICDN_SENTRY_DSN</span> in the server's <span class=\"mono\">.env</span> and restart (see the <a href=\"https://github.com/Pepebits/multi-cdn/blob/main/deploy/README.md#error-reporting-optional\" rel=\"external\">deployment guide</a>).") }}</p>
+    {% endif %}
+  </div>
+</section>
+{%- endmacro %}
+
+{% macro who(actor) -%}{{ _("automatic") if actor == 'auto' else (_("manual, by {user}", user=actor) if actor else _("unknown")) }}{%- endmacro %}
+
+{% macro domain_timeline(tl, dry_run) -%}
+{% set L = tl.lanes %}
+<section class="card dtl" aria-labelledby="linea-tiempo">
+  <div class="card__head">
+    <h2 id="linea-tiempo">{{ m.icon('calendar') }} {{ _n("Last {n} day", "Last {n} days", tl.days) }}</h2>
+    <span class="viz__legend">
+      <span class="viz__key"><span class="key key--cloudflare" aria-hidden="true"></span>Cloudflare</span>
+      <span class="viz__key"><span class="key key--gcore" aria-hidden="true"></span>Gcore</span>
+      <span class="viz__key"><span class="key key--blocked" aria-hidden="true"></span>{{ _("Its IPs blocked") }}</span>
+      <span class="viz__key"><span class="key key--match" aria-hidden="true"></span>{{ _("Match") }}</span>
+    </span>
+  </div>
+  <div class="card__body stack-gap">
+    <p class="dtl__summary">
+      {%- if tl.gcore_count %}{{ _n("On Gcore {n} time, {total} in total.", "On Gcore {n} times, {total} in total.", tl.gcore_count, total=tl.gcore_total) }}
+      {%- else %}{{ _("No time on Gcore in these days.") }}{% endif %}
+      {% if tl.has_feed and tl.has_ips %}{{ _n("{n} block of its Cloudflare IPs.", "{n} blocks of its Cloudflare IPs.", tl.blocked_count) }}{% endif %}
+      {{ _n("{n} match in the calendar.", "{n} matches in the calendar.", tl.match_count) }}
+    </p>
+    <div class="dtl__chart" data-chart>
+      <div class="dtl__lane">
+        <span class="dtl__label" id="dtl-served">{{ _("Served by") }}</span>
+        <svg class="dtl__bar dtl__bar--served" viewBox="0 0 {{ L.hours }} 1" preserveAspectRatio="none" role="img" aria-labelledby="dtl-served" aria-describedby="dtl-periods-title">
+          <rect class="c-track" x="0" y="0" width="{{ L.hours }}" height="1"/>
+          {% for g in L.served %}<rect class="c-seg c-seg--{{ g.kind }}" x="{{ g.x }}" y="0" width="{{ g.w }}" height="1" data-tip="{{ g.tip }}"/>{% endfor %}
+          {% for t in L.ticks %}<line class="dtl__tick" x1="{{ t }}" x2="{{ t }}" y1="0" y2="1" vector-effect="non-scaling-stroke"/>{% endfor %}
+          {% if L.now is not none %}<line class="dtl__now" x1="{{ L.now }}" x2="{{ L.now }}" y1="0" y2="1" vector-effect="non-scaling-stroke"/>{% endif %}
+        </svg>
+      </div>
+      <div class="dtl__lane">
+        <span class="dtl__label" id="dtl-blocked">{{ _("Its IPs blocked") }}</span>
+        <svg class="dtl__bar dtl__bar--thin" viewBox="0 0 {{ L.hours }} 1" preserveAspectRatio="none" role="img" aria-labelledby="dtl-blocked" aria-describedby="dtl-periods-title">
+          <rect class="c-track" x="0" y="0" width="{{ L.hours }}" height="1"/>
+          {% for b in L.blocks %}<rect class="c-seg c-seg--blocked" x="{{ b.x }}" y="0" width="{{ b.w }}" height="1" data-tip="{{ b.tip }}"/>{% endfor %}
+          {% for t in L.ticks %}<line class="dtl__tick" x1="{{ t }}" x2="{{ t }}" y1="0" y2="1" vector-effect="non-scaling-stroke"/>{% endfor %}
+          {% if L.now is not none %}<line class="dtl__now" x1="{{ L.now }}" x2="{{ L.now }}" y1="0" y2="1" vector-effect="non-scaling-stroke"/>{% endif %}
+        </svg>
+      </div>
+      <div class="dtl__lane">
+        <span class="dtl__label" id="dtl-matches">{{ _("Matches") }}</span>
+        <svg class="dtl__bar dtl__bar--thin" viewBox="0 0 {{ L.hours }} 1" preserveAspectRatio="none" role="img" aria-labelledby="dtl-matches" aria-describedby="dtl-periods-title">
+          <rect class="c-track" x="0" y="0" width="{{ L.hours }}" height="1"/>
+          {% for x in L.matches %}<rect class="c-seg c-seg--match" x="{{ x.x }}" y="0" width="{{ x.w }}" height="1" data-tip="{{ x.tip }}"/>{% endfor %}
+          {% for t in L.ticks %}<line class="dtl__tick" x1="{{ t }}" x2="{{ t }}" y1="0" y2="1" vector-effect="non-scaling-stroke"/>{% endfor %}
+          {% if L.now is not none %}<line class="dtl__now" x1="{{ L.now }}" x2="{{ L.now }}" y1="0" y2="1" vector-effect="non-scaling-stroke"/>{% endif %}
+        </svg>
+      </div>
+      <div class="dtl__lane dtl__lane--days" aria-hidden="true">
+        <span class="dtl__label"></span>
+        <ol class="dtl__days">{% for d in L.days %}<li>{{ d.label }}</li>{% endfor %}</ol>
+      </div>
+    </div>
+    <p class="help dtl__note">{{ m.icon('info') }} {{ _("Whole days in UTC; the vertical line is now. From the live switches in the history and the block feed.") }}{% if dry_run %} {{ _("Simulated switches (dry run) are not shown.") }}{% endif %}{% if not tl.has_feed %} {{ _("No block data: the feed has not been read yet.") }}{% elif not tl.has_ips %} {{ _("No block data: its Cloudflare IPs are not known yet.") }}{% endif %}</p>
+    <details class="viz__data dtl__periods">
+      <summary id="dtl-periods-title">{{ _("List of periods") }} <span class="mono muted">({{ tl.periods|length }})</span></summary>
+      {% if tl.periods %}
+      <ul class="dtl__list">
+        {% for p in tl.periods|reverse %}
+        <li>
+          <span class="key key--{{ p.kind }}" aria-hidden="true"></span>
+          <span>
+            <strong>{{ {'gcore': _("On Gcore"), 'blocked': _("Cloudflare IPs blocked"), 'match': _("Match")}[p.kind] }}</strong>
+            {% if p.kind == 'match' %}· {{ p.detail }}{% endif %}
+            <br><span class="mono dtl__when">
+              {%- if p.start_before %}{{ _("before {date}", date=p.start|when_text) }}{% else %}{{ p.start|when }}{% endif %}
+              {%- if p.kind != 'match' %} → {% if p.end %}{{ p.end|when }}{% else %}<strong>{{ _("still on Gcore") if p.kind == 'gcore' else _("still blocked") }}</strong>{% endif %}
+              · {{ tl.fmt_duration(p.duration(tl.now)) }}{% if p.start_before %}+{% endif %}{% endif -%}
+            </span>
+            {% if p.kind == 'gcore' %}<br><span class="muted">{{ _("Switch: {who}", who=who(p.actor)) }}{% if p.ended_by %} · {{ _("return: {who}", who=who(p.ended_by)) }}{% endif %}</span>{% endif %}
+            {% if p.kind == 'blocked' %}<br><span class="muted">{{ _n("up to {n} ISP at once", "up to {n} ISPs at once", p.detail|int) }}</span>{% endif %}
+          </span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="empty">{{ _("Nothing in these days: no time on Gcore, no blocks and no matches.") }}</p>
+      {% endif %}
+    </details>
+  </div>
+</section>
+<div class="chart-tip" role="status" hidden></div>
+{%- endmacro %}

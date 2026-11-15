@@ -112,6 +112,8 @@
   <p id="cuota-help" class="card__body help" style="margin:0;padding-top:0">{{ _("It is compared with the total monthly traffic of each account (served to users + fetched from the origin), read every hour. It alerts when passing 70 %, 90 % and 100 %, and when 2 free CDN resources are left.") }}</p>
 </section>
 
+{% import "_ui030.html" as u030 %}{{ u030.error_reporting_card(error_reporting) }}
+
 <section class="card" aria-labelledby="cifrado">
   <div class="card__head"><h2 id="cifrado">{{ m.icon('lock') }} {{ _("Credential encryption") }}</h2></div>
   <div class="card__body">
