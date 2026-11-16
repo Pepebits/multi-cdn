@@ -1905,7 +1905,7 @@ async def errores_guardar(request: Request, dsn: str = Form("")):
         return _card(url, "errores", error=tr("The DSN must point to a public server: {host} does not resolve to a public address",
                                               host=host))
     reason = _secret_save(s, "sentry_dsn", value)
-    error_reporting.reconfigure(value)
+    await asyncio.to_thread(error_reporting.reconfigure, value)  # closes the previous client: may wait
     s.events.add(actor=_actor(request), kind="config", summary=tn("Error reporting DSN updated"))
     return _card(url, "errores", ok=_with_env_warning(tr("Error reporting DSN saved"), reason, "MULTICDN_SENTRY_DSN"))
 
@@ -1914,7 +1914,7 @@ async def errores_guardar(request: Request, dsn: str = Form("")):
 async def errores_quitar(request: Request):
     s = _state(request)
     reason = _secret_save(s, "sentry_dsn", None)
-    error_reporting.reconfigure(None)
+    await asyncio.to_thread(error_reporting.reconfigure, None)
     s.events.add(actor=_actor(request), kind="config", summary=tn("Error reporting DSN removed"))
     return _card(request.url_for("ajustes_sistema"), "errores",
                  ok=_with_env_warning(tr("Error reporting is off: nothing is sent"), reason, "MULTICDN_SENTRY_DSN"))
@@ -1923,7 +1923,7 @@ async def errores_quitar(request: Request):
 @app.post("/ajustes/sistema/errores/probar")
 async def errores_probar(request: Request):
     url = request.url_for("ajustes_sistema")
-    event_id = error_reporting.send_test()
+    event_id = await asyncio.to_thread(error_reporting.send_test)  # waits up to 5 s for it to leave
     if not event_id:
         return _card(url, "errores", error=tr("Error reporting is off: save a DSN first"))
     return _card(url, "errores", ok=tr("Test error sent · event {id}", id=event_id))

@@ -19,6 +19,8 @@
         <div><dt>{{ _("Server") }}</dt><dd>{{ er.server or _("unknown (the DSN is not a URL)") }}</dd></div>
         <div><dt>{{ _("Environment") }}</dt><dd>{{ er.environment }}</dd></div>
       </dl>
+      {% elif er.failed %}
+      <p class="notice notice--warn flush">{{ m.icon('alert') }} {{ _("The saved DSN could not be used (it is not valid, or sentry-sdk refused it): nothing is sent. Save a valid one.") }}</p>
       {% elif er.configured %}
       <p class="notice notice--warn flush">{{ m.icon('alert') }} {{ _("A DSN is saved but the sentry-sdk package is not installed: nothing is sent.") }}</p>
       {% endif %}

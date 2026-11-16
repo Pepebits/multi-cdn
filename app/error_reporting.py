@@ -3,7 +3,8 @@
 Off by default: without a DSN nothing is initialised or sent. The DSN is set in Settings →
 System (or MULTICDN_SENTRY_DSN in config/secrets.env, synced with the panel like every secret)
 and read from the encrypted database before the app exists; a change in the panel applies at
-once to logged errors (reconfigure) and fully after a restart.
+once to logged errors (reconfigure) and fully after a restart. A DSN that is not valid, or that
+sentry_sdk refuses, only turns error reporting off: it never stops the panel from starting.
 
 When it is on, only errors are sent: unhandled exceptions in the panel and the CLI, and
 anything logged with log.exception() / log.error(). No performance traces unless
@@ -159,7 +160,8 @@ def _rate(name: str) -> float:
         return 0.0
 
 
-_live: dict[str, Any] = {"dsn": None, "component": "panel", "changed": False}
+# dsn: in use · failed: a DSN that could not be used (not valid, or refused by sentry_sdk)
+_live: dict[str, Any] = {"dsn": None, "failed": None, "component": "panel", "changed": False}
 
 
 def _start(dsn: str, component: str) -> bool:
@@ -170,7 +172,24 @@ def _start(dsn: str, component: str) -> bool:
         log.warning("an error reporting DSN is set but sentry-sdk is not installed: error reporting is off")
         _live.update(dsn=dsn, component=component)
         return False
+    if problem := dsn_problem(dsn):
+        log.warning("error reporting: the DSN is not valid (%s): error reporting is off", problem)
+        _live.update(dsn=None, failed=dsn, component=component)
+        return False
     traces = _rate("MULTICDN_SENTRY_TRACES_SAMPLE_RATE")
+    try:
+        _init(sentry_sdk, LoggingIntegration, dsn, traces, component)
+    except Exception as exc:  # a DSN sentry_sdk refuses must never stop the panel
+        log.warning("error reporting: could not start it (%s): error reporting is off", type(exc).__name__)
+        _stop(sentry_sdk)
+        _live.update(dsn=None, failed=dsn, component=component)
+        return False
+    _live.update(dsn=dsn, failed=None, component=component)
+    log.info("error reporting on (%s)", component)
+    return True
+
+
+def _init(sentry_sdk, LoggingIntegration, dsn: str, traces: float, component: str) -> None:
     sentry_sdk.init(
         dsn=dsn,
         environment=environment(),
@@ -196,9 +215,18 @@ def _start(dsn: str, component: str) -> bool:
         before_breadcrumb=before_breadcrumb,
     )
     sentry_sdk.set_tag("component", component)
-    _live.update(dsn=dsn, component=component)
-    log.info("error reporting on (%s)", component)
-    return True
+
+
+def _stop(sentry_sdk) -> None:
+    """Closes the current client (waits up to 2 s for pending events) and goes back to the
+    non-recording one: nothing else is sent. Blocking: the panel calls it in a thread."""
+    try:
+        client = sentry_sdk.get_client()
+        if client.is_active():
+            client.close(timeout=2)
+        sentry_sdk.get_global_scope().set_client(None)
+    except Exception as exc:
+        log.warning("error reporting: could not close the client (%s)", type(exc).__name__)
 
 
 def environment() -> str:
@@ -252,30 +280,29 @@ def init(component: str) -> bool:
 
 
 def reconfigure(dsn: str | None) -> bool:
-    """A DSN saved (or removed, None) in the panel, live: sentry_sdk starts again with the same
-    safe options, or its client is closed. Errors logged from now on are sent at once; the web
-    integration (unhandled exceptions in requests) is set up when the app is created, so full
-    capture needs a restart (status()["restart_note"])."""
+    """A DSN saved (or removed, None) in the panel, live: the previous client is closed and
+    sentry_sdk starts again with the same safe options (or stays off). Errors logged from now on
+    are sent at once; the web integration (unhandled exceptions in requests) is set up when the
+    app is created, so full capture needs a restart (status()["restart_note"]). Blocking (it
+    waits for pending events): the panel calls it in a thread."""
     try:
         import sentry_sdk
     except ImportError:
         _live.update(dsn=dsn)
         return False
+    _stop(sentry_sdk)
     if dsn:
         ok = _start(dsn, _live["component"])
         _live["changed"] = ok
         return ok
-    client = sentry_sdk.get_client()
-    if client.is_active():
-        client.close(timeout=2)
-    sentry_sdk.get_global_scope().set_client(None)  # back to the non-recording client: nothing is sent
-    _live.update(dsn=None, changed=False)
+    _live.update(dsn=None, failed=None, changed=False)
     log.info("error reporting off")
     return False
 
 
 def send_test() -> str | None:
-    """Sends a test error and waits for it to leave; returns the event id (None when off)."""
+    """Sends a test error and waits for it to leave; returns the event id (None when off).
+    Blocking (up to 5 s): the panel calls it in a thread."""
     try:
         import sentry_sdk
     except ImportError:
@@ -316,14 +343,15 @@ def status() -> dict[str, Any]:
     from .secrets_store import dsn_server
     dsn = _live["dsn"]
     if not dsn:
-        return {"enabled": False, "configured": False, "installed": None, "server": None, "environment": None,
-                "restart_note": False}
+        failed = _live.get("failed")
+        return {"enabled": False, "configured": bool(failed), "installed": None, "failed": bool(failed),
+                "server": dsn_server(failed) if failed else None, "environment": None, "restart_note": False}
     try:
         import importlib.util
         installed = importlib.util.find_spec("sentry_sdk") is not None
     except (ImportError, ValueError):
         installed = False
-    return {"enabled": installed, "configured": True, "installed": installed, "server": dsn_server(dsn),
+    return {"enabled": installed, "configured": True, "installed": installed, "failed": False, "server": dsn_server(dsn),
             "environment": environment(), "restart_note": _live["changed"]}
 
 

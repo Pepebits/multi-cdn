@@ -1,5 +1,7 @@
+import pytest
 import sentry_sdk
 
+from app import error_reporting
 from app import error_reporting as er
 
 
@@ -62,3 +64,60 @@ def test_before_send_drops_request_details_and_locals():
 
 def test_background_tasks_noop_when_off():
     er.watch_background_tasks()  # inactive client: must not raise or patch anything
+
+
+DSN = "https://f0e1d2c3b4a5968778695a4b3c2d1e0f@errors.example.com/42"
+
+
+# ---------------------------------------------------------------- 1, 2. error reporting
+
+@pytest.mark.parametrize("dsn", ["https://key@errors.example.com/not-a-project", "not a dsn", "https://key@192.0.2.10/1"])
+def test_a_malformed_dsn_turns_reporting_off_instead_of_failing(monkeypatch, dsn):
+    error_reporting.reconfigure(None)  # whatever an earlier test left running
+    monkeypatch.setenv("MULTICDN_SENTRY_DSN", dsn)
+    assert error_reporting.init("test") is False
+    assert not sentry_sdk.get_client().is_active()
+    st = error_reporting.status()
+    assert st["enabled"] is False and st["failed"] is True
+    error_reporting.reconfigure(None)
+
+
+def test_sentry_refusing_the_dsn_does_not_stop_the_panel(monkeypatch):
+    def refuse(*args, **kwargs):
+        raise sentry_sdk.utils.BadDsn("refused")
+    monkeypatch.setattr(sentry_sdk, "init", refuse)
+    monkeypatch.setenv("MULTICDN_SENTRY_DSN", DSN)
+    assert error_reporting.init("test") is False and error_reporting.status()["failed"] is True
+    assert error_reporting.reconfigure(DSN) is False
+    error_reporting.reconfigure(None)
+
+
+def test_import_with_a_malformed_dsn_still_starts(make_client, monkeypatch):
+    monkeypatch.setenv("MULTICDN_SENTRY_DSN", "https://key@errors.example.com/not-a-project")
+    import importlib
+
+    import app.main
+    importlib.reload(app.main)  # what the container does at start-up
+    client = make_client()
+    assert client.get("/ajustes/sistema").status_code == 200
+    error_reporting.reconfigure(None)
+
+
+def test_reconfigure_closes_the_previous_client_and_the_panel_waits_in_a_thread(client, monkeypatch):
+    stopped, threaded = [], []
+    real_stop = error_reporting._stop
+    monkeypatch.setattr(error_reporting, "_stop", lambda sdk: (stopped.append(1), real_stop(sdk)))
+    monkeypatch.setattr(sentry_sdk, "init", lambda *a, **k: None)
+    import asyncio
+
+    real_to_thread = asyncio.to_thread
+
+    async def to_thread(fn, *args, **kwargs):
+        threaded.append(getattr(fn, "__name__", fn))
+        return await real_to_thread(fn, *args, **kwargs)
+    monkeypatch.setattr("app.main.asyncio.to_thread", to_thread)
+    client.post("/ajustes/sistema/errores", data={"dsn": DSN})
+    client.post("/ajustes/sistema/errores/probar")
+    client.post("/ajustes/sistema/errores/quitar")
+    assert threaded == ["reconfigure", "send_test", "reconfigure"]
+    assert len(stopped) == 2  # before starting again, and when removed

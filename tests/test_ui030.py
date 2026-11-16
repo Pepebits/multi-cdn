@@ -167,7 +167,7 @@ def test_status_shows_only_scheme_and_host(monkeypatch):
     monkeypatch.setitem(error_reporting._live, "dsn", DSN)
     monkeypatch.setenv("MULTICDN_SENTRY_ENVIRONMENT", "staging")
     st = error_reporting.status()
-    assert st == {"enabled": True, "configured": True, "installed": True, "server": "https://o4242.ingest.example.com",
+    assert st == {"enabled": True, "configured": True, "installed": True, "failed": False, "server": "https://o4242.ingest.example.com",
                   "environment": "staging", "restart_note": False}
     monkeypatch.setitem(error_reporting._live, "dsn", "https://key:secret@errors.example.com:8443/9")
     assert error_reporting.status()["server"] == "https://errors.example.com:8443"
