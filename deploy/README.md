@@ -147,7 +147,7 @@ about any other address, the panel is exposed: fix that before continuing.
 
 ## 4. Connect Cloudflare and Gcore
 
-In **Settings → Accounts → Add credential**:
+In **Settings → Provider accounts → Add credential**:
 
 **Cloudflare.** Create an API token at *My Profile → API Tokens → Create Token → Custom token*
 (not the Global API Key) with:
@@ -216,32 +216,35 @@ In **Settings → Notifications**:
   (period 5 min, grace 10 min) and paste its ping URL. The panel pings it every 5 minutes while
   everything runs; if the panel or the server goes down, healthchecks.io alerts you.
 
-In **Settings → Operation** you can also:
+The same tab sets the language of history entries and alerts, and the monthly Gcore quota
+the panel warns about.
+
+In **Settings → Automatic switching** you can also:
 
 - adjust the **switching times** per priority: how long before a match the preventive policy
   moves to Gcore (default 120 min for critical domains, 90 for the rest) and how long without
   blocks before returning to Cloudflare (default 20 and 15 min). The defaults come from two
   months of real block history;
-- choose how often the block feed is read when nothing is going on (default 5 min; it is read
-  every 90 s on its own around matches, during blocks or while a domain is on Gcore);
-- set the language of history entries and alerts;
-- add a [football-data.org](https://www.football-data.org) token for a second match calendar
+- add a [football-data.org](https://www.football-data.org) key for a second match calendar
   source;
-- adjust the Gcore quota.
+- choose how often the block feed is read when nothing is going on (default 5 min; it is read
+  every 90 s on its own around matches, during blocks or while a domain is on Gcore).
+
+Every value you save in the panel (tokens, chat ID, SMTP, heartbeat URL, keys, DSN) is also
+written to the server's `.env`, so both stay equal: see
+[Server configuration (.env)](#server-configuration-env).
 
 ### Error reporting (optional)
 
 Off by default: the panel sends nothing anywhere. To receive code errors in
 [Sentry](https://sentry.io) or a self-hosted [GlitchTip](https://glitchtip.com), create a
-Python/FastAPI project there, copy its DSN into `.env` and restart:
+Python/FastAPI project there and paste its DSN in **Settings → System → Error reporting**.
+It applies at once to logged errors; restart the panel (`docker compose restart panel`) so the
+web errors are captured too. *Send test error* checks it. The DSN can also go in `.env`:
 
 ```bash
 MULTICDN_SENTRY_DSN=https://<key>@errors.example.com/<project>
 # MULTICDN_SENTRY_ENVIRONMENT=production
-```
-
-```bash
-docker compose up -d
 ```
 
 Only errors are sent: unhandled exceptions in the panel and the terminal commands, failed
@@ -378,6 +381,42 @@ docker compose up -d
 The sidebar changes to *Live DNS changes on*. Only the server's environment can turn this on:
 nobody can do it from the panel.
 
+## Server configuration (.env)
+
+Credentials and keys live in two places that the panel keeps equal: the encrypted database,
+which is what the panel uses, and the server's `.env`.
+
+- **At startup the `.env` has priority.** Every managed value that differs from the database
+  is imported (encrypted) and leaves a history entry such as *Telegram bot token updated from
+  the server's .env*, never the value. The panel reads the file itself, so `docker compose
+  restart` is enough after editing it.
+- **What you save or remove in the panel is written back to `.env`**, in place: the line of
+  that variable changes (or is appended at the end under `# Managed by the multi-cdn panel`)
+  and every other line, comment and their order stay as they were. A copy of the previous
+  file is kept in `data/env-backups/` (permissions 600, the last 10).
+- The panel only writes the variables it manages: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`,
+  `SMTP_URL`, `ALERT_EMAIL_TO`, `FOOTBALL_DATA_TOKEN`, `MULTICDN_HEARTBEAT_URL`,
+  `MULTICDN_SENTRY_DSN`, `CLOUDFLARE_API_TOKEN` and `GCORE_API_TOKEN`. It never touches
+  `MULTICDN_SECRET_KEY`, `MULTICDN_DRY_RUN` or any other line.
+
+With Docker, `compose.yaml` mounts the same `.env` into the container at `/app/config/.env`
+(`MULTICDN_ENV_PATH`). The container already receives every value of that file through
+`env_file`, so the mount only adds write access. `deploy/install.sh` keeps the file yours with
+permissions 600 and lets the container user (uid 10001) write it with an ACL:
+
+```bash
+sudo apt install acl                  # if setfacl is missing
+sudo setfacl -m u:10001:rw .env       # or the path in MULTICDN_ENV_FILE
+```
+
+If the panel cannot write the file (no ACL, read-only, not mounted), it still saves in its
+database and warns on that value, in *Settings → System → Server configuration (.env)* and in
+the open problems: on the next restart the `.env` value would replace the one saved in the
+panel, so update that line yourself.
+
+> ⚠️ `chmod` on `.env` resets the ACL: run `deploy/install.sh` (or the `setfacl` line) again
+> afterwards.
+
 ---
 
 ## Day to day
@@ -387,6 +426,13 @@ nobody can do it from the panel.
 ```bash
 cd /var/www/multi-cdn && git pull && deploy/install.sh
 ```
+
+From 0.3.0 or earlier to 0.3.1: the new `compose.yaml` mounts `.env` into the container and
+`install.sh` adds the ACL that lets the panel write it, so running `deploy/install.sh` after
+`git pull` is all it takes. If you start the container another way, add the mount and the
+`MULTICDN_ENV_PATH` variable of `compose.yaml`, run `sudo setfacl -m u:10001:rw .env` and then
+`docker compose up -d`. On its first start 0.3.1 imports into the database every value of
+`.env` that differs from it (see [Server configuration](#server-configuration-env)).
 
 **Backups.** The panel makes one a day in `data/backups/` and keeps the last 14; take one by
 hand with `docker compose exec panel python -m app.cli backup`. Copy them off the server if you
@@ -437,4 +483,6 @@ docker compose exec panel python -m app.cli retire-previous-secret gcore
    ```
 
 4. Put the old master key in `MULTICDN_SECRET_KEY` of the new `.env` (not in `data/`), then run
-   `deploy/install.sh`. Open sessions stay valid.
+   `deploy/install.sh` (it also mounts `.env` and gives the panel write access to it, see
+   [Server configuration](#server-configuration-env)). Open sessions stay valid. Values set in
+   the new `.env` replace the ones in the copied database on the first start.

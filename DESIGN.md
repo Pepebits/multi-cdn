@@ -144,7 +144,7 @@ spacing:
 
 Internal operations panel for a multi-CDN failover controller (Cloudflare primary, Gcore backup). It reuses the TapBits neo-brutalist visual language: bone canvas, 2px ink borders, hard zero-blur offset shadows, yellow primary actions, teal confirmations, square red status dots. The panel must be readable at a glance during a live football match, when Spanish ISPs block Cloudflare IPs, on desktop and on a phone.
 
-Tone: assertive, mechanical, trustworthy. No gradients, no glassmorphism, no soft shadows. Interface language: Spanish.
+Tone: assertive, mechanical, trustworthy. No gradients, no glassmorphism, no soft shadows. Interface language: English (source) and Spanish, chosen per browser in the footer; history and alerts use their own language (Settings → Notifications).
 
 ## Colors (semantic mapping for this panel)
 
@@ -166,7 +166,7 @@ Every status is shown with color + text label + icon, never color alone.
 
 ## Layout
 
-- Desktop: left sidebar (Resumen, Dominios, Proveedores, Servidor, Calendario, Historial, Ajustes) in Ink with bone text; content area with 32px margins, 12-column grid, 24px gutters.
+- Desktop: left sidebar (Overview, Domains, Statistics, History, Settings) in Ink with bone text; content area with 32px margins, 12-column grid, 24px gutters. Settings has six tabs in setup order: Provider accounts, Servers, Notifications, Automatic switching, System, My account; the page title is "Settings · <tab>".
 - Mobile: top app bar in Ink + bottom navigation; single-column cards; 16px margins; touch targets >= 48px.
 - Strict 4/8px spacing rhythm.
 
@@ -185,10 +185,16 @@ Every status is shown with color + text label + icon, never color alone.
 - **Audit timeline**: vertical list, each entry with mono timestamp, actor (AUTO / usuario), signals that triggered it, DNS diff.
 - **Match banner**: full-width yellow banner when a match window is active, with red live dot and countdown in mono.
 - **Primary button** yellow; **secondary** white; **confirm/healthy** teal; **destructive** white with red border.
+- **Settings card**: head (icon + title, status pill at the right) · the save message of that card (`m.card_flash`: a save returns to `?card=<id>#<id>` and the message shows inside the card, not at the top of the page) · body with a one-line intro (`card__intro`) and the fields (`form-inline card__fields` or `form-grid`) · footer `card__foot actions-end` with the actions at the right (secondary, test, primary last) and, at the left, the secondary help folded as `m.more(id, text)` ("ⓘ More info"). Commands, environment variables, files and headers go in `<code>`. Help shows once per card, linked to its field with `aria-describedby`. No inline `style` in settings: utility classes (`flush`).
+- **Secrets**: never shown again once saved: a "Configured" pill with a hint (`····abcd`, `···.10` for the origin IP, scheme and host for a DSN). An empty field keeps the current value; removing it is a separate action. Each one says where it comes from ("From .env · imported …" / "Saved in the panel · …") and whether the server's `.env` agrees.
+- **Confirmation dialog** (`m.confirm`): for dangerous actions that do not need typing (disable automatic switching, delete a credential or server, remove a value or the DSN, restore default times, regenerate recovery codes). A button with `data-open="<id>"` opens a `<dialog>`; it states the effect ("3 domains stop switching on their own; those on Gcore stay there"), Cancel at the left, the action at the right. Deleting a domain keeps the typed confirmation.
+- **Test buttons** test what is saved and are disabled while nothing is configured.
 
 ## Dates and wording
 
 - **Dates**: one format everywhere, in UTC: `14 Nov, 22:50 UTC` (es: `14 nov, 22:50 UTC`), year only when it is not the current one. Templates use the `when` filter (`hhmm` drops the day when it is today, `day` is the date alone); Python uses `i18n.format_when()`. The panel script adds the relative time and the local time as a tooltip.
 - **Switching**: EN "Switch to Gcore" / "Return to Cloudflare", noun "switch"; ES "Cambiar a Gcore" / "Volver a Cloudflare", noun "cambio" (never "conmutar" or "pasar a").
 - **Delete vs Remove**: "Delete" / "Eliminar" only destroys something (domain, credential, server, Gcore resource); "Remove" / "Quitar" takes it out of a list or setting without destroying it (a hostname, a notification value).
+- **Alerts**: ES "avisos" everywhere (never "alertas"); the external heartbeat is "latido" ("URL de latido externo", "Guardar y enviar latido"). A notification value is removed with "Remove value" / "Quitar clave".
+- **Counts**: always with the plural form (`_n`): "1 servidor", "3 servidores", never "1 registrados".
 - **Phones (≤ 480px)**: ISP states as compact chips, short priority tag, 6-digit code inputs on one line.
