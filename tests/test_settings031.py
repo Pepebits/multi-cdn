@@ -9,7 +9,7 @@ import pytest
 import sentry_sdk
 
 from app import env_sync, envfile, error_reporting
-from app.config import _unquote
+from app.envparse import parse
 from app.db import EventStore
 from app.problems import open_problems
 from app.secrets_store import SecretStore
@@ -47,7 +47,7 @@ def test_render_updates_in_place_and_keeps_everything_else():
 @pytest.mark.parametrize("value", ["a=b=c", "with spaces", "x#y", "it's $HOME", 'q"uote\'s', "plain-value_1"])
 def test_quoting_round_trips(value):
     line = envfile.render("", "SMTP_URL", value).splitlines()[-1]
-    assert _unquote(line.partition("=")[2]) == value
+    assert parse(line + "\n", {}).values["SMTP_URL"] == value
 
 
 def test_update_env_rejects_newlines_and_unmanaged_keys(env_file):

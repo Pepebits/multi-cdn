@@ -126,9 +126,9 @@ def load_inventory(path: str | Path | None = None) -> Inventory:
 
 
 def load_dotenv(path: str | Path | None = None) -> None:
-    """Lector mínimo de .env (KEY=VALUE); no sobrescribe variables ya definidas.
-    MULTICDN_DOTENV cambia el fichero; los tests lo apuntan a uno inexistente para no leer
-    nunca el .env del desarrollador."""
+    """Reads a .env (development, outside Docker) the way Docker Compose would (envparse); does
+    not overwrite variables already set. MULTICDN_DOTENV changes the file; the tests point it to
+    a missing one so the developer's .env is never read."""
     p = Path(path or os.environ.get("MULTICDN_DOTENV", ".env"))
     if not p.exists():
         return
@@ -137,33 +137,7 @@ def load_dotenv(path: str | Path | None = None) -> None:
 
 
 def read_dotenv(path: str | Path) -> dict[str, str]:
-    """KEY=VALUE pairs of a .env file (comments and blank lines skipped; the last one wins)."""
-    out = {}
-    for line in Path(path).read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        out[key.strip().removeprefix("export ").strip()] = _unquote(value.strip())
-    return out
-
-
-def _unquote(value: str) -> str:
-    """Values as envfile.quote() writes them (and Docker Compose reads them): 'literal',
-    "with \\" \\\\ and $$ escaped", or bare."""
-    if len(value) >= 2 and value[0] == value[-1] == "'":
-        return value[1:-1]
-    if len(value) >= 2 and value[0] == value[-1] == '"':
-        out, i, body = [], 0, value[1:-1]
-        while i < len(body):
-            if body[i] == "\\" and i + 1 < len(body) and body[i + 1] in '\\"':
-                out.append(body[i + 1])
-                i += 2
-            elif body[i] == "$" and body[i + 1:i + 2] == "$":
-                out.append("$")
-                i += 2
-            else:
-                out.append(body[i])
-                i += 1
-        return "".join(out)
-    return value.strip("'\"")
+    """KEY=VALUE pairs of an env file as Docker Compose reads them (the last one wins; values
+    with control characters are left out)."""
+    from .envparse import read
+    return read(path).values
