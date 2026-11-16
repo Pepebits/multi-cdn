@@ -107,6 +107,7 @@ def test_install_moves_the_panel_values_and_survives_a_dotenv_that_is_not_ours(t
     _shim(bindir, "sudo", 'exit 0')  # chown/setfacl as root: only recorded
     _shim(bindir, "setfacl", "exit 0")
     _shim(bindir, "curl", "exit 0")
+    _shim(bindir, "uname", "echo Linux")  # the ACL path, also when the tests run on macOS
     # chmod of .env fails, as when the file belongs to someone else
     _shim(bindir, "chmod", 'case "${@: -1}" in .env) exit 1;; esac; exec /bin/chmod "$@"')
     env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "SHIM_LOG": str(log)}
