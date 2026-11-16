@@ -35,6 +35,7 @@ def login(client: TestClient, username: str = USER, password: str = PASSWORD) ->
         uid = auth.create_user(username, password)
         auth.start_totp_enrollment(uid)
         auth.enable_totp(uid)
+        auth.new_recovery_codes(uid)  # as the enrollment page does
         user = auth.get_user(username)
     r = client.post("/login", data={"username": username, "password": password, "next": "/"}, follow_redirects=False)
     assert r.headers["location"].startswith("/login/codigo"), r.text
@@ -47,6 +48,10 @@ def login(client: TestClient, username: str = USER, password: str = PASSWORD) ->
 def no_developer_env(monkeypatch):
     """Los tests nunca leen el .env del desarrollador (ni su IP de origen ni sus tokens)."""
     monkeypatch.setenv("MULTICDN_DOTENV", "/nonexistent/.env")
+    # Nor write any .env, nor import a secret from the developer's environment.
+    from app.envfile import MANAGED
+    for var in (*MANAGED, "MULTICDN_ENV_PATH"):
+        monkeypatch.delenv(var, raising=False)
     # Existing tests assert the Spanish texts, which also checks the Spanish catalog; test_i18n
     # covers English and the language choice.
     monkeypatch.setenv("MULTICDN_LANG", "es")

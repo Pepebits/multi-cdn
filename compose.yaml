@@ -12,10 +12,16 @@ services:
     # MULTICDN_ENV_FILE (en el entorno o en este mismo .env) con la ruta que prefieras.
     env_file:
       - path: ${MULTICDN_ENV_FILE:-.env}
+    environment:
+      # The same .env, mounted read-write: what is saved in the panel is written back to it, so
+      # both stay equal (only the values the panel manages; never MULTICDN_SECRET_KEY). Its
+      # owner keeps it 600; deploy/install.sh gives the container user (uid 10001) write access.
+      MULTICDN_ENV_PATH: /app/config/.env
     ports:
       - "127.0.0.1:8765:8765"
     volumes:
       - ./data:/app/data
+      - ${MULTICDN_ENV_FILE:-.env}:/app/config/.env
     read_only: true
     tmpfs:
       - /tmp

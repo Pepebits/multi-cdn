@@ -25,12 +25,16 @@ def test_secret_is_encrypted_at_rest(stores):
     assert (db.parent / ".secret_key").stat().st_mode & 0o777 == 0o600
 
 
-def test_env_fallback_and_status(stores, monkeypatch):
+def test_env_is_imported_not_read_directly(stores, monkeypatch):
     _, secrets, _ = stores
     assert secrets.status("telegram_token").configured is False
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "telegram-env-value-9999")
+    assert secrets.get("telegram_token") is None  # the database is the only source
+    assert secrets.status("telegram_token").env_state == "env_only"
+    assert secrets.import_env() == ["telegram_token"]
     st = secrets.status("telegram_token")
-    assert st.configured and st.source == "entorno" and st.hint == "····9999"
+    assert st.configured and st.source == "env" and st.hint == "····9999" and st.env_state == "sync"
+    assert secrets.import_env() == []  # same value: nothing to import
 
 
 def test_wrong_master_key_reads_as_unset(tmp_path, monkeypatch):

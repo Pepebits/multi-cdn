@@ -30,6 +30,16 @@ mkdir -p data
 sudo chown -R 10001:10001 data
 sudo chmod 700 data
 
+say "Letting the panel keep $ENV_FILE in sync (uid 10001 may write it; owner and 600 stay)"
+chmod 600 "$ENV_FILE"
+if command -v setfacl >/dev/null 2>&1; then
+  sudo setfacl -m u:10001:rw "$ENV_FILE"
+else
+  echo "    setfacl is not installed (Debian/Ubuntu: sudo apt install acl). Without it the panel cannot"
+  echo "    write $ENV_FILE: values saved in the panel stay only in its database and the panel warns."
+  echo "    Install acl and run this script again, or run: sudo setfacl -m u:10001:rw $ENV_FILE"
+fi
+
 say "Building and starting"
 docker compose up -d --build
 
@@ -49,6 +59,6 @@ Next steps (first time only), see deploy/README.md:
   2. Create your user:    docker compose exec panel python -m app.cli create-user <user>
   3. Open the panel (it only listens on 127.0.0.1:8765), from your computer:
        ssh -N -L 8765:127.0.0.1:8765 <user>@<server>   and open http://localhost:8765
-  4. Continue in the panel: Settings → Accounts.
+  4. Continue in the panel: Settings → Provider accounts.
 To update later: git pull && deploy/install.sh
 TXT

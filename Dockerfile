@@ -15,7 +15,7 @@ FROM python:3.15-alpine
 # pip no se usa en ejecución; el sistema de ficheros es de solo lectura.
 RUN rm -rf /usr/local/lib/python3.15/site-packages/pip /usr/local/bin/pip* \
     && adduser -S -D -H -u 10001 -h /app -s /sbin/nologin multicdn \
-    && mkdir -p /app/data && chown multicdn /app/data
+    && mkdir -p /app/data /app/config && chown multicdn /app/data
 WORKDIR /app
 COPY --from=build /app/.venv /app/.venv
 COPY app ./app

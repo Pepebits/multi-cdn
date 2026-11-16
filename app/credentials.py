@@ -10,10 +10,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from .i18n import tr, trn
+import os
+
+from .i18n import N_, translate, tr, trn
 from .secrets_store import SecretStore, _hint
 
 PROVIDERS = {"cloudflare": "Cloudflare", "gcore": "Gcore"}
+# Provider tokens that can also come from the server's .env (synced at startup, see secrets_store).
+ENV_TOKENS = {"cloudflare": "CLOUDFLARE_API_TOKEN", "gcore": "GCORE_API_TOKEN"}
+ENV_LABEL = N_("Imported from the environment")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS provider_credentials (
@@ -66,7 +71,7 @@ class CredentialStore:
         self.conn = secrets.conn
         self.conn.executescript(SCHEMA)
 
-    def add(self, provider: str, label: str, secret: str) -> int:
+    def add(self, provider: str, label: str, secret: str, source: str = "panel") -> int:
         if provider not in PROVIDERS:
             raise ValueError(tr("unsupported provider"))
         label, secret = label.strip(), secret.strip()
@@ -79,12 +84,12 @@ class CredentialStore:
             (provider, label, _hint(secret), datetime.now(UTC).isoformat(timespec="seconds")),
         )
         cred_id = cur.lastrowid
-        self.secrets.set(_key(cred_id), secret)
+        self.secrets.set(_key(cred_id), secret, source=source)
         return cred_id
 
-    def rotate(self, cred_id: int, secret: str) -> None:
+    def rotate(self, cred_id: int, secret: str, source: str = "panel") -> None:
         self.get(cred_id)
-        self.secrets.set(_key(cred_id), secret)
+        self.secrets.set(_key(cred_id), secret, source=source)
         self.conn.execute("UPDATE provider_credentials SET hint=?, checked_at=NULL, check_ok=NULL, check_msg=NULL WHERE id=?",
                           (_hint(secret.strip()), cred_id))
         self.conn.commit()
@@ -123,6 +128,67 @@ class CredentialStore:
                                  len(used), domains=", ".join(used)))
         self.conn.execute("DELETE FROM provider_credentials WHERE id=?", (cred_id,))
         self.secrets.delete(_key(cred_id))
+
+    # ---- sync with the server's .env (CLOUDFLARE_API_TOKEN, GCORE_API_TOKEN)
+    def env_credential(self, provider: str) -> Credential | None:
+        """The credential that holds the .env token of this provider, if it still exists."""
+        cred_id = self.secrets.meta(f"env_cred:{provider}")
+        try:
+            return self.get(int(cred_id)) if cred_id else None
+        except ValueError:
+            return None
+
+    def import_env(self, label: str) -> list[str]:
+        """At startup the .env token of each provider has priority: if it differs from the
+        credential that holds it, that credential is updated (or created, named `label`; or an
+        existing credential with that same token is adopted). Returns the providers updated."""
+        imported = []
+        for provider, env in ENV_TOKENS.items():
+            value = os.environ.get(env, "").strip()
+            if not value:
+                continue
+            linked = self.env_credential(provider)
+            if linked is None:
+                # Before 0.3.1 the token was imported once, under ENV_LABEL: adopt that one if
+                # it holds the same token, or any credential that does.
+                names = {translate(ENV_LABEL, lang) for lang in ("en", "es")}
+                existing = self.list(provider)
+                linked = (next((c for c in existing if c.label in names and self.secret(c.id) == value), None)
+                          or next((c for c in existing if self.secret(c.id) == value), None))
+                if linked:
+                    self.secrets.set_meta(f"env_cred:{provider}", str(linked.id))
+            if linked and self.secret(linked.id) == value:
+                continue
+            if linked:
+                self.rotate(linked.id, value, source="env")
+            else:
+                name, n = label, 2
+                while self.conn.execute("SELECT 1 FROM provider_credentials WHERE provider=? AND label=?",
+                                        (provider, name)).fetchone():
+                    name, n = f"{label} ({n})", n + 1
+                cred_id = self.add(provider, name, value, source="env")
+                self.secrets.set_meta(f"env_cred:{provider}", str(cred_id))
+            self.secrets.del_meta(f"env_error:{env}")
+            imported.append(provider)
+        return imported
+
+    def env_status(self, cred: Credential) -> dict:
+        """Where the credential's value comes from (env | panel), when, the .env variable it is
+        synced with (only the credential that holds the .env token) and how they compare."""
+        from .secrets_store import env_state
+        src = self.secrets.source(_key(cred.id))
+        linked = self.env_credential(cred.provider)
+        env = ENV_TOKENS[cred.provider] if linked and linked.id == cred.id else None
+        state = env_state(env, self.secret(cred.id)) if env else None
+        return {"source": src[0] if src else "panel", "at": src[1] if src else cred.created_at, "env": env,
+                "state": state, "error": self.secrets.env_error(env) if state == "differs" else None}
+
+    def env_removed(self) -> list[str]:
+        """.env variables still set whose credential was deleted in the panel (the panel could
+        not remove the line): the next start creates it again."""
+        return [env for provider, env in ENV_TOKENS.items()
+                if os.environ.get(env, "").strip() and self.env_credential(provider) is None
+                and self.secrets.meta(f"env_cred:{provider}")]
 
     @staticmethod
     def _row(r) -> Credential:

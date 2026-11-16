@@ -33,11 +33,14 @@ def _store() -> tuple[AuthStore, EventStore]:
     db = os.environ.get("MULTICDN_DB", "data/multicdn.db")
     events = EventStore(db)
     _speak_notify_lang(events)
-    return AuthStore(SecretStore(db)), events
+    secrets = SecretStore(db)
+    from .env_sync import sync
+    sync(secrets, events)  # the server's .env has priority at startup, also from the terminal
+    return AuthStore(secrets), events
 
 
 def _speak_notify_lang(events: EventStore | None = None) -> None:
-    """The terminal speaks the notification language (Settings → Operation)."""
+    """The terminal speaks the notification language (Settings → Notifications)."""
     from . import i18n
     if events is not None:
         from .main import load_notify_lang
