@@ -2,6 +2,7 @@
 .env
 .env.*
 data/
+config/
 inventory.yaml
 *.db
 *.pem

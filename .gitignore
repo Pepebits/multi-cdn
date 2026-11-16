@@ -4,6 +4,8 @@ inventory.yaml
 .env.*
 !.env.example
 data/
+# The panel's secrets file (config/secrets.env, 0.3.1)
+config/
 *.db
 *.db-*
 certs/
