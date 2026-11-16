@@ -26,6 +26,10 @@ examples use `/var/www/multi-cdn`; any folder works.
 
 ## 1. Install the panel
 
+Requirements: Docker with Compose 2.24 or later, `python3` 3.9 or later, and `setfacl` (the
+`acl` package: `sudo apt install acl` on Debian/Ubuntu, see
+[Panel secrets file](#panel-secrets-file-configsecretsenv) for other systems).
+
 ```bash
 cd /var/www
 git clone https://github.com/Pepebits/multi-cdn.git
@@ -437,10 +441,23 @@ by you and gives the container user (uid 10001) access with an ACL, inherited by
 there later:
 
 ```bash
-sudo apt install acl                  # if setfacl is missing
+# setfacl comes with the acl package:
+sudo apt install acl        # Debian, Ubuntu
+sudo dnf install acl        # Fedora, RHEL, Rocky, Alma (yum on older ones)
+sudo apk add acl            # Alpine
+sudo pacman -S acl          # Arch
+sudo zypper install acl     # openSUSE
+
 sudo setfacl -m u:10001:rwx,u:$(id -u):rwx,d:u:10001:rw,d:u:$(id -u):rw config
 sudo setfacl -m u:10001:rw,u:$(id -u):rw config/secrets.env
 ```
+
+`install.sh` stops without changing anything if `setfacl` is missing and tells you the command
+for your system. On **macOS with Docker Desktop** no ACL is needed (Docker Desktop shares the
+folder with the container whatever its owner) and `install.sh` skips that step. With rootless
+Docker or Podman the container's uid 10001 maps to another host uid: give that uid access
+instead (`podman unshare` or the subuid range), or the panel will report that it cannot write
+the file.
 
 To keep the folder elsewhere, set `MULTICDN_SECRETS_DIR=/path/of/your/choice` in the
 environment or in `.env` (Compose and `install.sh` both read it). `MULTICDN_ENV_FILE` moves

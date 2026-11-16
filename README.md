@@ -41,8 +41,10 @@ time.
 
 ## 🚀 Get started
 
-You need a Linux server with Docker, your domains on Cloudflare, and a free
-[Gcore](https://gcore.com) account. Nothing touches your DNS until the last step.
+You need a Linux server with Docker (Compose 2.24 or later), `python3` and the `acl` package
+(`sudo apt install acl` on Debian/Ubuntu; `dnf`, `apk` or `pacman` elsewhere), your domains on
+Cloudflare, and a free [Gcore](https://gcore.com) account. Nothing touches your DNS until the
+last step.
 
 **1️⃣ Install** on your server:
 

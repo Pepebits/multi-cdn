@@ -60,21 +60,33 @@ fi
 say "Preparing $SECRETS_DIR/ for the panel's secrets (the container may write only there)"
 # The panel reads its secrets only from this file (it is not an env_file), so the container
 # user must be able to read it BEFORE any value is moved here.
-if ! command -v setfacl >/dev/null 2>&1; then
-  echo "    setfacl is not installed (Debian/Ubuntu: sudo apt install acl). Without it the panel"
-  echo "    could not read $SECRETS_FILE. Nothing was changed: install acl and run this script again."
+# macOS (Docker Desktop) shares files with the container whatever their owner: no ACL needed.
+NEED_ACL=1
+[[ $(uname -s) == Darwin ]] && NEED_ACL=0
+if (( NEED_ACL )) && ! command -v setfacl >/dev/null 2>&1; then
+  echo "    setfacl is not installed. Without it the panel could not read $SECRETS_FILE."
+  if command -v apt-get >/dev/null 2>&1; then echo "    Install it with: sudo apt install acl"
+  elif command -v dnf >/dev/null 2>&1; then echo "    Install it with: sudo dnf install acl"
+  elif command -v yum >/dev/null 2>&1; then echo "    Install it with: sudo yum install acl"
+  elif command -v apk >/dev/null 2>&1; then echo "    Install it with: sudo apk add acl"
+  elif command -v pacman >/dev/null 2>&1; then echo "    Install it with: sudo pacman -S acl"
+  elif command -v zypper >/dev/null 2>&1; then echo "    Install it with: sudo zypper install acl"
+  else echo "    Install your system's acl package (it provides setfacl)."
+  fi
+  echo "    Nothing was changed: install it and run this script again."
   exit 1
 fi
+acl() { if (( NEED_ACL )); then sudo setfacl "$@"; fi; }
 mkdir -p "$SECRETS_DIR"
 [[ -e $SECRETS_FILE ]] || (umask 077; : > "$SECRETS_FILE")
 # The panel replaces the file when it saves (so its owner becomes uid 10001): yours again.
-sudo chown "$ME" "$SECRETS_DIR" "$SECRETS_FILE"
+if (( NEED_ACL )); then sudo chown "$ME" "$SECRETS_DIR" "$SECRETS_FILE"; fi
 # Owner-only for everyone else; the folder and the file (and files created there later, by the
 # panel or by an editor that saves with a rename) give access to uid 10001 and to you via ACL.
 # chmod first: it resets the ACL mask, which setfacl then sets again.
 chmod 700 "$SECRETS_DIR" && chmod 600 "$SECRETS_FILE"
-sudo setfacl -m "u:10001:rwx,u:$(id -u):rwx,d:u:10001:rw,d:u:$(id -u):rw" "$SECRETS_DIR"
-sudo setfacl -m "u:10001:rw,u:$(id -u):rw" "$SECRETS_FILE"
+acl -m "u:10001:rwx,u:$(id -u):rwx,d:u:10001:rw,d:u:$(id -u):rw" "$SECRETS_DIR"
+acl -m "u:10001:rw,u:$(id -u):rw" "$SECRETS_FILE"
 
 say "Moving the panel-managed variables from $ENV_FILE to $SECRETS_FILE (if any are left there)"
 if command -v python3 >/dev/null 2>&1 && python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))'; then
@@ -83,7 +95,7 @@ if command -v python3 >/dev/null 2>&1 && python3 -c 'import sys; sys.exit(sys.ve
     exit 1
   fi
   # The migration rewrites the file: give it the ACL again.
-  sudo setfacl -m "u:10001:rw,u:$(id -u):rw" "$SECRETS_FILE"
+  acl -m "u:10001:rw,u:$(id -u):rw" "$SECRETS_FILE"
 else
   echo "    python3 (3.9 or later) is not installed: move these lines from $ENV_FILE to $SECRETS_FILE by hand,"
   echo "    then run this script again:"
