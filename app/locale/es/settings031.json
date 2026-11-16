@@ -108,7 +108,7 @@
   "saved in the panel; .env could not be updated": "guardado en el panel; no se pudo actualizar el .env",
   "Removed in the panel; .env could not be updated": "Quitado en el panel; no se pudo actualizar el .env",
   "Could not update the server's .env ({reason}): on the next restart the .env value will replace this one. Update <code>{key}</code> in .env yourself.": "No se pudo actualizar el .env del servidor ({reason}): al reiniciar, el valor del .env sustituirá a este. Actualiza <code>{key}</code> en el .env a mano.",
-  "Remove value": "Quitar clave",
+  "Remove value": "Quitar valor",
   "Remove {field}": "Quitar {field}",
   "The value is removed from the panel and from the server's .env. Notifications that need it stop until you set it again.": "El valor se quita del panel y del .env del servidor. Los avisos que lo necesitan se detienen hasta que lo vuelvas a poner.",
   "Ready": "Listo",
