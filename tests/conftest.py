@@ -49,7 +49,12 @@ def login(client: TestClient, username: str = USER, password: str = PASSWORD) ->
         user = auth.get_user(username)
     r = client.post("/login", data={"username": username, "password": password, "next": "/"}, follow_redirects=False)
     assert r.headers["location"].startswith("/login/codigo"), r.text
-    code = totp_at(auth.totp_secret(user.id), int(time.time()) // 30 - 1)  # deja libres los pasos actual y siguiente
+    # The previous step's code leaves the current and next steps free for the tests that use them.
+    # The server accepts one step either side, so near a 30 s boundary wait for it to pass: crossing
+    # it between here and the check would leave this code two steps behind (a flaky rejection).
+    if (left := 30 - time.time() % 30) < 3:
+        time.sleep(left + 0.05)
+    code = totp_at(auth.totp_secret(user.id), int(time.time()) // 30 - 1)
     r = client.post("/login/codigo", data={"code": code, "next": "/"}, follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/", r.text
 
