@@ -120,7 +120,9 @@ docker compose exec panel python -m app.cli switch example.com gcore  # or: clou
 `ghcr.io/pepebits/multi-cdn` or `pepebits/multi-cdn` on Docker Hub: Alpine, non-root,
 read-only filesystem, amd64 and arm64, with SBOM and provenance. `compose.yaml` uses it
 directly, so you can also run without cloning: download `compose.yaml` and `.env.example`
-(as `.env`), set `MULTICDN_SECRET_KEY`, then `docker compose up -d`.
+(as `.env`), set `MULTICDN_SECRET_KEY`, create the folder for the panel's secrets
+(`mkdir -m 700 config`, see the deployment guide for the container's access to it), then
+`docker compose up -d`.
 
 ## 🛠️ Develop
 

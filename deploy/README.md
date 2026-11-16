@@ -60,7 +60,8 @@ The first run creates `.env` (permissions 600) with a new **master key**, prints
 
 > 💡 To keep `.env` somewhere else (so that backups of this folder do not carry the key), set
 > `MULTICDN_ENV_FILE=/path/of/your/choice` in the environment; `install.sh` and
-> `docker compose` both use it.
+> `docker compose` both use it. `MULTICDN_SECRETS_DIR` does the same for the `config/` folder
+> of the [panel secrets file](#panel-secrets-file-configsecretsenv).
 
 ## 2. Create your user
 
@@ -231,8 +232,8 @@ In **Settings → Automatic switching** you can also:
   every 90 s on its own around matches, during blocks or while a domain is on Gcore).
 
 Every value you save in the panel (tokens, chat ID, SMTP, heartbeat URL, keys, DSN) is also
-written to the server's `.env`, so both stay equal: see
-[Server configuration (.env)](#server-configuration-env).
+written to `config/secrets.env` on the server, so both stay equal: see
+[Panel secrets file](#panel-secrets-file-configsecretsenv).
 
 ### Error reporting (optional)
 
@@ -240,12 +241,16 @@ Off by default: the panel sends nothing anywhere. To receive code errors in
 [Sentry](https://sentry.io) or a self-hosted [GlitchTip](https://glitchtip.com), create a
 Python/FastAPI project there and paste its DSN in **Settings → System → Error reporting**.
 It applies at once to logged errors; restart the panel (`docker compose restart panel`) so the
-web errors are captured too. *Send test error* checks it. The DSN can also go in `.env`:
+web errors are captured too. *Send test error* checks it. The DSN can also go in
+`config/secrets.env` (the environment name and the tracing rate go in `.env`):
 
 ```bash
-MULTICDN_SENTRY_DSN=https://<key>@errors.example.com/<project>
-# MULTICDN_SENTRY_ENVIRONMENT=production
+MULTICDN_SENTRY_DSN=https://<key>@errors.example.com/<project>     # config/secrets.env
+# MULTICDN_SENTRY_ENVIRONMENT=production                           # .env
 ```
+
+A DSN that is not valid only turns error reporting off (Settings → System says so): it never
+stops the panel from starting.
 
 Only errors are sent: unhandled exceptions in the panel and the terminal commands, failed
 switches, failed notifications and background tasks that crash. Before anything leaves the
@@ -381,41 +386,76 @@ docker compose up -d
 The sidebar changes to *Live DNS changes on*. Only the server's environment can turn this on:
 nobody can do it from the panel.
 
-## Server configuration (.env)
+## Panel secrets file (config/secrets.env)
 
-Credentials and keys live in two places that the panel keeps equal: the encrypted database,
-which is what the panel uses, and the server's `.env`.
+The server keeps its configuration in two files next to `compose.yaml`:
 
-- **At startup the `.env` has priority.** Every managed value that differs from the database
-  is imported (encrypted) and leaves a history entry such as *Telegram bot token updated from
-  the server's .env*, never the value. The panel reads the file itself, so `docker compose
-  restart` is enough after editing it.
-- **What you save or remove in the panel is written back to `.env`**, in place: the line of
-  that variable changes (or is appended at the end under `# Managed by the multi-cdn panel`)
-  and every other line, comment and their order stay as they were. A copy of the previous
-  file is kept in `data/env-backups/` (permissions 600, the last 10).
-- The panel only writes the variables it manages: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`,
-  `SMTP_URL`, `ALERT_EMAIL_TO`, `FOOTBALL_DATA_TOKEN`, `MULTICDN_HEARTBEAT_URL`,
-  `MULTICDN_SENTRY_DSN`, `CLOUDFLARE_API_TOKEN` and `GCORE_API_TOKEN`. It never touches
-  `MULTICDN_SECRET_KEY`, `MULTICDN_DRY_RUN` or any other line.
+| File | What | Who writes it |
+|---|---|---|
+| `.env` | `MULTICDN_SECRET_KEY`, `MULTICDN_DRY_RUN`, `ORIGIN_*`, `MULTICDN_ACME_EMAIL`, cookies, language, logs… | only you |
+| `config/secrets.env` | the values the panel manages: `CLOUDFLARE_API_TOKEN`, `GCORE_API_TOKEN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `SMTP_URL`, `ALERT_EMAIL_TO`, `FOOTBALL_DATA_TOKEN`, `MULTICDN_HEARTBEAT_URL`, `MULTICDN_SENTRY_DSN` | the panel, and you if you want |
 
-With Docker, `compose.yaml` mounts the same `.env` into the container at `/app/config/.env`
-(`MULTICDN_ENV_PATH`). The container already receives every value of that file through
-`env_file`, so the mount only adds write access. `deploy/install.sh` keeps the file yours with
-permissions 600 and lets the container user (uid 10001) write it with an ACL:
+The panel keeps those values in two places that stay equal: its encrypted database, which is
+what it uses, and `config/secrets.env`.
+
+- **At start-up `config/secrets.env` has priority; changes in the panel are written there.**
+  Every value in the file that differs from the database is imported (encrypted) and leaves a
+  history entry such as *Telegram bot token updated from config/secrets.env*, never the value.
+  The panel reads the file itself, so `docker compose restart` is enough after editing it.
+- **Removing a line from the file does not remove the value from the panel.** To remove a
+  value, use its *Remove* button in the panel (that also removes the line).
+- What you save or remove in the panel rewrites the file atomically: the line of that variable
+  changes (or is appended under `# Managed by the multi-cdn panel`) and every other line and
+  comment stays as it was. If a variable appears twice, the last one counts (as in Compose)
+  and the panel leaves only that one. A copy of the previous managed lines (never anything
+  else) is kept in `data/secrets-backups/` (permissions 600, the last 10).
+- The panel refuses to write any other variable. A variable it does not manage that you put in
+  `config/secrets.env` by hand is ignored and shown as a problem; `MULTICDN_DRY_RUN` there keeps
+  the panel in dry run until you remove it. Values with line breaks or control characters are
+  ignored and reported too.
+- The file is read the way Docker Compose reads it: `#` after a space starts a comment in an
+  unquoted value, quoted values end at the closing quote, `$$` is a `$`, and `'single quotes'`
+  are literal. The panel quotes what it writes so Compose and the panel read the same value.
+
+**Other routes.** A managed variable that is not in `config/secrets.env` but reaches the
+container another way (`environment:` in `compose.yaml`, a line left in `.env`, systemd) is
+imported only when its value is new since the last start, and it is never removed from the
+environment. That way a container restarted with `docker restart`, which keeps the environment
+it was created with, cannot undo a change made in the panel. Precedence:
+`config/secrets.env` → another route with a new value → the panel's database.
+
+**If the file cannot be read** (permissions, not UTF-8), the panel imports nothing at all,
+keeps the values it has, and shows an error in *Settings → System* and in the open problems.
+
+With Docker, `compose.yaml` passes `.env` and then `config/secrets.env` (optional) as
+`env_file`, mounts the **folder** `./config` read-write at `/app/config`
+(`MULTICDN_SECRETS_PATH=/app/config/secrets.env`; a folder so the file can be replaced
+atomically, which also keeps editors that save with a rename working) and does not mount
+`.env` at all. `deploy/install.sh` creates `config/` (700) and `config/secrets.env` (600) owned
+by you and gives the container user (uid 10001) access with an ACL, inherited by files created
+there later:
 
 ```bash
 sudo apt install acl                  # if setfacl is missing
-sudo setfacl -m u:10001:rw .env       # or the path in MULTICDN_ENV_FILE
+sudo setfacl -m u:10001:rwx,u:$(id -u):rwx,d:u:10001:rw,d:u:$(id -u):rw config
+sudo setfacl -m u:10001:rw,u:$(id -u):rw config/secrets.env
 ```
 
-If the panel cannot write the file (no ACL, read-only, not mounted), it still saves in its
-database and warns on that value, in *Settings → System → Server configuration (.env)* and in
-the open problems: on the next restart the `.env` value would replace the one saved in the
-panel, so update that line yourself.
+To keep the folder elsewhere, set `MULTICDN_SECRETS_DIR=/path/of/your/choice` in the
+environment or in `.env` (Compose and `install.sh` both read it). `MULTICDN_ENV_FILE` moves
+`.env` itself the same way; a relative path without `./` works for both.
 
-> ⚠️ `chmod` on `.env` resets the ACL: run `deploy/install.sh` (or the `setfacl` line) again
-> afterwards.
+If the panel cannot write the file (no ACL, read-only, not mounted), it still saves in its
+database and warns on that value, in *Settings → System → Panel secrets file* and in the open
+problems: on the next restart the file's value would replace the one saved in the panel, so
+update that line yourself.
+
+> 🔒 The container can write only inside `config/`. It cannot change `.env`, so it can never
+> turn off dry run, change the master key or the `${...}` values Compose uses:
+> `config/secrets.env` is only an `env_file`, never read for interpolation.
+
+> ⚠️ `chmod` on the folder or the file resets the ACL mask: run `deploy/install.sh` (or the
+> `setfacl` lines) again afterwards.
 
 ---
 
@@ -427,12 +467,26 @@ panel, so update that line yourself.
 cd /var/www/multi-cdn && git pull && deploy/install.sh
 ```
 
-From 0.3.0 or earlier to 0.3.1: the new `compose.yaml` mounts `.env` into the container and
-`install.sh` adds the ACL that lets the panel write it, so running `deploy/install.sh` after
-`git pull` is all it takes. If you start the container another way, add the mount and the
-`MULTICDN_ENV_PATH` variable of `compose.yaml`, run `sudo setfacl -m u:10001:rw .env` and then
-`docker compose up -d`. On its first start 0.3.1 imports into the database every value of
-`.env` that differs from it (see [Server configuration](#server-configuration-env)).
+From 0.3.0 or earlier to 0.3.1: run `deploy/install.sh` after `git pull`. It moves the
+panel-managed lines from `.env` to `config/secrets.env` (a full copy of the previous `.env` is
+kept next to it as `.env.bak-<date>`, permissions 600; it prints which variables moved, never
+their values), creates `config/` with the ACL for the container and starts the new
+`compose.yaml` (Docker Compose 2.24 or later). The move needs `python3` 3.9 or later on the
+server; without it the script lists the lines to move by hand. Once the panel works, delete the
+`.env.bak-*` copy (it holds your tokens). On its first start 0.3.1 imports into the database
+every value of `config/secrets.env` that differs from it (see
+[Panel secrets file](#panel-secrets-file-configsecretsenv)).
+
+By hand, without `install.sh`:
+
+```bash
+mkdir -p config && chmod 700 config
+python3 -m app.migrate_secrets .env config/secrets.env   # or move the lines yourself
+chmod 600 config/secrets.env
+sudo setfacl -m u:10001:rwx,u:$(id -u):rwx,d:u:10001:rw,d:u:$(id -u):rw config
+sudo setfacl -m u:10001:rw,u:$(id -u):rw config/secrets.env
+docker compose up -d
+```
 
 **Backups.** The panel makes one a day in `data/backups/` and keeps the last 14; take one by
 hand with `docker compose exec panel python -m app.cli backup`. Copy them off the server if you
@@ -482,7 +536,9 @@ docker compose exec panel python -m app.cli retire-previous-secret gcore
    sed -i "s|<old path>/data/certbot|/app/data/certbot|g" /var/www/multi-cdn/data/certbot/config/renewal/*.conf
    ```
 
-4. Put the old master key in `MULTICDN_SECRET_KEY` of the new `.env` (not in `data/`), then run
-   `deploy/install.sh` (it also mounts `.env` and gives the panel write access to it, see
-   [Server configuration](#server-configuration-env)). Open sessions stay valid. Values set in
-   the new `.env` replace the ones in the copied database on the first start.
+4. Put the old master key in `MULTICDN_SECRET_KEY` of the new `.env` (not in `data/`). Copy
+   the old `config/secrets.env` too if you want it on the new server (the copied database
+   already has those values), then run `deploy/install.sh` (it prepares `config/` for the
+   panel, see [Panel secrets file](#panel-secrets-file-configsecretsenv)). Open sessions stay
+   valid. Values in the new `config/secrets.env` replace the ones in the copied database on the
+   first start; with an empty file the database keeps its own.
