@@ -21,15 +21,15 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
-from . import alerts, error_reporting, heartbeat, i18n, notify, origin_health, proxy
+from . import alerts, env_sync, envfile, error_reporting, heartbeat, i18n, notify, origin_health, proxy
 from .auth import AuthStore, totp_uri
 from .gcore_setup import RENEW_BEFORE, Job, prepare_domain, renew_and_check
 from .gcore_usage import refresh_usage
 from .gcore_usage import human as human_bytes
-from .i18n import N_, tn, tnn, tr
+from .i18n import N_, tn, tnn, tr, trn
 from .notifier import Notifier
 from .config import Domain, Inventory, load_dotenv, load_inventory
-from .credentials import PROVIDERS, CredentialStore
+from .credentials import ENV_TOKENS, PROVIDERS, CredentialStore
 from .db import EventStore
 from .engine import failover
 from .engine.failover import EngineStore, SwitchFailed
@@ -46,7 +46,7 @@ from .views import build_all, build_domain
 log = logging.getLogger("multicdn")
 WEB = Path(__file__).parent / "web"
 FEED_FAST = 90          # seconds between feed reads while something is going on (ADR-001)
-FEED_INTERVAL_OPTIONS = (90, 120, 180, 300)  # idle interval, Settings → Operation; never above 300 (is_stale: 10 min)
+FEED_INTERVAL_OPTIONS = (90, 120, 180, 300)  # idle interval, Settings → Automatic switching; never above 300 (is_stale: 10 min)
 FEED_FAST_MASS = 10     # Cloudflare IPs blocked at ≥3 ISPs that already count as "something going on" (not validated)
 FEED_DOWN_AFTER = timedelta(seconds=90)    # second failure in a row
 CF_READ_AFTER = timedelta(minutes=8)
@@ -142,29 +142,39 @@ async def refresh_feed(state: State, now: datetime | None = None) -> None:
     await run_engine(state)
 
 
-def feed_interval(state: State, now: datetime | None = None, *, quiet: bool = False) -> int:
-    """Seconds until the next feed read (ADR-001): 90 s while something is going on, else the
-    idle interval from Settings → Operation (300 s by default). Logs each change of mode."""
+FEED_LOG_REASON = {"feed": "feed failing or stale", "calendar": "no match calendar", "match": "match window",
+                   "gcore": "serving from Gcore", "blocks": "blocks underway"}
+
+
+def feed_mode(state: State, now: datetime | None = None) -> tuple[int, str | None]:
+    """(seconds until the next feed read, why it is fast: feed | calendar | match | gcore |
+    blocks, or None when idle). ADR-001: 90 s while something is going on, else the idle
+    interval from Settings → Automatic switching (300 s by default)."""
     now = now or datetime.now(UTC)
     calendar = state.calendar
     feed = state.feed
     reason = None
     if feed is None or state.feed_error or feed.is_stale(now):
-        reason = "feed failing or stale"
+        reason = "feed"
     elif calendar is None or calendar.is_stale(now):
-        reason = "no match calendar"
+        reason = "calendar"
     elif calendar.active(now, max(failover.match_lead(state, p) for p in failover.PRIORITIES)):
-        reason = "match window"
+        reason = "match"
     elif any(r.provider == "gcore" for r in state.resolutions.values()) \
             or any(state.engine.get(n).sim_backup for n in state.inventory.domains):
-        reason = "serving from Gcore"
+        reason = "gcore"
     elif state.blocked_domains or feed.blocked_ips() >= FEED_FAST_MASS:
-        reason = "blocks underway"
+        reason = "blocks"
     idle = state.events.get_setting("feed_interval")
-    seconds = FEED_FAST if reason else (idle if idle in FEED_INTERVAL_OPTIONS else FEED_INTERVAL_OPTIONS[-1])
+    return (FEED_FAST if reason else (idle if idle in FEED_INTERVAL_OPTIONS else FEED_INTERVAL_OPTIONS[-1])), reason
+
+
+def feed_interval(state: State, now: datetime | None = None, *, quiet: bool = False) -> int:
+    """Seconds until the next feed read (see feed_mode). Logs each change of mode."""
+    seconds, reason = feed_mode(state, now)
     mode = "fast" if reason else "idle"
     if not quiet and mode != state.feed_mode:
-        log.info("feed polling: every %s s (%s)", seconds, reason or "idle")
+        log.info("feed polling: every %s s (%s)", seconds, FEED_LOG_REASON.get(reason, "idle"))
         state.feed_mode = mode
     return seconds
 
@@ -412,16 +422,14 @@ async def lifespan(app: FastAPI):
     secrets = SecretStore(db_path)
     store = InventoryStore(secrets)
     creds = CredentialStore(secrets)
-    for provider, env in (("cloudflare", "CLOUDFLARE_API_TOKEN"), ("gcore", "GCORE_API_TOKEN")):
-        if os.environ.get(env) and not creds.list(provider):
-            creds.add(provider, tn("Imported from the environment"), os.environ[env])
     if store.is_empty():
         # Primer arranque: importar inventory.yaml (o el ejemplo) si existe.
         with suppress(FileNotFoundError):
             store.import_inventory(load_inventory())
     events = EventStore(db_path)
-    events.listeners.append(Notifier(secrets))
     load_notify_lang(events)
+    env_sync.sync(secrets, events, creds)  # the server's .env has priority at startup
+    events.listeners.append(Notifier(secrets))
     state = State(
         store=store, secrets=secrets, creds=creds, auth=AuthStore(secrets), events=events,
         dry_run_env=os.environ.get("MULTICDN_DRY_RUN", "true").lower() != "false",
@@ -496,14 +504,7 @@ def set_language(request: Request, lang: str, next: str = "/"):
     return response
 
 
-def load_notify_lang(events: EventStore) -> None:
-    """Language of history and alerts. Installs from before it existed wrote in Spanish: they
-    keep Spanish until changed in Settings → Operation."""
-    lang = events.get_value("notify_lang")
-    if lang is None and events.conn.execute("SELECT 1 FROM events LIMIT 1").fetchone():
-        lang = "es"
-        events.set_value("notify_lang", lang)
-    i18n.set_notify(lang)
+load_notify_lang = env_sync.load_notify_lang  # the CLI and the runbook import it from here
 
 
 def _safe_next(value: str | None) -> str:
@@ -573,6 +574,8 @@ templates.env.filters["hhmm"] = lambda value: i18n.when_markup(value, compact=Tr
 templates.env.filters["when_text"] = i18n.format_when
 templates.env.filters["day"] = lambda value: i18n.when_markup(value, time=False)
 templates.env.filters["bytes"] = human_bytes
+templates.env.globals["ENV_REASONS"] = envfile.REASONS
+templates.env.globals["DEPLOY_GUIDE"] = "https://github.com/Pepebits/multi-cdn/blob/main/deploy/README.md"
 
 
 def _asset(path: str) -> str:
@@ -633,6 +636,8 @@ def _common(request: Request, active: str, **extra) -> dict:
         "state_version": state_version(s),
         "flash_ok": request.query_params.get("ok"),
         "flash_error": request.query_params.get("error"),
+        "flash": {"card": request.query_params.get("card"), "ok": request.query_params.get("ok"),
+                  "error": request.query_params.get("error")},
     } | extra
 
 
@@ -682,7 +687,7 @@ def getting_started(s: State, domains) -> list[dict]:
         {"key": "alerts", "done": bool((sec.get("telegram_token") and sec.get("telegram_chat_id"))
                                        or (sec.get("smtp_url") and sec.get("alert_email_to"))),
          "href": "/ajustes/notificaciones"},
-        {"key": "live", "done": not s.dry_run, "href": "/ajustes/operacion"},
+        {"key": "live", "done": not s.dry_run, "href": "/ajustes/cambio#modo"},
     ]
 
 
@@ -1304,13 +1309,69 @@ def _daily_max(series):
 
 
 # ---------------------------------------------------------------- Ajustes
+# Six tabs in setup order (_macros.settings_tabs): cuentas, servidores, notificaciones, cambio
+# (automatic switching), sistema, cuenta. Every save returns to its card (?card=<id>#<id>) and
+# the card shows the message (_macros.card_flash).
+
+SETTINGS_TABS = {"cuentas": N_("Provider accounts"), "servidores": N_("Servers"), "notificaciones": N_("Notifications"),
+                 "cambio": N_("Automatic switching"), "sistema": N_("System"), "cuenta": N_("My account")}
+
 
 @app.get("/ajustes")
 async def ajustes(request: Request):
     return RedirectResponse(request.url_for("ajustes_cuentas"), status_code=303)
 
 
-# ---- Cuentas de proveedor
+@app.get("/ajustes/operacion")
+async def ajustes_operacion(request: Request):
+    """Before 0.3.1: Settings → Operation, now Automatic switching (and System)."""
+    return RedirectResponse(request.url_for("ajustes_cambio"), status_code=301)
+
+
+def _card(url, card: str, **params) -> RedirectResponse:
+    """Back to the settings card that was saved, with its message inside the card."""
+    return _back(url, card, card=card, **params)
+
+
+def _settings_page(request: Request, tab: str, template: str, **extra) -> HTMLResponse:
+    return templates.TemplateResponse(request, template, _common(
+        request, "ajustes", tab=tab, tab_label=tr(SETTINGS_TABS[tab]), settings_cards=True, **extra))
+
+
+def _with_env_warning(message: str, reason: str | None, key: str) -> str:
+    """A save in the panel whose write-back to .env failed: say it in the same message."""
+    if not reason:
+        return message
+    return tr("{message}. Could not update the server's .env ({reason}): update {key} there yourself.",
+              message=message.rstrip("."), reason=tr(envfile.REASONS[reason]), key=key)
+
+
+def _secret_save(s: State, name: str, value: str | None) -> str | None:
+    return envfile.save(s.secrets, name, value)
+
+
+def _env_view(source: str | None, at, env: str | None, state: str | None, error: str | None) -> dict:
+    return {"source": source, "updated_at": at, "env": env, "env_state": state, "env_error": error}
+
+
+def env_mismatches(s: State) -> list[dict]:
+    """Secrets whose value in the server's .env differs from the panel's (the panel could not
+    write .env): on the next start .env replaces them. For Settings → System and open problems."""
+    out = []
+    for st in s.secrets.all_status():
+        if st.env_state in ("differs", "env_only"):
+            out.append({"label": st.label, "env": st.env, "state": st.env_state, "error": st.env_error})
+    for c in s.creds.list():
+        info = s.creds.env_status(c)
+        if info["state"] == "differs":
+            out.append({"label": tr("{provider} token", provider=c.provider_label), "env": info["env"],
+                        "state": "differs", "error": info["error"]})
+    for env in s.creds.env_removed():
+        out.append({"label": env, "env": env, "state": "env_only", "error": s.secrets.env_error(env)})
+    return out
+
+
+# ---- 1. Cuentas de proveedor
 
 async def _check_credential(s: State, cred_id: int) -> tuple[bool, str]:
     cred, secret = s.creds.get(cred_id), s.creds.secret(cred_id)
@@ -1340,10 +1401,13 @@ async def _check_credential(s: State, cred_id: int) -> tuple[bool, str]:
 @app.get("/ajustes/cuentas", response_class=HTMLResponse)
 async def ajustes_cuentas(request: Request):
     s = _state(request)
-    creds = [(c, s.creds.usage(c.id)) for c in s.creds.list()]
-    return templates.TemplateResponse(request, "ajustes_cuentas.html", _common(
-        request, "ajustes", tab="cuentas", creds=creds, providers=PROVIDERS, key_on_disk=s.secrets.key_on_disk,
-        usage=s.gcore_usage))
+    creds = []
+    for c in s.creds.list():
+        info = s.creds.env_status(c)
+        creds.append((c, s.creds.usage(c.id),
+                      _env_view(info["source"], info["at"], info["env"], info["state"], info["error"])))
+    return _settings_page(request, "cuentas", "ajustes_cuentas.html", creds=creds, providers=PROVIDERS,
+                          key_on_disk=s.secrets.key_on_disk, usage=s.gcore_usage, env_removed=s.creds.env_removed())
 
 
 @app.post("/ajustes/cuentas")
@@ -1353,25 +1417,32 @@ async def cuenta_crear(request: Request, provider: str = Form(...), label: str =
     try:
         cred_id = s.creds.add(provider, label, secret)
     except ValueError as exc:
-        return _back(url, error=str(exc))
+        return _card(url, "nueva-cuenta", error=str(exc))
     s.events.add(actor=_actor(request), kind="config", summary=tn("{provider} credential added: {label}", provider=PROVIDERS[provider], label=label.strip()))
     try:
         ok, msg = await _check_credential(s, cred_id)
     except httpx.HTTPError as exc:
         ok, msg = False, tr("Saved, but it could not be verified: {error}", error=type(exc).__name__)
+    card = f"cuenta-{cred_id}"
     if ok:
-        return _back(url, ok=tr('"{label}" saved. {msg}', label=label.strip(), msg=msg))
-    return _back(url, error=tr('"{label}" saved, but the verification failed: {msg}', label=label.strip(), msg=msg))
+        return _card(url, card, ok=tr('"{label}" saved. {msg}', label=label.strip(), msg=msg))
+    return _card(url, card, error=tr('"{label}" saved, but the verification failed: {msg}', label=label.strip(), msg=msg))
 
 
 @app.post("/ajustes/cuentas/{cred_id}/probar")
 async def cuenta_probar(request: Request, cred_id: int):
+    return await _probe_credential(request, cred_id)
+
+
+async def _probe_credential(request: Request, cred_id: int, extra: str = "") -> RedirectResponse:
     s = _state(request)
     try:
         ok, msg = await _check_credential(s, cred_id)
     except (ValueError, httpx.HTTPError) as exc:
         ok, msg = False, str(exc) or type(exc).__name__
-    return _back(request.url_for("ajustes_cuentas"), **({"ok": msg} if ok else {"error": msg}))
+    if extra:
+        msg = f"{extra} · {msg}"
+    return _card(request.url_for("ajustes_cuentas"), f"cuenta-{cred_id}", **({"ok": msg} if ok else {"error": msg}))
 
 
 @app.post("/ajustes/cuentas/{cred_id}/rotar")
@@ -1379,14 +1450,20 @@ async def cuenta_rotar(request: Request, cred_id: int, secret: str = Form("")):
     s = _state(request)
     url = request.url_for("ajustes_cuentas")
     if not secret.strip():
-        return _back(url, error=tr("Enter the new credential"))
+        return _card(url, f"cuenta-{cred_id}", error=tr("Enter the new credential"))
     try:
         s.creds.rotate(cred_id, secret)
         cred = s.creds.get(cred_id)
     except ValueError as exc:
-        return _back(url, error=str(exc))
+        return _card(url, f"cuenta-{cred_id}", error=str(exc))
     s.events.add(actor=_actor(request), kind="config", summary=tn("Credential rotated: {label}", label=cred.label))
-    return await cuenta_probar(request, cred_id)
+    extra = ""
+    if (linked := s.creds.env_credential(cred.provider)) and linked.id == cred_id:
+        env = ENV_TOKENS[cred.provider]
+        if reason := envfile.write_back(s.secrets, env, secret):
+            extra = tr("Could not update the server's .env ({reason}): update {key} there yourself.",
+                       reason=tr(envfile.REASONS[reason]), key=env)
+    return await _probe_credential(request, cred_id, extra)
 
 
 @app.post("/ajustes/cuentas/{cred_id}/eliminar")
@@ -1394,26 +1471,115 @@ async def cuenta_eliminar(request: Request, cred_id: int):
     s = _state(request)
     url = request.url_for("ajustes_cuentas")
     try:
-        label = s.creds.get(cred_id).label
+        cred = s.creds.get(cred_id)
+        linked = s.creds.env_credential(cred.provider)
         s.creds.delete(cred_id)
     except ValueError as exc:
-        return _back(url, error=str(exc))
-    s.events.add(actor=_actor(request), kind="config", summary=tn("Credential deleted: {label}", label=label))
-    return _back(url, ok=tr('"{label}" deleted', label=label))
+        return _card(url, f"cuenta-{cred_id}", error=str(exc))
+    s.events.add(actor=_actor(request), kind="config", summary=tn("Credential deleted: {label}", label=cred.label))
+    msg = tr('"{label}" deleted', label=cred.label)
+    if linked and linked.id == cred_id:
+        env = ENV_TOKENS[cred.provider]
+        msg = _with_env_warning(msg, envfile.write_back(s.secrets, env, None), env)
+    return _card(url, "lista-cuentas", ok=msg)
 
 
-# ---- Notificaciones
+# ---- 2. Servidores
+
+def _ip_hint(ip: str | None) -> str | None:
+    """Only the last part of the origin IP, like any other secret: "···.10"."""
+    if not ip:
+        return None
+    return "···." + ip.rsplit(".", 1)[-1] if "." in ip else "···:" + ip.rsplit(":", 1)[-1]
+
+
+@app.get("/ajustes/servidores", response_class=HTMLResponse)
+async def ajustes_servidores(request: Request):
+    s = _state(request)
+    servers = [{"id": sid, "private_address": srv.private_address, "ip_hint": _ip_hint(s.secrets.get(origin_key(sid))),
+                "hostnames": sum(h.server == sid for d in s.inventory.domains.values() for h in d.hostnames)}
+               for sid, srv in s.inventory.servers.items()]
+    from . import firewall_status
+    fw = firewall_status.read()
+    return _settings_page(request, "servidores", "ajustes_servidores.html", servers=servers, fw=fw,
+                          fw_changes=firewall_status.changes(), fw_problem=fw.problem(datetime.now(UTC)) if fw else None)
+
+
+@app.post("/ajustes/servidores")
+async def servidor_guardar(request: Request, server_id: str = Form(...), origin_ipv4: str = Form(""),
+                           private_address: str = Form("")):
+    s = _state(request)
+    url = request.url_for("ajustes_servidores")
+    sid = server_id.strip().lower()
+    try:
+        s.store.upsert_server(sid, origin_ipv4.strip() or None, private_address.strip() or None)
+    except ValueError as exc:
+        return _card(url, "nuevo-servidor", error=tr("Server: {error}", error=exc))
+    s.events.add(actor=_actor(request), kind="config", summary=tn("Server {server} saved", server=server_id))
+    await _after_inventory_change(s)
+    return _card(url, f"servidor-{sid}", ok=tr("Server {server} saved", server=sid))
+
+
+@app.post("/ajustes/servidores/{server_id}/editar")
+async def servidor_editar(request: Request, server_id: str, new_id: str = Form(...), origin_ipv4: str = Form(""),
+                          private_address: str = Form("")):
+    """An empty IP field keeps the current IP (it is never shown); "Remove IP" removes it."""
+    s = _state(request)
+    url = request.url_for("ajustes_servidores")
+    if server_id not in s.inventory.servers:
+        raise HTTPException(404)
+    try:
+        s.store.rename_server(server_id, new_id)
+        target = new_id.strip().lower()
+        s.store.upsert_server(target, origin_ipv4.strip() or None, private_address.strip() or None)
+    except ValueError as exc:
+        return _card(url, f"servidor-{server_id}", error=tr("Server: {error}", error=exc))
+    s.events.add(actor=_actor(request), kind="config",
+                 summary=(tn("Server {server} updated (now {new})", server=server_id, new=target) if target != server_id
+                          else tn("Server {server} updated", server=server_id)))
+    await _after_inventory_change(s)
+    return _card(url, f"servidor-{target}", ok=tr("Server {server} saved", server=target))
+
+
+@app.post("/ajustes/servidores/{server_id}/quitar-ip")
+async def servidor_quitar_ip(request: Request, server_id: str):
+    s = _state(request)
+    if server_id not in s.inventory.servers:
+        raise HTTPException(404)
+    s.secrets.delete(origin_key(server_id))
+    s.events.add(actor=_actor(request), kind="config", summary=tn("Server {server}: origin IP removed", server=server_id))
+    await _after_inventory_change(s)
+    return _card(request.url_for("ajustes_servidores"), f"servidor-{server_id}",
+                 ok=tr("Origin IP of {server} removed", server=server_id))
+
+
+@app.post("/ajustes/servidores/{server_id}/eliminar")
+async def servidor_eliminar(request: Request, server_id: str):
+    s = _state(request)
+    url = request.url_for("ajustes_servidores")
+    try:
+        s.store.delete_server(server_id)
+    except ValueError as exc:
+        return _card(url, f"servidor-{server_id}", error=str(exc))
+    s.events.add(actor=_actor(request), kind="config", summary=tn("Server {server} deleted", server=server_id))
+    await _after_inventory_change(s)
+    return _card(url, "servidores-titulo", ok=tr("Server {server} deleted", server=server_id))
+
+
+# ---- 3. Notificaciones
 
 @app.get("/ajustes/notificaciones", response_class=HTMLResponse)
 async def ajustes_notificaciones(request: Request):
     s = _state(request)
-    return templates.TemplateResponse(request, "ajustes_notificaciones.html", _common(
-        request, "ajustes", tab="notificaciones", fields={f.name: f for f in s.secrets.all_status()},
-        beat=s.last_beat, beat_health=heartbeat.health(s),
-        key_on_disk=s.secrets.key_on_disk))
+    failures, notes = heartbeat.checks(s)
+    return _settings_page(request, "notificaciones", "ajustes_notificaciones.html",
+                          fields={f.name: f for f in s.secrets.all_status()}, beat=s.last_beat,
+                          beat_failures=[tr(x) for x in failures], beat_notes=[tr(x) for x in notes],
+                          notify_lang=i18n.notify_lang(), quota_gb=s.events.get_setting("gcore_quota_gb"))
 
 
 CHANNELS = {"telegram": ("telegram_token", "telegram_chat_id"), "email": ("smtp_url", "alert_email_to")}
+NOTIFY_FIELDS = {name for names in CHANNELS.values() for name in names}
 
 
 @app.post("/ajustes/notificaciones/canal/{canal}")
@@ -1423,18 +1589,21 @@ async def canal_guardar(request: Request, canal: str):
     if canal not in CHANNELS:
         raise HTTPException(404)
     form = await request.form()
-    saved = []
+    saved, failed = [], None
     for name in CHANNELS[canal]:
         value = str(form.get(name, "")).strip()
         if value:
-            s.secrets.set(name, value)
+            if any(c in value for c in "\r\n"):
+                return _card(request.url_for("ajustes_notificaciones"), f"canal-{canal}", error=tr("Enter a value"))
+            failed = _secret_save(s, name, value) or failed
             saved.append(CREDENTIALS[name][0])  # translated at use: tr()/tn() below
     url = request.url_for("ajustes_notificaciones")
     if not saved:
-        return _back(url, error=tr("You have not entered any new value"))
+        return _card(url, f"canal-{canal}", error=tr("You have not entered any new value"))
     s.events.add(actor=_actor(request), kind="config",
                  summary=tn("Notifications: {fields} updated", fields=", ".join(tn(x) for x in saved)))
-    return _back(url, ok=tr("Saved: {fields}", fields=", ".join(tr(x) for x in saved)))
+    msg = tr("Saved: {fields}", fields=", ".join(tr(x) for x in saved))
+    return _card(url, f"canal-{canal}", ok=_with_env_warning(msg, failed, ".env"))
 
 
 @app.post("/ajustes/notificaciones/latido")
@@ -1443,12 +1612,12 @@ async def latido_guardar(request: Request, heartbeat_url: str = Form("")):
     url = request.url_for("ajustes_notificaciones")
     value = heartbeat_url.strip()
     if not heartbeat.valid_url(value):
-        return _back(url, error=tr("Paste the full ping URL (https://hc-ping.com/…)"))
+        return _card(url, "latido", error=tr("Paste the full ping URL (https://hc-ping.com/…)"))
     host = urlparse(value).hostname or ""
     if os.environ.get("MULTICDN_OFFLINE") != "1" and not await heartbeat.host_is_public(host, s.inventory.origin_ips):
-        return _back(url, error=tr("The ping URL must point to a public server: {host} does not resolve to a public address",
-                                   host=host))
-    s.secrets.set("heartbeat_url", value)
+        return _card(url, "latido", error=tr("The ping URL must point to a public server: {host} does not resolve to a public address",
+                                             host=host))
+    _secret_save(s, "heartbeat_url", value)
     s.events.add(actor=_actor(request), kind="config", summary=tn("External heartbeat: URL updated"))
     return await latido_probar(request)
 
@@ -1459,36 +1628,73 @@ async def latido_probar(request: Request):
     url = request.url_for("ajustes_notificaciones")
     b = await heartbeat.beat(s)
     if b is None:
-        return _back(url, error=tr("The external heartbeat URL is missing"))
+        return _card(url, "latido", error=tr("The external heartbeat URL is missing"))
     if b.result != "ok":
-        return _back(url, error=tr("Could not send the heartbeat: {result}", result=b.result))
+        return _card(url, "latido", error=tr("Could not send the heartbeat: {result}", result=b.result))
     if b.ok:
-        return _back(url, ok=tr("Heartbeat sent: all good"))
-    return _back(url, ok=tr("Heartbeat sent: failure reported ({detail})", detail=b.detail))
+        return _card(url, "latido", ok=tr("Heartbeat sent: all good"))
+    return _card(url, "latido", ok=tr("Heartbeat sent: failure reported ({detail})", detail=b.detail))
+
+
+# Fixed paths before /ajustes/notificaciones/{name}: the first matching route wins.
+@app.post("/ajustes/notificaciones/idioma")
+@app.post("/ajustes/operacion/idioma")  # before 0.3.1
+async def idioma_guardar(request: Request, lang: str = Form("")):
+    """Language of history, alerts and terminal output (what is stored or sent)."""
+    s = _state(request)
+    url = request.url_for("ajustes_notificaciones")
+    code = i18n.normalize(lang)
+    if code is None:
+        return _card(url, "idioma", error=tr("Language not available"))
+    s.events.set_value("notify_lang", code)
+    i18n.set_notify(code)
+    s.events.add(actor=_actor(request), kind="config",
+                 summary=tn("Language of history and alerts: {language}", language=i18n.LANGS[code]))
+    return _card(url, "idioma", ok=tr("Language of history and alerts saved: {language}", language=i18n.LANGS[code]))
+
+
+@app.post("/ajustes/notificaciones/cuota")
+@app.post("/ajustes/operacion/cuota")  # before 0.3.1
+async def cuota_guardar(request: Request, gcore_quota_gb: int = Form(...)):
+    s = _state(request)
+    url = request.url_for("ajustes_notificaciones")
+    try:
+        s.events.set_setting("gcore_quota_gb", gcore_quota_gb)
+    except ValueError as exc:
+        return _card(url, "cuota", error=tr("Quota: {error}", error=exc))
+    s.events.add(actor=_actor(request), kind="config", summary=tn("Gcore monthly quota: {gb} GB", gb=gcore_quota_gb))
+    if os.environ.get("MULTICDN_OFFLINE") != "1":
+        asyncio.create_task(refresh_usage(s))
+    return _card(url, "cuota", ok=tr("Quota saved: {gb} GB per month", gb=gcore_quota_gb))
+
+
+def _field_card(name: str) -> str:
+    return "latido" if name == "heartbeat_url" else ("canal-telegram" if name.startswith("telegram") else "canal-email")
 
 
 @app.post("/ajustes/notificaciones/{name}")
 async def notificacion_guardar(request: Request, name: str, value: str = Form("")):
     s = _state(request)
-    if name not in CREDENTIALS:
+    if name not in NOTIFY_FIELDS:
         raise HTTPException(404)
     url = request.url_for("ajustes_notificaciones")
-    try:
-        s.secrets.set(name, value)
-    except ValueError:
-        return _back(url, error=tr("Enter a value"))
+    if not value.strip() or any(c in value for c in "\r\n"):
+        return _card(url, _field_card(name), error=tr("Enter a value"))
+    reason = _secret_save(s, name, value)
     s.events.add(actor=_actor(request), kind="config", summary=tn("Notifications: {fields} updated", fields=tn(CREDENTIALS[name][0])))
-    return _back(url, ok=tr("{field} saved", field=tr(CREDENTIALS[name][0])))
+    return _card(url, _field_card(name), ok=_with_env_warning(tr("{field} saved", field=tr(CREDENTIALS[name][0])),
+                                                              reason, CREDENTIALS[name][1]))
 
 
 @app.post("/ajustes/notificaciones/{name}/eliminar")
 async def notificacion_eliminar(request: Request, name: str):
     s = _state(request)
-    if name not in CREDENTIALS:
+    if name not in NOTIFY_FIELDS | {"heartbeat_url"}:
         raise HTTPException(404)
-    s.secrets.delete(name)
+    reason = _secret_save(s, name, None)
     s.events.add(actor=_actor(request), kind="config", summary=tn("Notifications: {field} removed", field=tn(CREDENTIALS[name][0])))
-    return _back(request.url_for("ajustes_notificaciones"), ok=tr("{field} removed", field=tr(CREDENTIALS[name][0])))
+    return _card(request.url_for("ajustes_notificaciones"), _field_card(name),
+                 ok=_with_env_warning(tr("{field} removed", field=tr(CREDENTIALS[name][0])), reason, CREDENTIALS[name][1]))
 
 
 @app.post("/ajustes/notificaciones/probar/{canal}")
@@ -1505,47 +1711,66 @@ async def notificacion_probar(request: Request, canal: str):
             raise HTTPException(404)
     except httpx.HTTPError as exc:
         ok, msg = False, tr("Network error: {error}", error=type(exc).__name__)
-    return _back(request.url_for("ajustes_notificaciones"), **({"ok": msg} if ok else {"error": msg}))
+    return _card(request.url_for("ajustes_notificaciones"), f"canal-{canal}", **({"ok": msg} if ok else {"error": msg}))
 
 
-# ---- Servidores y operación
+# ---- 4. Cambio automático
 
-@app.get("/ajustes/servidores", response_class=HTMLResponse)
-async def ajustes_servidores(request: Request):
+FEED_REASONS = {
+    "feed": N_("feed failing"),
+    "calendar": N_("no match calendar"),
+    "gcore": N_("domain on Gcore"),
+    "blocks": N_("blocks underway"),
+}
+
+
+def feed_reason_text(s: State, now: datetime | None = None) -> str:
+    """Why the feed is read at its current pace, for the pill on Settings → Automatic switching."""
+    now = now or datetime.now(UTC)
+    _seconds, reason = feed_mode(s, now)
+    if reason is None:
+        return tr("nothing going on")
+    if reason == "match":
+        match = s.calendar.active(now, max(failover.match_lead(s, p) for p in failover.PRIORITIES)) if s.calendar else None
+        if match is None or match.kickoff <= now:
+            return tr("match in progress")
+        minutes = int((match.kickoff - now).total_seconds() // 60)
+        return tr("match in {time}", time=f"{minutes // 60} h" if minutes >= 120 else f"{minutes} min")
+    return tr(FEED_REASONS[reason])
+
+
+def feed_option_label(seconds: int) -> str:
+    if seconds == FEED_INTERVAL_OPTIONS[-1]:
+        return tr("{minutes} min (default)", minutes=seconds // 60)
+    return tr("{minutes} min", minutes=seconds // 60) if seconds % 60 == 0 else tr("{seconds} s", seconds=seconds)
+
+
+@app.get("/ajustes/cambio", response_class=HTMLResponse)
+async def ajustes_cambio(request: Request):
     s = _state(request)
-    servers = [{"id": sid, "private_address": srv.private_address, "origin_ip": s.secrets.get(origin_key(sid)),
-                "hostnames": sum(h.server == sid for d in s.inventory.domains.values() for h in d.hostnames)}
-               for sid, srv in s.inventory.servers.items()]
-    from . import firewall_status
-    fw = firewall_status.read()
-    return templates.TemplateResponse(request, "ajustes_servidores.html", _common(
-        request, "ajustes", tab="servidores", servers=servers, fw=fw, fw_changes=firewall_status.changes(),
-        fw_problem=fw.problem(datetime.now(UTC)) if fw else None))
-
-
-@app.get("/ajustes/operacion", response_class=HTMLResponse)
-async def ajustes_operacion(request: Request):
-    s = _state(request)
-    return templates.TemplateResponse(request, "ajustes_operacion.html", _common(
-        request, "ajustes", tab="operacion", dry_run_env=s.dry_run_env, key_on_disk=s.secrets.key_on_disk,
-        ev_stats=s.events.stats(), ev_days=s.events.get_setting("events_max_days"),
-        ev_rows=s.events.get_setting("events_max_rows"), auto_on=failover.auto_enabled(s),
-        quota_gb=s.events.get_setting("gcore_quota_gb"), calendar=s.calendar, calendar_error=s.calendar_error,
-        fd=s.secrets.status("football_data_token"), now=datetime.now(UTC), notify_lang=i18n.notify_lang(),
+    eligible = [n for n, d in s.inventory.domains.items() if failover.eligible(d)]
+    on_gcore = {n for n, d in s.inventory.domains.items()
+                if any((r := s.resolutions.get(h.name)) and r.provider == "gcore" for h in d.hostnames)}
+    return _settings_page(
+        request, "cambio", "ajustes_cambio.html", dry_run_env=s.dry_run_env, auto_on=failover.auto_enabled(s),
+        auto_count=len(eligible), auto_on_gcore=len(on_gcore & set(eligible)),
+        calendar=s.calendar, calendar_error=s.calendar_error, fd=s.secrets.status("football_data_token"),
+        now=datetime.now(UTC),
         timings={p: {"match_lead": int(failover.match_lead(s, p).total_seconds() // 60),
                      "return_after": int(failover.return_after(s, p).total_seconds() // 60),
                      "default_lead": failover.DEFAULT_MATCH_LEAD[p], "default_wait": failover.DEFAULT_RETURN_AFTER[p]}
                  for p in failover.PRIORITIES},
-        limits=failover.TIMING_LIMITS, feed_options=FEED_INTERVAL_OPTIONS,
+        limits=failover.TIMING_LIMITS, feed_options=[(v, feed_option_label(v)) for v in FEED_INTERVAL_OPTIONS],
         feed_idle=s.events.get_setting("feed_interval"), feed_now=feed_interval(s, quiet=True),
-        error_reporting=error_reporting.status()))
+        feed_why=feed_reason_text(s))
 
 
-@app.post("/ajustes/operacion/tiempos")
+@app.post("/ajustes/cambio/tiempos")
+@app.post("/ajustes/operacion/tiempos")  # before 0.3.1
 async def tiempos_guardar(request: Request):
     """Antelación antes de un partido y espera sin bloqueos para volver, por prioridad."""
     s = _state(request)
-    url = request.url_for("ajustes_operacion")
+    url = request.url_for("ajustes_cambio")
     form = await request.form()
     values = {}
     for kind, (lo, hi) in failover.TIMING_LIMITS.items():
@@ -1556,9 +1781,9 @@ async def tiempos_guardar(request: Request):
             try:
                 minutes = int(str(form.get(failover.timing_key(kind, p), "")))
             except ValueError:
-                return _back(url, "tiempos", error=tr("Enter whole minutes"))
+                return _card(url, "tiempos", error=tr("Enter whole minutes"))
             if not lo <= minutes <= hi:
-                return _back(url, "tiempos", error=tr("Times must be between {lo} and {hi} min", lo=lo, hi=hi))
+                return _card(url, "tiempos", error=tr("Times must be between {lo} and {hi} min", lo=lo, hi=hi))
             values[(kind, p)] = minutes
     for (kind, p), minutes in values.items():
         s.events.set_value(failover.timing_key(kind, p), str(minutes))
@@ -1566,154 +1791,143 @@ async def tiempos_guardar(request: Request):
                            priority=tn(PRIORITY_NAME[p]), lead=values[("match_lead", p)], wait=values[("return_after", p)])
                         for p in failover.PRIORITIES)
     s.events.add(actor=_actor(request), kind="config", summary=tn("Switching times: {summary}", summary=summary))
-    return _back(url, "tiempos", ok=tr("Default switching times restored") if form.get("reset") else tr("Switching times saved"))
+    return _card(url, "tiempos", ok=tr("Default switching times restored") if form.get("reset") else tr("Switching times saved"))
 
 
 PRIORITY_NAME = {"critical": N_("Critical"), "medium": N_("Medium"), "low": N_("Low")}
 
 
-@app.post("/ajustes/operacion/feed")
+@app.post("/ajustes/cambio/feed")
+@app.post("/ajustes/operacion/feed")  # before 0.3.1
 async def feed_guardar(request: Request, seconds: str = Form("")):
     """Idle interval between block feed reads (ADR-001); the fast one (90 s) is fixed."""
     s = _state(request)
-    url = request.url_for("ajustes_operacion")
+    url = request.url_for("ajustes_cambio")
     try:
         value = int(seconds)
     except ValueError:
         value = 0
     if value not in FEED_INTERVAL_OPTIONS:
-        return _back(url, "feed", error=tr("Choose one of the listed intervals"))
+        return _card(url, "feed", error=tr("Choose one of the listed intervals"))
     s.events.set_setting("feed_interval", value)
     s.events.add(actor=_actor(request), kind="config",
                  summary=tn("Block feed read every {seconds} s when nothing is going on", seconds=value))
-    return _back(url, "feed", ok=tr("Feed interval saved"))
+    return _card(url, "feed", ok=tr("Feed interval saved"))
 
 
-@app.post("/ajustes/operacion/automatico")
+@app.post("/ajustes/cambio/automatico")
+@app.post("/ajustes/operacion/automatico")  # before 0.3.1
 async def automatico_global(request: Request, enabled: str = Form("")):
     s = _state(request)
     on = enabled == "1"
     s.events.set_setting("auto_switch", int(on))
     s.events.add(actor=_actor(request), kind="config",
                  summary=tn("Automatic CDN switching enabled") if on else tn("Automatic CDN switching disabled for all domains"))
-    return _back(request.url_for("ajustes_operacion"),
+    return _card(request.url_for("ajustes_cambio"), "automatico",
                  ok=tr("Automatic switching enabled") if on else tr("Automatic switching disabled"))
 
 
-@app.post("/ajustes/operacion/idioma")
-async def idioma_guardar(request: Request, lang: str = Form("")):
-    """Language of history, alerts and terminal output (what is stored or sent)."""
-    s = _state(request)
-    url = request.url_for("ajustes_operacion")
-    code = i18n.normalize(lang)
-    if code is None:
-        return _back(url, "idioma", error=tr("Language not available"))
-    s.events.set_value("notify_lang", code)
-    i18n.set_notify(code)
-    s.events.add(actor=_actor(request), kind="config",
-                 summary=tn("Language of history and alerts: {language}", language=i18n.LANGS[code]))
-    return _back(url, "idioma", ok=tr("Language of history and alerts saved: {language}", language=i18n.LANGS[code]))
-
-
-@app.post("/ajustes/operacion/cuota")
-async def cuota_guardar(request: Request, gcore_quota_gb: int = Form(...)):
-    s = _state(request)
-    url = request.url_for("ajustes_operacion")
-    try:
-        s.events.set_setting("gcore_quota_gb", gcore_quota_gb)
-    except ValueError as exc:
-        return _back(url, error=tr("Quota: {error}", error=exc))
-    s.events.add(actor=_actor(request), kind="config", summary=tn("Gcore monthly quota: {gb} GB", gb=gcore_quota_gb))
-    if os.environ.get("MULTICDN_OFFLINE") != "1":
-        asyncio.create_task(refresh_usage(s))
-    return _back(url, ok=tr("Quota saved: {gb} GB per month", gb=gcore_quota_gb))
-
-
-@app.post("/ajustes/operacion/football-data")
+@app.post("/ajustes/cambio/football-data")
+@app.post("/ajustes/operacion/football-data")  # before 0.3.1
 async def football_data_guardar(request: Request, token: str = Form("")):
     s = _state(request)
-    url = request.url_for("ajustes_operacion")
-    if not token.strip():
-        return _back(url, error=tr("Enter the key"))
-    s.secrets.set("football_data_token", token)
+    url = request.url_for("ajustes_cambio")
+    if not token.strip() or any(c in token for c in "\r\n"):
+        return _card(url, "calendario", error=tr("Enter the key"))
+    reason = _secret_save(s, "football_data_token", token)
     s.events.add(actor=_actor(request), kind="config", summary=tn("football-data.org key saved"))
     await refresh_calendar(s)
     result = s.calendar.sources.get("football-data.org") if s.calendar else s.calendar_error
     if result == "ok":
-        return _back(url, ok=tr("Key saved and verified · {n} matches in the calendar", n=len(s.calendar.matches)))
-    return _back(url, error=tr("Key saved, but football-data.org is not responding properly: {result}", result=result))
+        msg = tr("Key saved and verified · {n} matches in the calendar", n=len(s.calendar.matches))
+        return _card(url, "calendario", ok=_with_env_warning(msg, reason, "FOOTBALL_DATA_TOKEN"))
+    return _card(url, "calendario", error=tr("Key saved, but football-data.org is not responding properly: {result}", result=result))
 
 
-@app.post("/ajustes/operacion/football-data/eliminar")
+@app.post("/ajustes/cambio/football-data/quitar")
+@app.post("/ajustes/operacion/football-data/eliminar")  # before 0.3.1
 async def football_data_eliminar(request: Request):
     s = _state(request)
-    s.secrets.delete("football_data_token")
-    s.events.add(actor=_actor(request), kind="config", summary=tn("football-data.org key deleted"))
+    reason = _secret_save(s, "football_data_token", None)
+    s.events.add(actor=_actor(request), kind="config", summary=tn("football-data.org key removed"))
     await refresh_calendar(s)
-    return _back(request.url_for("ajustes_operacion"), ok=tr("football-data.org key deleted"))
+    return _card(request.url_for("ajustes_cambio"), "calendario",
+                 ok=_with_env_warning(tr("football-data.org key removed"), reason, "FOOTBALL_DATA_TOKEN"))
 
 
-@app.post("/ajustes/operacion/retencion")
+# ---- 5. Sistema
+
+@app.get("/ajustes/sistema", response_class=HTMLResponse)
+async def ajustes_sistema(request: Request):
+    s = _state(request)
+    return _settings_page(
+        request, "sistema", "ajustes_sistema.html", key_on_disk=s.secrets.key_on_disk,
+        ev_stats=s.events.stats(), ev_days=s.events.get_setting("events_max_days"),
+        ev_rows=s.events.get_setting("events_max_rows"), error_reporting=error_reporting.status(),
+        dsn=s.secrets.status("sentry_dsn"), env_file=envfile.status(s.secrets), env_mismatches=env_mismatches(s),
+        env_managed=sorted(envfile.MANAGED))
+
+
+DSN_PROBLEMS = {
+    "shape": N_("That is not a DSN: copy it from the project's settings (https://key@host/project)"),
+    "https": N_("The DSN must use https"),
+    "host": N_("The DSN must point to a public server name, not an IP address or a local name"),
+}
+
+
+@app.post("/ajustes/sistema/errores")
+async def errores_guardar(request: Request, dsn: str = Form("")):
+    s = _state(request)
+    url = request.url_for("ajustes_sistema")
+    value = dsn.strip()
+    if not value:
+        return _card(url, "errores", error=tr("Paste the DSN"))
+    if problem := error_reporting.dsn_problem(value):
+        return _card(url, "errores", error=tr(DSN_PROBLEMS[problem]))
+    host = urlparse(value).hostname or ""
+    if os.environ.get("MULTICDN_OFFLINE") != "1" and not await heartbeat.host_is_public(host, s.inventory.origin_ips):
+        return _card(url, "errores", error=tr("The DSN must point to a public server: {host} does not resolve to a public address",
+                                              host=host))
+    reason = _secret_save(s, "sentry_dsn", value)
+    error_reporting.reconfigure(value)
+    s.events.add(actor=_actor(request), kind="config", summary=tn("Error reporting DSN updated"))
+    return _card(url, "errores", ok=_with_env_warning(tr("Error reporting DSN saved"), reason, "MULTICDN_SENTRY_DSN"))
+
+
+@app.post("/ajustes/sistema/errores/quitar")
+async def errores_quitar(request: Request):
+    s = _state(request)
+    reason = _secret_save(s, "sentry_dsn", None)
+    error_reporting.reconfigure(None)
+    s.events.add(actor=_actor(request), kind="config", summary=tn("Error reporting DSN removed"))
+    return _card(request.url_for("ajustes_sistema"), "errores",
+                 ok=_with_env_warning(tr("Error reporting is off: nothing is sent"), reason, "MULTICDN_SENTRY_DSN"))
+
+
+@app.post("/ajustes/sistema/errores/probar")
+async def errores_probar(request: Request):
+    url = request.url_for("ajustes_sistema")
+    event_id = error_reporting.send_test()
+    if not event_id:
+        return _card(url, "errores", error=tr("Error reporting is off: save a DSN first"))
+    return _card(url, "errores", ok=tr("Test error sent · event {id}", id=event_id))
+
+
+@app.post("/ajustes/sistema/retencion")
+@app.post("/ajustes/operacion/retencion")  # before 0.3.1
 async def retencion_guardar(request: Request, events_max_days: int = Form(...), events_max_rows: int = Form(...)):
     s = _state(request)
-    url = request.url_for("ajustes_operacion")
+    url = request.url_for("ajustes_sistema")
     try:
         s.events.set_setting("events_max_days", events_max_days)
         s.events.set_setting("events_max_rows", events_max_rows)
     except ValueError as exc:
-        return _back(url, error=tr("Retention: {error}", error=exc))
+        return _card(url, "mantenimiento", error=tr("Retention: {error}", error=exc))
     deleted = s.events.prune()
     s.events.add(actor=_actor(request), kind="config",
                  summary=tn("History retention: {days} days, at most {rows} events", days=events_max_days, rows=events_max_rows))
-    return _back(url, ok=tr("Retention saved · {n} old events deleted", n=deleted))
-
-
-@app.post("/ajustes/servidores")
-async def servidor_guardar(request: Request, server_id: str = Form(...), origin_ipv4: str = Form(""),
-                           private_address: str = Form("")):
-    s = _state(request)
-    try:
-        s.store.upsert_server(server_id.strip().lower(), origin_ipv4.strip() or None, private_address.strip() or None)
-    except ValueError as exc:
-        return _back(request.url_for("ajustes_servidores"), error=tr("Server: {error}", error=exc))
-    s.events.add(actor=_actor(request), kind="config", summary=tn("Server {server} saved", server=server_id))
-    await _after_inventory_change(s)
-    return _back(request.url_for("ajustes_servidores"), ok=tr("Server {server} saved", server=server_id))
-
-
-@app.post("/ajustes/servidores/{server_id}/editar")
-async def servidor_editar(request: Request, server_id: str, new_id: str = Form(...), origin_ipv4: str = Form(""),
-                          private_address: str = Form("")):
-    s = _state(request)
-    url = request.url_for("ajustes_servidores")
-    if server_id not in s.inventory.servers:
-        raise HTTPException(404)
-    try:
-        s.store.rename_server(server_id, new_id)
-        target = new_id.strip().lower()
-        if origin_ipv4.strip():
-            s.store.upsert_server(target, origin_ipv4.strip(), private_address.strip() or None)
-        else:
-            s.secrets.delete(origin_key(target))
-            s.store.upsert_server(target, None, private_address.strip() or None)
-    except ValueError as exc:
-        return _back(url, error=tr("Server: {error}", error=exc))
-    s.events.add(actor=_actor(request), kind="config",
-                 summary=(tn("Server {server} updated (now {new})", server=server_id, new=target) if target != server_id
-                          else tn("Server {server} updated", server=server_id)))
-    await _after_inventory_change(s)
-    return _back(url, ok=tr("Server {server} saved", server=target))
-
-
-@app.post("/ajustes/servidores/{server_id}/eliminar")
-async def servidor_eliminar(request: Request, server_id: str):
-    s = _state(request)
-    try:
-        s.store.delete_server(server_id)
-    except ValueError as exc:
-        return _back(request.url_for("ajustes_servidores"), error=str(exc))
-    await _after_inventory_change(s)
-    return _back(request.url_for("ajustes_servidores"), ok=tr("Server {server} deleted", server=server_id))
+    return _card(url, "mantenimiento", ok=trn("Retention saved · {n} old event deleted",
+                                              "Retention saved · {n} old events deleted", deleted))
 
 
 @app.get("/ajustes/inventario.yaml")
@@ -1909,9 +2123,28 @@ async def logout(request: Request):
 async def ajustes_cuenta(request: Request):
     s = _state(request)
     me = request.state.session
-    return templates.TemplateResponse(request, "ajustes_cuenta.html", _common(
-        request, "ajustes", tab="cuenta", sessions=s.auth.list_sessions(me.user.id), current_hash=me.id_hash,
-        recovery_left=s.auth.recovery_left(me.user.id)))
+    return _settings_page(request, "cuenta", "ajustes_cuenta.html", sessions=s.auth.list_sessions(me.user.id),
+                          current_hash=me.id_hash, recovery_left=s.auth.recovery_left(me.user.id),
+                          recovery_low=RECOVERY_LOW)
+
+
+RECOVERY_LOW = 2  # recovery codes left that already deserve a warning (and an open problem)
+
+
+def ua_summary(user_agent: str | None) -> str:
+    """"Chrome · macOS" from a User-Agent header (the full text goes in a tooltip)."""
+    ua = user_agent or ""
+    browsers = (("Edg/", "Edge"), ("OPR/", "Opera"), ("Firefox/", "Firefox"), ("FxiOS/", "Firefox"),
+                ("CriOS/", "Chrome"), ("Chrome/", "Chrome"), ("Safari/", "Safari"), ("curl/", "curl"))
+    systems = (("iPhone", "iOS"), ("iPad", "iPadOS"), ("Android", "Android"), ("CrOS", "ChromeOS"),
+               ("Mac OS X", "macOS"), ("Macintosh", "macOS"), ("Windows", "Windows"), ("Linux", "Linux"))
+    browser = next((name for mark, name in browsers if mark in ua), None)
+    system = next((name for mark, name in systems if mark in ua), None)
+    parts = [p for p in (browser, system) if p]
+    return " · ".join(parts) if parts else (ua[:40] or "—")
+
+
+templates.env.filters["ua"] = ua_summary
 
 
 @app.post("/ajustes/cuenta/password")
@@ -1927,13 +2160,13 @@ async def cuenta_password(request: Request, current: str = Form(""), code: str =
     if isinstance(passed, Response):
         return passed
     if not passed:
-        return _back(url, error=tr("The current password or the code is not correct"))
+        return _card(url, "password", error=tr("The current password or the code is not correct"))
     if new != new2:
-        return _back(url, error=tr("The new passwords do not match"))
+        return _card(url, "password", error=tr("The new passwords do not match"))
     try:
         s.auth.set_password(me.user.id, new)
     except ValueError as exc:
-        return _back(url, error=str(exc))
+        return _card(url, "password", error=str(exc))
     closed = s.auth.close_sessions(me.user.id, except_hash=me.id_hash)
     s.events.add(actor=me.user.username, kind="auth", summary=tn("Password changed; {n} sessions closed", n=closed))
     if closed == 0:
@@ -1942,7 +2175,7 @@ async def cuenta_password(request: Request, current: str = Form(""), code: str =
         msg = tr("Password changed. Your other session has been closed.")
     else:
         msg = tr("Password changed. Your other {n} sessions have been closed.", n=closed)
-    return _back(url, ok=msg)
+    return _card(url, "password", ok=msg)
 
 
 @app.post("/ajustes/cuenta/recuperacion")
@@ -1953,7 +2186,7 @@ async def cuenta_recuperacion(request: Request, code: str = Form("")):
     if isinstance(passed, Response):
         return passed
     if not passed:
-        return _back(request.url_for("ajustes_cuenta"), error=tr("Wrong TOTP code"))
+        return _card(request.url_for("ajustes_cuenta"), "recuperacion", error=tr("Wrong TOTP code"))
     codes = s.auth.new_recovery_codes(me.user.id)
     s.events.add(actor=me.user.username, kind="auth", summary=tn("Recovery codes regenerated"))
     return _auth_page(request, "login_recuperacion.html", codes=codes, next="/ajustes/cuenta")
@@ -1968,7 +2201,7 @@ async def cuenta_cerrar_sesion(request: Request, id_hash: str):
         s.events.add(actor=me.user.username, kind="auth", summary=tn("Session closed from My account"))
     if id_hash == me.id_hash:
         return _with_session(RedirectResponse("/login", status_code=303), request, None)
-    return _back(request.url_for("ajustes_cuenta"), ok=tr("Session closed"))
+    return _card(request.url_for("ajustes_cuenta"), "sesiones", ok=tr("Session closed"))
 
 
 @app.get("/api/estado")

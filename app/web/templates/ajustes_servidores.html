@@ -1,16 +1,24 @@
 {% extends "base.html" %}
 {% block title %}{{ _("Servers") }}{% endblock %}
 {% block crumb %}{{ m.crumbs(_('Servers'), [(_('Settings'), '/ajustes/cuentas')]) }}{% endblock %}
-{% block heading %}{{ _("Settings") }}{% endblock %}
+{% block heading %}{{ _("Settings") }} · {{ tab_label }}{% endblock %}
 
 {% block content %}
 {{ m.settings_tabs(tab) }}
 
 <section class="card" aria-labelledby="servidores-titulo">
-  <div class="card__head"><h2 id="servidores-titulo">{{ m.icon('server') }} {{ _("Origin servers") }}</h2><span class="mono muted">{{ _("{n} registered", n=servers|length) }}</span></div>
-  <p class="card__body help" style="margin:0">{{ m.icon('info') }} {{ _("The IP is stored encrypted in the database and is not included in the YAML export. Avoid sharing screenshots of this page.") }}</p>
+  <div class="card__head"><h2 id="servidores-titulo">{{ m.icon('server') }} {{ _("Origin servers") }}</h2><span class="mono muted">{{ _n("{n} server", "{n} servers", servers|length) }}</span></div>
+  {{ m.card_flash(flash, 'servidores-titulo') }}
+  <div class="card__body stack-gap">
+    <p class="card__intro">{{ _("The origin IP is stored encrypted, never shown again and left out of the YAML export: leave its field empty to keep it.") }}</p>
+    <p id="pa-help" class="help flush">{{ _("Private address: name or IP on your private network (Tailscale, WireGuard, NetBird or local network). Only needed if the panel runs on another server: to check the health of the origin and receive the status of its firewall.") }}</p>
+  </div>
   {% for srv in servers %}
-  <form class="server-row" method="post" action="/ajustes/servidores/{{ srv.id }}/editar" aria-label="{{ _('Server {server}', server=srv.id) }}">{{ csrf_field() }}
+  <form class="server-row" method="post" action="/ajustes/servidores/{{ srv.id }}/editar" aria-labelledby="servidor-{{ srv.id }}">{{ csrf_field() }}
+    <h3 id="servidor-{{ srv.id }}" class="server-row__title">{{ srv.id }}
+      {% if srv.ip_hint %}<span class="pill pill--free">{{ _("IP set") }}</span> <span class="mono muted">{{ srv.ip_hint }}</span>
+      {% else %}<span class="pill pill--nodata">{{ _("No IP") }}</span>{% endif %}</h3>
+    {{ m.card_flash(flash, 'servidor-' ~ srv.id) }}
     <div class="card__body form-grid">
       <div>
         <label for="id-{{ loop.index }}">{{ _("Name") }}</label>
@@ -18,49 +26,58 @@
       </div>
       <div>
         <label for="ip-{{ loop.index }}">{{ _("Origin IP (IPv4)") }}</label>
-        <input id="ip-{{ loop.index }}" type="text" name="origin_ipv4" value="{{ srv.origin_ip or '' }}" autocomplete="off" spellcheck="false" inputmode="decimal">
+        <input id="ip-{{ loop.index }}" type="password" name="origin_ipv4" autocomplete="off" spellcheck="false" inputmode="decimal"
+               placeholder="{{ _('Set · {hint}', hint=srv.ip_hint) if srv.ip_hint else '' }}" aria-describedby="ip-help-{{ loop.index }}">
+        <p id="ip-help-{{ loop.index }}" class="help">{{ _("Type it only to replace it; empty keeps the current one.") if srv.ip_hint else _("The IPv4 address of this server.") }}</p>
       </div>
       <div>
         <label for="pa-{{ loop.index }}">{{ _("Private address (optional)") }}</label>
-        <input id="pa-{{ loop.index }}" type="text" name="private_address" value="{{ srv.private_address or '' }}" placeholder="vps-1.tailnet.ts.net" autocomplete="off" spellcheck="false" aria-describedby="pa-help-{{ loop.index }}">
+        <input id="pa-{{ loop.index }}" type="text" name="private_address" value="{{ srv.private_address or '' }}" placeholder="vps-1.tailnet.ts.net" autocomplete="off" spellcheck="false" aria-describedby="pa-help">
       </div>
     </div>
-    <p id="pa-help-{{ loop.index }}" class="card__body help field-note">{{ _("Private address: name or IP on your private network (Tailscale, WireGuard, NetBird or local network). Only needed if the panel runs on another server: to check the health of the origin and receive the status of its firewall.") }}</p>
     <div class="card__foot actions-end">
       <span class="help server-row__meta">{{ _n("{n} hostname assigned", "{n} hostnames assigned", srv.hostnames) }}</span>
+      {% if srv.ip_hint %}<button class="btn" type="button" data-open="quitar-ip-{{ loop.index }}">{{ _("Remove IP") }}<span class="visually-hidden"> {{ srv.id }}</span></button>{% endif %}
       {% if srv.hostnames == 0 %}
-      <button class="btn btn--danger" type="submit" formaction="/ajustes/servidores/{{ srv.id }}/eliminar" formnovalidate>{{ m.icon('trash') }} {{ _("Delete") }}<span class="visually-hidden"> {{ srv.id }}</span></button>
+      <button class="btn btn--danger" type="button" data-open="del-srv-{{ loop.index }}">{{ m.icon('trash') }} {{ _("Delete") }}<span class="visually-hidden"> {{ srv.id }}</span></button>
       {% endif %}
       <button class="btn btn--primary" type="submit">{{ _("Save") }}<span class="visually-hidden"> {{ srv.id }}</span></button>
     </div>
   </form>
   {% endfor %}
 </section>
+{% for srv in servers %}
+{% if srv.ip_hint %}{{ m.confirm('quitar-ip-' ~ loop.index, _('Remove the IP of {server}', server=srv.id), (_n('Its {n} hostname has no origin to return to until you set it again.', 'Its {n} hostnames have no origin to return to until you set them again.', srv.hostnames) if srv.hostnames else _('The server stays, without an origin IP.')), '/ajustes/servidores/' ~ srv.id ~ '/quitar-ip', _('Remove IP'), 'x') }}{% endif %}
+{% if srv.hostnames == 0 %}{{ m.confirm('del-srv-' ~ loop.index, _('Delete {server}', server=srv.id), _('The server and its origin IP are deleted from the panel. No hostname uses it.'), '/ajustes/servidores/' ~ srv.id ~ '/eliminar', _('Delete server')) }}{% endif %}
+{% endfor %}
 
 <section class="card" aria-labelledby="nuevo-servidor">
   <div class="card__head"><h2 id="nuevo-servidor">{{ m.icon('plus') }} {{ _("Add server") }}</h2></div>
-  <form class="card__body form-inline" method="post" action="/ajustes/servidores">{{ csrf_field() }}
-    <div>
-      <label for="server_id">{{ _("Name") }}</label>
-      <input id="server_id" type="text" name="server_id" required placeholder="vps-2" autocomplete="off" spellcheck="false">
+  {{ m.card_flash(flash, 'nuevo-servidor') }}
+  <form method="post" action="/ajustes/servidores">{{ csrf_field() }}
+    <div class="card__body form-grid">
+      <div>
+        <label for="server_id">{{ _("Name") }}</label>
+        <input id="server_id" type="text" name="server_id" required placeholder="vps-2" autocomplete="off" spellcheck="false" aria-describedby="server-id-help">
+        <p id="server-id-help" class="help">{{ _("Lowercase letters, numbers and hyphens.") }}</p>
+      </div>
+      <div>
+        <label for="origin_ipv4">{{ _("Origin IP (IPv4)") }}</label>
+        <input id="origin_ipv4" type="password" name="origin_ipv4" autocomplete="off" spellcheck="false" inputmode="decimal">
+      </div>
+      <div>
+        <label for="private_address">{{ _("Private address (optional)") }}</label>
+        <input id="private_address" type="text" name="private_address" placeholder="vps-2.tailnet.ts.net" autocomplete="off" spellcheck="false" aria-describedby="pa-help">
+      </div>
     </div>
-    <div>
-      <label for="origin_ipv4">{{ _("Origin IP (IPv4)") }}</label>
-      <input id="origin_ipv4" type="text" name="origin_ipv4" autocomplete="off" spellcheck="false" inputmode="decimal">
-    </div>
-    <div>
-      <label for="private_address">{{ _("Private address (optional)") }}</label>
-      <input id="private_address" type="text" name="private_address" placeholder="vps-2.tailnet.ts.net" autocomplete="off" spellcheck="false" aria-describedby="private-address-help">
-    </div>
-    <div class="form-actions"><button class="btn btn--primary" type="submit">{{ m.icon('plus') }} {{ _("Add server") }}</button></div>
-    <p id="private-address-help" class="help field-note">{{ _("Private address: name or IP on your private network (Tailscale, WireGuard, NetBird or local network). Only needed if the panel runs on another server: to check the health of the origin and receive the status of its firewall.") }}</p>
+    <div class="card__foot actions-end"><button class="btn btn--primary" type="submit">{{ m.icon('plus') }} {{ _("Add server") }}</button></div>
   </form>
 </section>
 
 <section class="card" aria-labelledby="firewall-titulo">
   <div class="card__head">
     <h2 id="firewall-titulo">{{ m.icon('shield') }} {{ _("Origin firewall") }}</h2>
-    {% if not fw %}<span class="pill pill--nodata">{{ _("Not installed") }}</span>
+    {% if not fw %}<span class="pill pill--warn">{{ _("Not installed") }}</span>
     {% elif fw_problem %}<span class="pill pill--blocked">{{ _("Needs review") }}</span>
     {% else %}<span class="pill pill--free">{{ _("Up to date") }}</span>{% endif %}
   </div>
@@ -72,7 +89,7 @@
       <div><dt>{{ _("Caddy (trusted proxies)") }}</dt><dd>{{ fw.caddy or '—' }}</dd></div>
       <div><dt>{{ _("Last check") }}</dt><dd>{{ fw.checked_at|when if fw.checked_at else '—' }}</dd></div>
     </dl>
-    {% if fw_problem %}<p class="notice notice--error" style="margin:0">{{ m.icon('alert') }} {{ fw_problem }}</p>{% endif %}
+    {% if fw_problem %}<p class="notice notice--error flush">{{ m.icon('alert') }} {{ fw_problem }}</p>{% endif %}
     {% if fw_changes %}
     <details>
       <summary>{{ _("Recent changes in the lists") }}</summary>
@@ -82,10 +99,12 @@
       </table></div>
     </details>
     {% endif %}
-    <p class="help" style="margin:0">{{ _("It is updated every 24 h, right before each switch to Gcore and every hour while any domain is served by Gcore. If an update fails or the list goes 48 h without being renewed, it alerts by Telegram.") }}</p>
     {% else %}
-    <p style="margin:0">{{ m.icon('alert') }} {{ _m("The server does not have <code>multicdn-firewall.sh</code> installed yet: the web ports of the origin accept connections from anyone. Instructions in <code>deploy/README.md</code>.") }}</p>
+    <p class="notice notice--warn flush">{{ m.icon('alert') }} {{ _m("The server does not have <code>multicdn-firewall.sh</code> installed yet: the web ports of the origin accept connections from anyone, not only from the CDNs.") }}</p>
     {% endif %}
+  </div>
+  <div class="card__foot actions-end">{{ m.more("firewall-help", _("It is updated every 24 h, right before each switch to Gcore and every hour while any domain is served by Gcore. If an update fails or the list goes 48 h without being renewed, it alerts by Telegram.")) }}
+    <a class="btn" href="{{ DEPLOY_GUIDE }}#9-protect-the-origin" rel="external">{{ m.icon('external') }} {{ _("Installation guide") if not fw else _("Firewall guide") }}</a>
   </div>
 </section>
 {% endblock %}

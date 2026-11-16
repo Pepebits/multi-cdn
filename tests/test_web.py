@@ -90,8 +90,10 @@ def test_wrong_provider_credential_rejected(client):
 
 def test_origin_ip_only_on_servers_page(client):
     client.post("/ajustes/servidores", data={"server_id": "vps-1", "origin_ipv4": "192.0.2.77", "private_address": ""})
-    assert "192.0.2.77" in client.get("/ajustes/servidores").text
-    for url in ("/", "/ajustes/cuentas", "/ajustes/operacion", "/dominios", "/dominios/example.com", "/historial"):
+    page = client.get("/ajustes/servidores").text
+    assert "···.77" in page  # like any other secret: only a hint
+    for url in ("/", "/ajustes/servidores", "/ajustes/cuentas", "/ajustes/cambio", "/ajustes/sistema", "/dominios",
+                "/dominios/example.com", "/historial"):
         assert "192.0.2.77" not in client.get(url).text, url
     assert "192.0.2.77" not in client.get("/ajustes/inventario.yaml").text
 

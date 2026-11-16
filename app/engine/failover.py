@@ -7,7 +7,7 @@ Cada ciclo (tras leer el feed de bloqueos o comprobar el DNS) decide por dominio
     (solo preventiva). Antes comprueba que Gcore sirve cada hostname (HTTPS contra su
     borde con el SNI real) y que el borde no figura como bloqueado.
   - Volver a Cloudflare cuando lleva un tiempo sin ninguna de esas señales (configurable
-    por prioridad en Ajustes → Operación; ver DEFAULT_RETURN_AFTER).
+    por prioridad en Ajustes → Cambio automático; ver DEFAULT_RETURN_AFTER).
 
 Salvaguardas:
   - Política «manual»: nunca cambia nada, solo avisa.
@@ -38,7 +38,7 @@ from ..signals.hayahora import ISPS
 
 log = logging.getLogger("multicdn.engine")
 
-# Tiempos por prioridad, en minutos; se cambian en Ajustes → Operación. Valores por defecto
+# Tiempos por prioridad, en minutos; se cambian en Ajustes → Cambio automático. Valores por defecto
 # sacados del historial del feed (15/09–08/11/2026, 6.103 fines de bloqueo y 95 partidos):
 #  - una IP liberada se volvió a bloquear en menos de 15 min el 0,05 % de las veces y en menos
 #    de 30 el 0,3 %: esperar más apenas protege y alarga el tiempo en Gcore;
@@ -543,7 +543,7 @@ def describe(state, name: str, now: datetime | None = None) -> dict:
     cfg = state.inventory.domains[name]
     st = state.engine.get(name)
     if not auto_enabled(state):
-        return {"tone": "neutral", "text": tr("Automatic switching off in Settings → Operation"), "resumable": False, "action": None}
+        return {"tone": "neutral", "text": tr("Automatic switching off in Settings → Automatic switching"), "resumable": False, "action": None}
     if cfg.policy == "manual":
         return {"tone": "neutral", "text": tr("Manual policy: only alerts, never changes anything"), "resumable": False, "action": None}
     if codes := readiness(state, cfg):

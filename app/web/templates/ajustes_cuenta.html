@@ -1,19 +1,21 @@
 {% extends "base.html" %}
 {% block title %}{{ _("My account") }}{% endblock %}
 {% block crumb %}{{ m.crumbs(_('My account'), [(_('Settings'), '/ajustes/cuentas')]) }}{% endblock %}
-{% block heading %}{{ _("Settings") }}{% endblock %}
+{% block heading %}{{ _("Settings") }} · {{ tab_label }}{% endblock %}
 
 {% block content %}
 {{ m.settings_tabs(tab) }}
 
 <section class="card" aria-labelledby="sesiones">
-  <div class="card__head"><h2 id="sesiones">{{ m.icon('user') }} {{ _("Active sessions") }}</h2><span class="mono muted">{{ _("they expire after 30 min without use or 12 h") }}</span></div>
-  <ul class="checks" style="border:0">
+  <div class="card__head"><h2 id="sesiones">{{ m.icon('user') }} {{ _("Active sessions") }}</h2><span class="mono muted">{{ _n("{n} session", "{n} sessions", sessions|length) }}</span></div>
+  {{ m.card_flash(flash, 'sesiones') }}
+  <p class="card__body card__intro">{{ _("They expire after 30 min without use or 12 h.") }}</p>
+  <ul class="checks sessions">
     {% for x in sessions %}
     <li>
       <span><strong>{{ _('This session') if x.id_hash == current_hash else _('Other session') }}</strong>
-        <span class="help" style="display:block;margin:2px 0 0">{{ _m("From {ip} · started {started} · last used {last}", ip=x.ip or '—', started=x.created_at|when, last=x.last_seen|when) }}</span>
-        <span class="help mono" style="display:block;margin:0">{{ (x.user_agent or '')[:90] }}</span></span>
+        <span class="help session__meta">{{ _m("From {ip} · started {started} · last used {last}", ip=x.ip or '—', started=x.created_at|when, last=x.last_seen|when) }}</span>
+        <span class="help mono session__meta" title="{{ x.user_agent or '' }}">{{ x.user_agent|ua }}</span></span>
       <form method="post" action="/ajustes/cuenta/sesiones/{{ x.id_hash }}/cerrar">{{ csrf_field() }}
         <button class="btn btn--danger btn--sm" type="submit">{{ m.icon('logout') }} {{ _("Close") }}<span class="visually-hidden"> {{ _('this session') if x.id_hash == current_hash else _('the session from {ip}', ip=x.ip or _('unknown origin')) }}</span></button>
       </form>
@@ -24,23 +26,31 @@
 
 <section class="card" aria-labelledby="password">
   <div class="card__head"><h2 id="password">{{ m.icon('lock') }} {{ _("Change password") }}</h2></div>
+  {{ m.card_flash(flash, 'password') }}
   <form method="post" action="/ajustes/cuenta/password">{{ csrf_field() }}
     <div class="card__body form-grid">
       <div><label for="current">{{ _("Current password") }}</label><input id="current" type="password" name="current" autocomplete="current-password" required></div>
-      <div><label for="code-pw">{{ _("TOTP code") }}</label><input id="code-pw" class="otp" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" autocapitalize="none" autocorrect="off" spellcheck="false" required></div>
       <div><label for="new">{{ _("New password") }}</label><input id="new" type="password" name="new" autocomplete="new-password" minlength="12" required aria-describedby="new-help"><p id="new-help" class="help">{{ _("At least 12 characters. Your other sessions will be closed.") }}</p></div>
       <div><label for="new2">{{ _("Repeat the new one") }}</label><input id="new2" type="password" name="new2" autocomplete="new-password" minlength="12" required></div>
+      <div><label for="code-pw">{{ _("TOTP code") }}</label><input id="code-pw" class="otp" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" autocapitalize="none" autocorrect="off" spellcheck="false" required aria-describedby="code-pw-help"><p id="code-pw-help" class="help">{{ _("From your authenticator app.") }}</p></div>
     </div>
     <div class="card__foot actions-end"><button class="btn btn--primary" type="submit">{{ _("Change password") }}</button></div>
   </form>
 </section>
 
 <section class="card" aria-labelledby="recuperacion">
-  <div class="card__head"><h2 id="recuperacion">{{ m.icon('key') }} {{ _("Recovery codes") }}</h2><span class="mono muted">{{ _("{n} left", n=recovery_left) }}</span></div>
-  <form class="card__body form-inline" method="post" action="/ajustes/cuenta/recuperacion">{{ csrf_field() }}
-    <div><label for="code-rc">{{ _("TOTP code") }}</label><input id="code-rc" class="otp" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" autocapitalize="none" autocorrect="off" spellcheck="false" required></div>
-    <div class="form-actions"><button class="btn" type="submit">{{ m.icon('refresh') }} {{ _("Generate new codes") }}</button></div>
-  </form>
-  <p class="card__body help" style="margin:0;padding-top:0">{{ _("The previous ones stop working. If you lose your phone and the codes, access is recovered from the server:") }} <code>docker compose exec panel python -m app.cli reset-totp {{ user.username }}</code></p>
+  <div class="card__head"><h2 id="recuperacion">{{ m.icon('key') }} {{ _("Recovery codes") }}</h2><span class="pill {{ 'pill--warn' if recovery_left <= recovery_low else 'pill--neutral' }}">{{ _n("{n} code left", "{n} codes left", recovery_left) }}</span></div>
+  {{ m.card_flash(flash, 'recuperacion') }}
+  <div class="card__body stack-gap">
+    <p class="card__intro">{{ _("Each code lets you sign in once without your phone.") }}</p>
+    {% if recovery_left <= recovery_low %}<p class="notice notice--warn flush">{{ m.icon('alert') }} {{ _n("Only {n} code left: generate new ones and keep them somewhere safe.", "Only {n} codes left: generate new ones and keep them somewhere safe.", recovery_left) }}</p>{% endif %}
+  </div>
+  <div class="card__foot actions-end">
+    {{ m.more("recuperacion-help", _m("If you lose your phone and the codes, access is recovered from the server: <code>docker compose exec panel python -m app.cli reset-totp {user}</code>", user=user.username)) }}
+    <button class="btn{{ ' btn--primary' if recovery_left <= recovery_low else '' }}" type="button" data-open="nuevos-codigos">{{ m.icon('refresh') }} {{ _("Generate new codes") }}</button>
+  </div>
 </section>
+{% call m.confirm('nuevos-codigos', _('Generate new recovery codes'), _('The previous codes stop working at once. The new ones are shown only once.'), '/ajustes/cuenta/recuperacion', _('Generate new codes'), 'refresh', false) %}
+  <div><label for="code-rc">{{ _("TOTP code") }}</label><input id="code-rc" class="otp" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" autocapitalize="none" autocorrect="off" spellcheck="false" required autofocus></div>
+{% endcall %}
 {% endblock %}

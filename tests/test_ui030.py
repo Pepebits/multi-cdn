@@ -150,7 +150,7 @@ def test_overview_strip_hidden_when_nothing_is_open_and_shown_otherwise(client):
     alerts.problem(client.app.state.mc, "feed_down", "down", now=datetime.now(UTC) - timedelta(minutes=20))
     page = client.get("/").text
     assert 'aria-labelledby="problemas"' in page and "1 problema abierto" in page
-    assert 'href="/ajustes/operacion#feed"' in page and "Ir a Ajustes → Operación" in page
+    assert 'href="/ajustes/cambio#feed"' in page and "Ir a Ajustes → Cambio automático" in page
     assert 'class="rel"' in page and 'data-abs' in page
     client.cookies.set("lang", "en")
     assert "1 open problem" in client.get("/").text
@@ -162,25 +162,27 @@ DSN = "https://f0e1d2c3b4a5968778695a4b3c2d1e0f@o4242.ingest.example.com/1234567
 
 
 def test_status_shows_only_scheme_and_host(monkeypatch):
-    monkeypatch.delenv("MULTICDN_SENTRY_DSN", raising=False)
+    monkeypatch.setitem(error_reporting._live, "dsn", None)
     assert error_reporting.status()["enabled"] is False
-    monkeypatch.setenv("MULTICDN_SENTRY_DSN", DSN)
+    monkeypatch.setitem(error_reporting._live, "dsn", DSN)
     monkeypatch.setenv("MULTICDN_SENTRY_ENVIRONMENT", "staging")
     st = error_reporting.status()
     assert st == {"enabled": True, "configured": True, "installed": True, "server": "https://o4242.ingest.example.com",
-                  "environment": "staging"}
-    monkeypatch.setenv("MULTICDN_SENTRY_DSN", "https://key:secret@errors.example.com:8443/9")
+                  "environment": "staging", "restart_note": False}
+    monkeypatch.setitem(error_reporting._live, "dsn", "https://key:secret@errors.example.com:8443/9")
     assert error_reporting.status()["server"] == "https://errors.example.com:8443"
-    monkeypatch.setenv("MULTICDN_SENTRY_DSN", "not a url")
+    monkeypatch.setitem(error_reporting._live, "dsn", "not a url")
     assert error_reporting.status()["server"] is None
 
 
-def test_operation_page_never_shows_the_key(client, monkeypatch):
-    monkeypatch.delenv("MULTICDN_SENTRY_DSN", raising=False)
-    page = client.get("/ajustes/operacion").text
+def test_system_page_never_shows_the_key(client, monkeypatch):
+    monkeypatch.setitem(error_reporting._live, "dsn", None)
+    page = client.get("/ajustes/sistema").text
     assert 'aria-labelledby="errores"' in page and "MULTICDN_SENTRY_DSN" in page and "Desactivado" in page
-    monkeypatch.setenv("MULTICDN_SENTRY_DSN", DSN)
-    page = client.get("/ajustes/operacion").text
+    assert 'formaction="/ajustes/sistema/errores/probar" formnovalidate disabled' in page
+    monkeypatch.setitem(error_reporting._live, "dsn", DSN)
+    client.app.state.mc.secrets.set("sentry_dsn", DSN)
+    page = client.get("/ajustes/sistema").text
     assert "https://o4242.ingest.example.com" in page and "production" in page
     assert "f0e1d2c3b4a5968778695a4b3c2d1e0f" not in page and "1234567" not in page
     assert "se eliminan antes de salir del servidor" in page

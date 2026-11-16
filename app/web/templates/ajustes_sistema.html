@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}{{ _("System") }}{% endblock %}
+{% block crumb %}{{ m.crumbs(_('System'), [(_('Settings'), '/ajustes/cuentas')]) }}{% endblock %}
+{% block heading %}{{ _("Settings") }} · {{ tab_label }}{% endblock %}
+
+{% block content %}
+{{ m.settings_tabs(tab) }}
+
+{% set er = error_reporting %}
+<section class="card" aria-labelledby="errores">
+  <div class="card__head"><h2 id="errores">{{ m.icon('bell') }} {{ _("Error reporting") }}</h2><span class="pill {{ 'pill--free' if er.enabled else ('pill--blocked' if er.configured else 'pill--nodata') }}">{{ _('On') if er.enabled else (_('Not working') if er.configured else _('Off')) }}</span></div>
+  {{ m.card_flash(flash, 'errores') }}
+  <form method="post" action="/ajustes/sistema/errores">{{ csrf_field() }}
+    <div class="card__body stack-gap">
+      <p class="card__intro">{{ _("Sends the panel's code errors to a Sentry or GlitchTip project, so you learn about them without reading the logs. Off: nothing is sent anywhere.") }}</p>
+      {% if er.restart_note %}<p class="notice notice--warn flush">{{ m.icon('info') }} {{ _("Active now for logged errors; restart the panel for full capture of web errors.") }}</p>{% endif %}
+      {% if er.enabled %}
+      <dl class="kv">
+        <div><dt>{{ _("Server") }}</dt><dd>{{ er.server or _("unknown (the DSN is not a URL)") }}</dd></div>
+        <div><dt>{{ _("Environment") }}</dt><dd>{{ er.environment }}</dd></div>
+      </dl>
+      {% elif er.configured %}
+      <p class="notice notice--warn flush">{{ m.icon('alert') }} {{ _("A DSN is saved but the sentry-sdk package is not installed: nothing is sent.") }}</p>
+      {% endif %}
+      <div class="form-inline card__fields">
+        <div>
+          <label for="dsn">{{ _("DSN") }}</label>
+          <input id="dsn" type="password" name="dsn" required autocomplete="off" spellcheck="false" inputmode="url" autocapitalize="none"
+                 aria-describedby="dsn-help{{ ' dsn-origin' if dsn.configured or dsn.env_state else '' }}"{% if dsn.configured %} placeholder="{{ _('Saved · {hint}', hint=dsn.hint) }}"{% endif %}>
+          <p id="dsn-help" class="help">{{ _("Project settings → Client Keys (DSN) in Sentry or GlitchTip: https://key@host/project.") }}{% if dsn.configured %} {{ _("Type it only to replace it.") }}{% endif %}</p>
+        </div>
+      </div>
+      {% if dsn.configured or dsn.env_state %}<p id="dsn-origin" class="help flush">{{ m.secret_origin(dsn) }}</p>{% endif %}
+      {{ m.env_warning(dsn) }}
+      <p class="help flush er-note">{{ m.icon('lock') }} {{ _("Only errors are sent. IP addresses (the origin's included), emails and token-looking values are removed before anything leaves the server; no cookies, headers, request bodies or local variables.") }}</p>
+    </div>
+    <div class="card__foot actions-end">
+      {{ m.more("errores-help", _m("The DSN is saved encrypted and in <code>MULTICDN_SENTRY_DSN</code> of the server's .env. The server must be a public name (not an IP or a local name) with https. <code>MULTICDN_SENTRY_ENVIRONMENT</code> and <code>MULTICDN_SENTRY_TRACES_SAMPLE_RATE</code> are set only in .env.")) }}
+      {% if dsn.configured %}<button class="btn btn--danger" type="button" data-open="quitar-dsn">{{ m.icon('x') }} {{ _("Remove DSN") }}</button>{% endif %}
+      <button class="btn btn--ok" type="submit" formaction="/ajustes/sistema/errores/probar" formnovalidate{% if not er.enabled %} disabled{% endif %}>{{ m.icon('send') }} {{ _("Send test error") }}</button>
+      <button class="btn btn--primary" type="submit">{{ _("Save DSN") }}</button>
+    </div>
+  </form>
+</section>
+{% if dsn.configured %}{{ m.confirm('quitar-dsn', _('Remove the error reporting DSN'), _('Error reporting turns off at once: nothing else is sent. The DSN is also removed from the server\'s .env.'), '/ajustes/sistema/errores/quitar', _('Remove DSN'), 'x') }}{% endif %}
+
+<section class="card" aria-labelledby="env">
+  <div class="card__head"><h2 id="env">{{ m.icon('wrench') }} {{ _("Server configuration (.env)") }}</h2>
+    {% if env_mismatches %}<span class="pill pill--warn">{{ _("Out of sync") }}</span>{% elif env_file.writable %}<span class="pill pill--free">{{ _("Synced") }}</span>{% else %}<span class="pill pill--warn">{{ _("Read only") }}</span>{% endif %}</div>
+  <div class="card__body stack-gap">
+    <p class="card__intro">{{ _("Credentials and keys are kept in two places that stay equal: the encrypted database, which the panel uses, and the server's .env. At startup the .env has priority; what you save here is written back to it.") }}</p>
+    <dl class="kv">
+      <div><dt>{{ _("File") }}</dt><dd>{% if env_file.path %}<code>{{ env_file.path }}</code>{% else %}{{ _("not configured (MULTICDN_ENV_PATH)") }}{% endif %}</dd></div>
+      <div><dt>{{ _("The panel can write it") }}</dt><dd>{{ _("yes") if env_file.writable else (_("no: the file does not exist") if env_file.configured and not env_file.exists else _("no")) }}</dd></div>
+      <div><dt>{{ _("Last write by the panel") }}</dt><dd>{{ env_file.written_at|when if env_file.written_at else _("never") }}</dd></div>
+    </dl>
+    {% if env_mismatches %}
+    <div class="notice notice--warn">
+      <p class="flush">{{ m.icon('alert') }} {{ _n("{n} value differs from the server's .env: on the next restart the .env value replaces the panel's. Update it in .env yourself:", "{n} values differ from the server's .env: on the next restart the .env values replace the panel's. Update them in .env yourself:", env_mismatches|length) }}</p>
+      <ul class="env-list">{% for x in env_mismatches %}<li><code>{{ x.env }}</code> · {{ x.label }} · {{ _(ENV_REASONS.get(x.error or 'error')) }}</li>{% endfor %}</ul>
+    </div>
+    {% elif not env_file.writable %}
+    <p class="notice notice--warn flush">{{ m.icon('alert') }} {{ _("The panel cannot write the server's .env: values saved here stay only in the panel, and if .env has another value, it wins on the next restart.") }}</p>
+    {% endif %}
+  </div>
+  <div class="card__foot actions-end">
+    {{ m.more("env-help", _m("The panel only edits the values it manages ({keys}); <code>MULTICDN_SECRET_KEY</code>, <code>MULTICDN_DRY_RUN</code> and every other line are never touched. Before each write a copy of the previous file is kept in <code>data/env-backups/</code> (the last 10). With Docker the .env is mounted into the container with write access for its user (uid 10001).", keys=env_managed|join(', '))) }}
+    <a class="btn" href="{{ DEPLOY_GUIDE }}#server-configuration-env" rel="external">{{ m.icon('external') }} {{ _("Deployment guide") }}</a>
+  </div>
+</section>
+
+<section class="card" aria-labelledby="cifrado">
+  <div class="card__head"><h2 id="cifrado">{{ m.icon('lock') }} {{ _("Credential encryption") }}</h2><span class="pill {{ 'pill--warn' if key_on_disk else 'pill--free' }}">{{ _('Key next to the data') if key_on_disk else _('Key outside the data') }}</span></div>
+  <div class="card__body">
+    {% if key_on_disk %}
+    <p class="notice notice--warn flush">{{ m.icon('alert') }} {{ _m("The master key is in <code>data/.secret_key</code>, next to the database. So that a copy of the database is useless without it, set <code>MULTICDN_SECRET_KEY</code> in the environment and keep the key outside the VPS.") }}</p>
+    {% else %}
+    <p class="notice notice--ok flush">{{ m.icon('check') }} {{ _m("The master key comes from <code>MULTICDN_SECRET_KEY</code>.") }}</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card" aria-labelledby="mantenimiento">
+  <div class="card__head"><h2 id="mantenimiento">{{ m.icon('history') }} {{ _("Maintenance") }}</h2><span class="mono muted">{{ _n("{n} event", "{n} events", ev_stats.count) }}{% if ev_stats.oldest %} · {{ _m("since {when}", when=ev_stats.oldest|when) }}{% endif %}</span></div>
+  {{ m.card_flash(flash, 'mantenimiento') }}
+  <form method="post" action="/ajustes/sistema/retencion">{{ csrf_field() }}
+    <div class="card__body stack-gap">
+      <p class="card__intro">{{ _("How much history is kept, and a copy of the inventory (servers, domains and hostnames, without secrets).") }}</p>
+      <div class="form-inline card__fields">
+        <div>
+          <label for="events_max_days">{{ _("Keep events (days)") }}</label>
+          <input id="events_max_days" type="number" name="events_max_days" value="{{ ev_days }}" min="7" max="3650" required aria-describedby="retencion-help">
+        </div>
+        <div>
+          <label for="events_max_rows">{{ _("Maximum number of events") }}</label>
+          <input id="events_max_rows" type="number" name="events_max_rows" value="{{ ev_rows }}" min="500" max="1000000" step="500" required aria-describedby="retencion-help">
+        </div>
+      </div>
+    </div>
+    <div class="card__foot actions-end">{{ m.more("retencion-help", _("Whichever limit is reached first applies. The cleanup runs at startup, every 6 hours and when saving. certbot logs are limited to 10 copies; the server logs are managed by systemd or Docker.")) }}
+      <a class="btn" href="/ajustes/inventario.yaml">{{ m.icon('download') }} {{ _("Export inventory (YAML, no secrets)") }}</a>
+      <button class="btn btn--primary" type="submit">{{ _("Save retention") }}</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

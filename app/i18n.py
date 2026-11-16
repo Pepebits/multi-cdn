@@ -5,7 +5,7 @@ languages are in play at any moment:
 
 - **UI language** (`tr`): per request, from the `lang` cookie (the selector in the footer),
   else the browser's Accept-Language, else MULTICDN_LANG, else English.
-- **Notification language** (`tn`): one global setting (Settings → Operation) for what is
+- **Notification language** (`tn`): one global setting (Settings → Notifications) for what is
   stored or sent: history entries, Telegram/email alerts and terminal output. Stored text
   stays in the language it was written in.
 

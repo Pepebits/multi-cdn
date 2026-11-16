@@ -100,14 +100,62 @@
 </li>
 {%- endmacro %}
 
+{# Settings tabs, in setup order. The labels match main.SETTINGS_TABS. #}
 {% macro settings_tabs(tab) -%}
 <nav class="tabs" aria-label="{{ _('Settings sections') }}">
   <ul>
-    {% for key, label in [('cuentas', _('Provider accounts')), ('notificaciones', _('Notifications')), ('servidores', _('Servers')), ('operacion', _('Operation')), ('cuenta', _('My account'))] %}
+    {% for key, label in [('cuentas', _('Provider accounts')), ('servidores', _('Servers')), ('notificaciones', _('Notifications')), ('cambio', _('Automatic switching')), ('sistema', _('System')), ('cuenta', _('My account'))] %}
     <li><a href="/ajustes/{{ key }}" {% if tab == key %}aria-current="page"{% endif %}>{{ label }}</a></li>
     {% endfor %}
   </ul>
 </nav>
+{%- endmacro %}
+
+{# The message of a save, inside the card that was saved (?card=<id>; the page anchor is the same id). #}
+{% macro card_flash(flash, id) -%}
+{%- if flash and flash.card == id -%}
+{%- if flash.ok %}<p class="notice notice--ok card__flash" role="status">{{ icon('check') }} {{ flash.ok }}</p>{% endif -%}
+{%- if flash.error %}<p class="notice notice--error card__flash" role="alert">{{ icon('alert') }} {{ flash.error }}</p>{% endif -%}
+{%- endif -%}
+{%- endmacro %}
+
+{# Confirmation for a dangerous action, without typing: a button with data-open="<id>" opens it.
+   Extra fields (a TOTP code, say) go in the call block. #}
+{% macro confirm(id, title, text, action, label, icon_name='trash', danger=true, hidden={}) -%}
+<dialog id="{{ id }}" class="confirm" aria-labelledby="{{ id }}-t" aria-describedby="{{ id }}-d">
+  <form method="post" action="{{ action }}">{{ csrf_field() }}{% for k, v in hidden.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+    <div class="dialog__head">
+      <h2 id="{{ id }}-t">{{ icon(icon_name) }} {{ title }}</h2>
+      <button class="btn" type="button" data-close aria-label="{{ _('Close') }}">✕</button>
+    </div>
+    <div class="dialog__body">
+      <p id="{{ id }}-d" class="flush">{{ text }}</p>
+      {% if caller %}{{ caller() }}{% endif %}
+    </div>
+    <div class="dialog__foot">
+      <button class="btn" type="button" data-close>{{ _('Cancel') }}</button>
+      <button class="btn {{ 'btn--danger' if danger else 'btn--primary' }}" type="submit">{{ icon(icon_name) }} {{ label }}</button>
+    </div>
+  </form>
+</dialog>
+{%- endmacro %}
+
+{# Where a saved secret comes from and whether the server's .env agrees (secrets_store.env_state). #}
+{% macro secret_origin(st) -%}
+<span class="muted secret-origin">
+  {%- if st.source == 'env' %}{{ _m("From .env · imported {when}", when=st.updated_at|when) }}
+  {%- elif st.updated_at %}{{ _m("Saved in the panel · {when}", when=st.updated_at|when) }}{% endif -%}
+  {%- if st.env_state == 'sync' %} · {{ _("in sync with .env") }}
+  {%- elif st.env_state == 'panel_only' %} · {{ _("only in the panel (not in .env)") }}
+  {%- elif st.env_state == 'differs' %} · <strong>{{ _("saved in the panel; .env could not be updated") }}</strong>
+  {%- elif st.env_state == 'env_only' %}{{ _("Removed in the panel; .env could not be updated") }}{% endif -%}
+</span>
+{%- endmacro %}
+
+{% macro env_warning(st) -%}
+{%- if st.env_state in ('differs', 'env_only') -%}
+<p class="notice notice--warn flush">{{ icon('alert') }} {{ _m("Could not update the server's .env ({reason}): on the next restart the .env value will replace this one. Update <code>{key}</code> in .env yourself.", reason=_(ENV_REASONS.get(st.env_error or 'error')), key=st.env) }}</p>
+{%- endif -%}
 {%- endmacro %}
 
 {% macro check_status(c) -%}

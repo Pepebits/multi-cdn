@@ -14,12 +14,9 @@
   "automatic switching NOT ready: {reasons}": "cambio automático NO disponible: {reasons}",
   "Block feed polling": "Consulta del feed de bloqueos",
   "Read the feed every": "Leer el feed cada",
-  "now every {seconds} s": "ahora cada {seconds} s",
   "{seconds} s": "{seconds} s",
-  "{seconds} s (default)": "{seconds} s (por defecto)",
   "Save interval": "Guardar intervalo",
   "Feed interval saved": "Intervalo del feed guardado",
   "Choose one of the listed intervals": "Elige uno de los intervalos de la lista",
-  "Block feed read every {seconds} s when nothing is going on": "Feed de bloqueos leído cada {seconds} s cuando no pasa nada",
-  "Interval while nothing is going on. It reads every 90 s during a match window (with the longest lead of Switching times), while any hostname is on Gcore, during blocks, without a match calendar and after a failed read. Each read downloads about 0.4 MB. Preventive switching before a match does not depend on this interval.": "Intervalo cuando no pasa nada. Lee cada 90 s durante la ventana de un partido (con la antelación más larga de Tiempos de cambio), mientras algún hostname está en Gcore, durante bloqueos, sin calendario de partidos y tras una lectura fallida. Cada lectura descarga unos 0,4 MB. El cambio preventivo antes de un partido no depende de este intervalo."
+  "Block feed read every {seconds} s when nothing is going on": "Feed de bloqueos leído cada {seconds} s cuando no pasa nada"
 }

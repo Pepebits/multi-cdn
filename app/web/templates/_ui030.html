@@ -1,4 +1,4 @@
-{#- 0.3.0 panel additions: open problems (overview), error reporting (Settings → Operation)
+{#- 0.3.0 panel additions: open problems (overview)
     and the per-domain timeline (domain page). Self-contained: each page imports this file
     and calls one macro. -#}
 {%- import "_macros.html" as m -%}
@@ -30,25 +30,6 @@
   </ul>
 </section>
 {%- endif -%}
-{%- endmacro %}
-
-{% macro error_reporting_card(er) -%}
-<section class="card" aria-labelledby="errores">
-  <div class="card__head"><h2 id="errores">{{ m.icon('bell') }} {{ _("Error reporting") }}</h2><span class="pill {{ 'pill--free' if er.enabled else ('pill--blocked' if er.configured else 'pill--nodata') }}">{{ _('On') if er.enabled else (_('Not working') if er.configured else _('Off')) }}</span></div>
-  <div class="card__body stack-gap">
-    {% if er.enabled %}
-    <dl class="kv">
-      <div><dt>{{ _("Server") }}</dt><dd>{{ er.server or _("unknown (the DSN is not a URL)") }}</dd></div>
-      <div><dt>{{ _("Environment") }}</dt><dd>{{ er.environment }}</dd></div>
-    </dl>
-    <p class="help er-note">{{ m.icon('lock') }} {{ _("Only errors are sent. IP addresses (the origin's included), emails and token-looking values are removed before anything leaves the server; no cookies, headers, request bodies or local variables.") }}</p>
-    {% elif er.configured %}
-    <p class="notice notice--warn er-note">{{ m.icon('alert') }} {{ _m("<code>MULTICDN_SENTRY_DSN</code> is set but the sentry-sdk package is not installed: nothing is sent.") }}</p>
-    {% else %}
-    <p class="help er-note">{{ _m("Off: nothing is sent anywhere. To receive code errors in Sentry or GlitchTip, set <code>MULTICDN_SENTRY_DSN</code> in the server's <code>.env</code> and restart (see the <a href=\"https://github.com/Pepebits/multi-cdn/blob/main/deploy/README.md#error-reporting-optional\" rel=\"external\">deployment guide</a>).") }}</p>
-    {% endif %}
-  </div>
-</section>
 {%- endmacro %}
 
 {% macro who(actor) -%}{{ _("automatic") if actor == 'auto' else (_("manual, by {user}", user=actor) if actor else _("unknown")) }}{%- endmacro %}

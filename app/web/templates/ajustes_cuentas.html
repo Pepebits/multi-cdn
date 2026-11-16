@@ -1,97 +1,130 @@
 {% extends "base.html" %}
 {% block title %}{{ _("Provider accounts") }}{% endblock %}
 {% block crumb %}{{ m.crumbs(_('Provider accounts'), [(_('Settings'), '/ajustes/cuentas')]) }}{% endblock %}
-{% block heading %}{{ _("Settings") }}{% endblock %}
+{% block heading %}{{ _("Settings") }} · {{ tab_label }}{% endblock %}
 
 {% block content %}
 {{ m.settings_tabs(tab) }}
+
+{% if key_on_disk %}
+<p class="notice notice--warn">{{ m.icon('alert') }} {{ _m("The master key that encrypts these credentials is in <code>data/.secret_key</code>, next to the database: a copy of <code>data/</code> is enough to read them. Set <code>MULTICDN_SECRET_KEY</code> in the server's <code>.env</code> and keep the key outside the VPS (Settings → System).") }}</p>
+{% endif %}
 
 <section class="card" aria-labelledby="lista-cuentas">
   <div class="card__head">
     <h2 id="lista-cuentas">{{ m.icon('key') }} {{ _("Provider accounts") }}</h2>
     <span class="mono muted">{{ _("Encrypted · never shown again") }}</span>
   </div>
-  <details class="card__body help-box">
-    <summary><span class="if-closed">{{ m.icon('info') }} {{ _("How to create the Cloudflare token") }}</span><span class="if-open">{{ _("Hide instructions") }}</span></summary>
-    <ol>
-      <li>{{ _m("Cloudflare → My Profile → API Tokens → <strong>Create Token</strong> → Create Custom Token.") }}</li>
-      <li>{{ _m("Permissions: <strong>Zone · Zone · Read</strong> (list zones when importing) and <strong>Zone · DNS · Edit</strong> (read records and switch). Optional: <strong>Zone · Transform Rules · Edit</strong>, so the panel creates the rule for the secret header to the origin.") }}</li>
-      <li>{{ _m("Zone Resources: <strong>Include · Specific zone</strong> (one per domain) or <strong>All zones from an account</strong>. No account permission is needed.") }}</li>
-      <li>{{ _("Client IP Address Filtering: the public IP of the VPS where the controller runs (add yours while you test it locally).") }}</li>
-      <li>{{ _("Do not use the Global API Key: it gives full access to the account.") }}</li>
-    </ol>
-  </details>
-  <p class="card__body help" style="margin:0">{{ _("You can add several per provider: one per Cloudflare account, or one token per domain if you limit them to one zone. Each domain chooses which one it uses on its settings page.") }}</p>
+  {{ m.card_flash(flash, 'lista-cuentas') }}
+  <div class="card__body stack-gap">
+    <p class="card__intro">{{ _("You can add several per provider: one per Cloudflare account, or one token per domain if you limit them to one zone. Each domain chooses which one it uses on its settings page.") }}</p>
+    {% for env in env_removed %}
+    <p class="notice notice--warn flush">{{ m.icon('alert') }} {{ _m("Could not remove <code>{key}</code> from the server's .env: on the next restart that token comes back as a new credential. Remove that line from .env yourself.", key=env) }}</p>
+    {% endfor %}
+  </div>
   {% if creds %}
   <ul class="cred-list">
-    {% for c, used in creds %}
-    <li id="cuenta-{{ c.id }}">
+    {% for c, used, src in creds %}
+    <li>
       <div class="cred-info">
-        <h3>{{ c.label }} <span class="pill pill--neutral">{{ c.provider_label }}</span></h3>
+        <h3 id="cuenta-{{ c.id }}">{{ c.label }} <span class="pill pill--neutral">{{ c.provider_label }}</span></h3>
+        {{ m.card_flash(flash, 'cuenta-' ~ c.id) }}
         <div class="field__status">
           {{ m.check_status(c) }} <span class="mono">{{ c.hint }}</span>
           <span class="inline-actions">
             <form method="post" action="/ajustes/cuentas/{{ c.id }}/probar">{{ csrf_field() }}<button class="btn btn--ok btn--sm-plain" type="submit">{{ _("Test") }}<span class="visually-hidden"> {{ c.label }}</span></button></form>
             {% if not used %}
-            <form method="post" action="/ajustes/cuentas/{{ c.id }}/eliminar">{{ csrf_field() }}<button class="btn btn--danger btn--sm" type="submit">{{ _("Delete") }}<span class="visually-hidden"> {{ c.label }}</span></button></form>
+            <button class="btn btn--danger btn--sm" type="button" data-open="del-cred-{{ c.id }}">{{ _("Delete") }}<span class="visually-hidden"> {{ c.label }}</span></button>
             {% endif %}
           </span>
         </div>
-        {% if c.check_msg %}<p class="help" style="margin:0">{{ c.check_msg }}{% if c.checked_at %} · {{ c.checked_at|when }}{% endif %}</p>{% endif %}
-        {% if c.scope %}<p class="help" style="margin:4px 0 0">{{ _("Visible zones:") }} <span class="mono">{{ c.scope }}</span></p>{% endif %}
+        <p class="help flush">{{ m.secret_origin(src) }}</p>
+        {% if src.env_state == 'differs' %}{{ m.env_warning(src) }}{% endif %}
+        {% if c.check_msg %}<p class="help flush">{{ c.check_msg }}{% if c.checked_at %} · {{ c.checked_at|when }}{% endif %}</p>{% endif %}
+        {% if c.scope %}<p class="help">{{ _("Visible zones:") }} <span class="mono">{{ c.scope }}</span></p>{% endif %}
         {% set u = usage.get(c.id) %}
         {% if u %}
         <div class="usage">
           {% if u.error %}
-          <p class="help" style="margin:0">{{ _("Could not read the usage: {error}", error=u.error) }}</p>
+          <p class="help flush">{{ _("Could not read the usage: {error}", error=u.error) }}</p>
           {% else %}
-          <p style="margin:0"><strong>{{ _("Traffic in {month}:", month=u.month[5:] ~ '/' ~ u.month[:4]) }}</strong> {{ _("{used} of {quota} GB ({percent} %)", used=u.total|bytes, quota=u.quota_gb, percent=('%.1f'|format(u.percent)|replace('.', ',') if ui_lang() == 'es' else '%.1f'|format(u.percent))) }}</p>
+          <p class="flush"><strong>{{ _("Traffic in {month}:", month=u.month[5:] ~ '/' ~ u.month[:4]) }}</strong> {{ _("{used} of {quota} GB ({percent} %)", used=u.total|bytes, quota=u.quota_gb, percent=('%.1f'|format(u.percent)|replace('.', ',') if ui_lang() == 'es' else '%.1f'|format(u.percent))) }}</p>
           <div class="meter" role="img" aria-label="{{ _('{percent} % of the monthly quota', percent='%.1f'|format(u.percent)) }}"><span style="width:{{ [u.percent, 100]|min }}%"></span></div>
-          <p class="help" style="margin:0">{{ _("Served to users {sent} · fetched from the origin {upstream}", sent=u.sent|bytes, upstream=u.upstream|bytes) }}{% if u.max_resources %} · {{ _("CDN resources {used} of {max}", used=u.resources, max=u.max_resources) }}{% endif %} · {{ _m("read at {time}", time=u.checked_at|hhmm) }}</p>
+          <p class="help flush">{{ _("Served to users {sent} · fetched from the origin {upstream}", sent=u.sent|bytes, upstream=u.upstream|bytes) }}{% if u.max_resources %} · {{ _("CDN resources {used} of {max}", used=u.resources, max=u.max_resources) }}{% endif %} · {{ _m("read at {time}", time=u.checked_at|hhmm) }}</p>
           {% endif %}
         </div>
         {% endif %}
-        <p class="help" style="margin:4px 0 0">{% if used %}{{ _("Used by: {domains} · to delete it, assign another credential to those domains", domains=used|join(', ')) }}{% else %}{{ _("Used by: no domain") }}{% endif %}</p>
+        <p class="help">{% if used %}{{ _("Used by: {domains} · to delete it, assign another credential to those domains", domains=used|join(', ')) }}{% else %}{{ _("Used by: no domain") }}{% endif %}</p>
       </div>
       <div class="cred-actions">
         <form method="post" action="/ajustes/cuentas/{{ c.id }}/rotar" class="cred-form">{{ csrf_field() }}
           <label for="rot-{{ c.id }}">{{ _("Replace credential") }}<span class="visually-hidden"> {{ _("of {label}", label=c.label) }}</span></label>
-          <input id="rot-{{ c.id }}" type="password" name="secret" autocomplete="off" spellcheck="false" required>
+          <input id="rot-{{ c.id }}" type="password" name="secret" autocomplete="off" spellcheck="false" required{% if src.env %} aria-describedby="rot-help-{{ c.id }}"{% endif %}>
           <button class="btn" type="submit">{{ m.icon('refresh') }} {{ _("Replace") }}<span class="visually-hidden"> {{ c.label }}</span></button>
+          {% if src.env %}<p id="rot-help-{{ c.id }}" class="help span-all">{{ _m("It comes from <code>{key}</code> in the server's .env: replacing it here also updates that line.", key=src.env) }}</p>{% endif %}
         </form>
       </div>
     </li>
     {% endfor %}
   </ul>
   {% else %}
-  <p class="card__body" style="margin:0">{{ m.icon('info') }} {{ _("There are no provider credentials yet.") }}</p>
+  <p class="card__body flush">{{ m.icon('info') }} {{ _("There are no provider credentials yet.") }}</p>
   {% endif %}
 </section>
+{% for c, used, src in creds if not used %}
+{{ m.confirm('del-cred-' ~ c.id, _('Delete {label}', label=c.label), _('The credential is deleted from the panel. No domain uses it; the token itself stays valid at the provider until you revoke it there.') ~ (' ' ~ _('Its line in the server\'s .env is removed too.') if src.env else ''), '/ajustes/cuentas/' ~ c.id ~ '/eliminar', _('Delete credential')) }}
+{% endfor %}
 
 <section class="card" aria-labelledby="nueva-cuenta">
   <div class="card__head"><h2 id="nueva-cuenta">{{ m.icon('plus') }} {{ _("Add credential") }}</h2></div>
-  <form class="card__body form-grid" method="post" action="/ajustes/cuentas">{{ csrf_field() }}
-    <div>
-      <label for="provider">{{ _("Provider") }}</label>
-      <select id="provider" name="provider">{% for k, v in providers.items() %}<option value="{{ k }}" data-placeholder="{{ {'cloudflare': _('Personal Cloudflare'), 'gcore': _('Main Gcore')}.get(k, v) }}">{{ v }}</option>{% endfor %}</select>
+  {{ m.card_flash(flash, 'nueva-cuenta') }}
+  <form method="post" action="/ajustes/cuentas">{{ csrf_field() }}
+    <div class="card__body stack-gap">
+      <details class="help-box">
+        <summary><span class="if-closed">{{ m.icon('info') }} {{ _("How to create the Cloudflare token") }}</span><span class="if-open">{{ _("Hide instructions") }}</span></summary>
+        <ol>
+          <li>{{ _m("Cloudflare → My Profile → API Tokens → <strong>Create Token</strong> → Create Custom Token.") }}</li>
+          <li>{{ _m("Permissions: <strong>Zone · Zone · Read</strong> (list zones when importing) and <strong>Zone · DNS · Edit</strong> (read records and switch). Optional: <strong>Zone · Transform Rules · Edit</strong>, so the panel creates the rule for the secret header to the origin.") }}</li>
+          <li>{{ _m("Zone Resources: <strong>Include · Specific zone</strong> (one per domain) or <strong>All zones from an account</strong>. No account permission is needed.") }}</li>
+          <li>{{ _("Client IP Address Filtering: the public IP of the VPS where the controller runs (add yours while you test it locally).") }}</li>
+          <li>{{ _("Do not use the Global API Key: it gives full access to the account.") }}</li>
+        </ol>
+      </details>
+      <details class="help-box">
+        <summary><span class="if-closed">{{ m.icon('info') }} {{ _("How to create the Gcore token") }}</span><span class="if-open">{{ _("Hide instructions") }}</span></summary>
+        <ol>
+          <li>{{ _m("Gcore → Profile (top right) → <strong>API tokens</strong> → <strong>Create token</strong>.") }}</li>
+          <li>{{ _m("Role: <strong>Engineers</strong> (or Administrators). The panel creates origins, certificates and CDN resources, and reads the monthly traffic.") }}</li>
+          <li>{{ _m("Expiration: <strong>Never</strong>, or a date you note down: an expired token stops the switches to Gcore.") }}</li>
+          <li>{{ _("Copy it when it is shown: Gcore does not show it again. One token per Gcore account.") }}</li>
+        </ol>
+      </details>
+      <div class="form-grid">
+        <div>
+          <label for="provider">{{ _("Provider") }}</label>
+          <select id="provider" name="provider">{% for k, v in providers.items() %}<option value="{{ k }}" data-placeholder="{{ {'cloudflare': _('Personal Cloudflare'), 'gcore': _('Main Gcore')}.get(k, v) }}">{{ v }}</option>{% endfor %}</select>
+        </div>
+        <div>
+          <label for="label">{{ _("Name") }}</label>
+          <input id="label" type="text" name="label" required placeholder="{{ _('Personal Cloudflare') }}" autocomplete="off" aria-describedby="label-help">
+          <p id="label-help" class="help">
+            <span data-provider-help="cloudflare">{{ _("To tell it apart: Cloudflare account, client or domain.") }}</span>
+            <span data-provider-help="gcore" hidden>{{ _("To tell it apart: Gcore account or client.") }}</span>
+          </p>
+        </div>
+        <div>
+          <label for="secret">{{ _("Token or API key") }}</label>
+          <input id="secret" type="password" name="secret" required autocomplete="off" spellcheck="false" aria-describedby="secret-help">
+          <p id="secret-help" class="help">
+            <span data-provider-help="cloudflare">{{ _m("API token (not the Global API Key) with <strong>Zone · Zone · Read</strong> and <strong>Zone · DNS · Edit</strong> permissions, limited to your zones. It is verified when saved.") }}</span>
+            <span data-provider-help="gcore" hidden>{{ _m("Permanent Gcore API token (Profile → API tokens → Create token) with the <strong>Administrators</strong> or <strong>Engineers</strong> role, to create origins, certificates and CDN resources. It is verified when saved.") }}</span>
+          </p>
+        </div>
+      </div>
     </div>
-    <div>
-      <label for="label">{{ _("Name") }}</label>
-      <input id="label" type="text" name="label" required placeholder="{{ _('Personal Cloudflare') }}" autocomplete="off" aria-describedby="label-help">
-      <p id="label-help" class="help">
-        <span data-provider-help="cloudflare">{{ _("To tell it apart: Cloudflare account, client or domain.") }}</span>
-        <span data-provider-help="gcore" hidden>{{ _("To tell it apart: Gcore account or client.") }}</span>
-      </p>
+    <div class="card__foot actions-end">{{ m.more("nueva-cuenta-help", _m("Saved encrypted in the database and never shown again. A token in <code>CLOUDFLARE_API_TOKEN</code> or <code>GCORE_API_TOKEN</code> of the server's .env is imported at startup as its own credential, and replacing or deleting that credential here updates the .env too.")) }}
+      <button class="btn btn--primary" type="submit">{{ m.icon('plus') }} {{ _("Save and verify") }}</button>
     </div>
-    <div>
-      <label for="secret">{{ _("Token or API key") }}</label>
-      <input id="secret" type="password" name="secret" required autocomplete="off" spellcheck="false" aria-describedby="secret-help">
-      <p id="secret-help" class="help">
-        <span data-provider-help="cloudflare">{{ _m("API token (not the Global API Key) with <strong>Zone · Zone · Read</strong> and <strong>Zone · DNS · Edit</strong> permissions, limited to your zones. It is verified when saved.") }}</span>
-        <span data-provider-help="gcore" hidden>{{ _m("Permanent Gcore API token (Profile → API tokens → Create token) with the <strong>Administrators</strong> or <strong>Engineers</strong> role, to create origins, certificates and CDN resources. It is verified when saved.") }}</span>
-      </p>
-    </div>
-    <div class="form-actions"><button class="btn btn--primary" type="submit">{{ m.icon('plus') }} {{ _("Save and verify") }}</button></div>
   </form>
 </section>
 {% endblock %}

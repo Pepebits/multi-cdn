@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from . import alerts, heartbeat
-from .i18n import tr
+from .i18n import tr, trn
 
 
 @dataclass
@@ -44,7 +44,7 @@ def _alert_items(state, now: datetime) -> list[Problem]:
         since = data["since"]
         if key == "feed_down":
             out.append(Problem(key, "error", tr("The block feed cannot be read: automatic switching is blind"),
-                               since, "/ajustes/operacion#feed", _settings("Operation")))
+                               since, "/ajustes/cambio#feed", _settings("Automatic switching")))
         elif key.startswith("cf_read:"):
             cred_id = key.removeprefix("cf_read:")
             try:
@@ -95,7 +95,7 @@ def open_problems(state, now: datetime | None = None) -> list[Problem]:
     if state.feed_stale_alerted and state.feed is not None:
         items.append(Problem("feed_stale", "warn", tr("The block feed answers with old data: automatic switching is "
                                                       "not deciding"),
-                             state.feed.last_update, "/ajustes/operacion#feed", _settings("Operation")))
+                             state.feed.last_update, "/ajustes/cambio#feed", _settings("Automatic switching")))
 
     from .origin_health import FAILS_TO_ALERT, INTERVAL
     for health in state.origin_health.values():
@@ -127,6 +127,21 @@ def open_problems(state, now: datetime | None = None) -> list[Problem]:
         items.append(Problem("heartbeat", "warn", tr("The external heartbeat could not be delivered ({result})",
                                                      result=beat.result),
                              beat.at, "/ajustes/notificaciones", _settings("Notifications")))
+
+    from .main import RECOVERY_LOW, env_mismatches
+    for user in state.auth.list_users():
+        left = state.auth.recovery_left(user.id)
+        if user.totp_enabled and left <= RECOVERY_LOW:
+            items.append(Problem(f"recovery:{user.username}", "warn",
+                                 trn("{user} has only {n} recovery code left", "{user} has only {n} recovery codes left",
+                                     left, user=user.username),
+                                 None, "/ajustes/cuenta#recuperacion", _settings("My account")))
+
+    for m in env_mismatches(state):
+        items.append(Problem(f"env:{m['env']}", "warn",
+                             tr("{label}: the server's .env could not be updated; on the next restart its value will "
+                                "replace the panel's", label=m["label"]),
+                             None, "/ajustes/sistema#env", _settings("System")))
 
     far = datetime.max.replace(tzinfo=UTC)
     items.sort(key=lambda p: (p.severity != "error", p.since or far))

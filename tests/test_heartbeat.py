@@ -50,5 +50,5 @@ def test_settings_validate_and_send(client):
     capture(state)
     state.dns_checked_at = datetime.now(UTC)
     r = client.post("/ajustes/notificaciones/latido", data={"heartbeat_url": "https://hc-ping.com/abc"}, follow_redirects=True)
-    assert "Aviso enviado: todo en orden" in r.text and "Funcionando" in r.text
+    assert "Latido enviado: todo en orden" in r.text and "Funcionando" in r.text
     assert state.secrets.get("heartbeat_url") == "https://hc-ping.com/abc"

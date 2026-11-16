@@ -12,7 +12,6 @@
   "Automatic switch to Gcore failed: {error}": "Cambio automático a Gcore fallido: {error}",
   "Automatic switch to Gcore not possible: the domain is not prepared on Gcore. Stays on Cloudflare": "Cambio automático a Gcore no posible: el dominio no está preparado en Gcore. Sigue en Cloudflare",
   "Automatic switch to Gcore: {reasons}": "Cambio automático a Gcore: {reasons}",
-  "Automatic switching off in Settings → Operation": "Automático desactivado en Ajustes → Operación",
   "Automatic switching paused: {count} switches in 6 h. Check the domain and resume it from the panel": "Cambio automático en pausa: {count} cambios en 6 h. Revisa el dominio y reanúdalo desde el panel",
   "Return to Cloudflare around {time}": "Vuelta a Cloudflare prevista: {time}",
   "Bot @{bot} could not write to chat {chat}": "El bot @{bot} no pudo escribir en el chat {chat}",

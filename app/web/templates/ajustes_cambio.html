@@ -1,161 +1,118 @@
 {% extends "base.html" %}
-{% block title %}{{ _("Operation") }}{% endblock %}
-{% block crumb %}{{ m.crumbs(_('Operation'), [(_('Settings'), '/ajustes/cuentas')]) }}{% endblock %}
-{% block heading %}{{ _("Settings") }}{% endblock %}
+{% block title %}{{ _("Automatic switching") }}{% endblock %}
+{% block crumb %}{{ m.crumbs(_('Automatic switching'), [(_('Settings'), '/ajustes/cuentas')]) }}{% endblock %}
+{% block heading %}{{ _("Settings") }} · {{ tab_label }}{% endblock %}
 
 {% block content %}
 {{ m.settings_tabs(tab) }}
 
 <section class="card" aria-labelledby="modo">
-  <div class="card__head"><h2 id="modo">{{ m.icon('shield') }} {{ _("DNS change mode") }}</h2></div>
+  <div class="card__head"><h2 id="modo">{{ m.icon('shield') }} {{ _("DNS change mode") }}</h2><span class="pill {{ 'pill--warn' if dry_run else 'pill--free' }}">{{ _('Dry run') if dry_run else _('Live') }}</span></div>
   <div class="card__body stack-gap">
-    <p style="margin:0">{{ _("Right now:") }} <strong>{{ _('Dry run') if dry_run else _('Live') }}</strong>.</p>
-    {% if dry_run_env %}<p style="margin:0">{{ _m("To enable live DNS changes set <code>MULTICDN_DRY_RUN=false</code> in the server environment. For safety, it cannot be enabled from the panel. A domain without an assigned Cloudflare credential is always simulated.") }}</p>{% endif %}
+    {% if dry_run_env %}
+    <p class="card__intro">{{ _("Switches are recorded in the history but the DNS is not changed.") }}</p>
+    <p class="flush">{{ _m("To enable live DNS changes set <code>MULTICDN_DRY_RUN=false</code> in the server's <code>.env</code> and restart. For safety, it cannot be enabled from the panel.") }}</p>
+    {% else %}
+    <p class="card__intro">{{ _("Switches change the DNS at Cloudflare. A domain without an assigned Cloudflare credential is always simulated.") }}</p>
+    {% endif %}
   </div>
 </section>
 
 <section class="card" aria-labelledby="automatico">
   <div class="card__head"><h2 id="automatico">{{ m.icon('switch') }} {{ _("Automatic CDN switching") }}</h2><span class="pill {{ 'pill--free' if auto_on else 'pill--nodata' }}">{{ _('Enabled') if auto_on else _('Disabled') }}</span></div>
+  {{ m.card_flash(flash, 'automatico') }}
   <div class="card__body stack-gap">
-    <p style="margin:0">{{ _m("Each domain with the <strong>reactive</strong> policy switches to Gcore when its Cloudflare IPs are blocked. With the <strong>preventive</strong> policy, also on a mass block and ahead of each LaLiga or LaLiga Hypermotion match. Before switching it checks that Gcore serves each hostname. It returns to Cloudflare after a while without blocks. Both times are set per priority in <a href=\"#tiempos\">Switching times</a>.") }}</p>
+    <p class="card__intro">{{ _m("Each domain with the <strong>reactive</strong> policy switches to Gcore when its Cloudflare IPs are blocked. With the <strong>preventive</strong> policy, also on a mass block and ahead of each LaLiga or LaLiga Hypermotion match. Before switching it checks that Gcore serves each hostname. It returns to Cloudflare after a while without blocks. Both times are set per priority in <a href=\"#tiempos\">Switching times</a>.") }}</p>
   </div>
-  <form method="post" action="/ajustes/operacion/automatico" class="card__foot actions-end">{{ csrf_field() }}{{ m.more("automatico-help", _m("At least 15 min between switches; with more than 4 switches in 6 h that domain is paused. A manual switch pauses it for 1 h. The <strong>manual</strong> policy never changes anything. With the feed down it can switch to Gcore for a match, but it does not return until the feed confirms there is no block. In dry run mode switches are only recorded.")) }}
-    <input type="hidden" name="enabled" value="{{ '0' if auto_on else '1' }}">
-    <button class="btn{{ '' if auto_on else ' btn--primary' }}" type="submit">{% if auto_on %}{{ m.icon('pause') }} {{ _("Disable for all domains") }}{% else %}{{ m.icon('play') }} {{ _("Enable") }}{% endif %}</button>
-  </form>
+  <div class="card__foot actions-end">{{ m.more("automatico-help", _m("At least 15 min between switches; with more than 4 switches in 6 h that domain is paused. A manual switch pauses it for 1 h. The <strong>manual</strong> policy never changes anything. With the feed down it can switch to Gcore for a match, but it does not return until the feed confirms there is no block. In dry run mode switches are only recorded.")) }}
+    {% if auto_on %}
+    <button class="btn" type="button" data-open="auto-off">{{ m.icon('pause') }} {{ _("Disable for all domains") }}</button>
+    {% else %}
+    <form method="post" action="/ajustes/cambio/automatico">{{ csrf_field() }}<input type="hidden" name="enabled" value="1">
+      <button class="btn btn--primary" type="submit">{{ m.icon('play') }} {{ _("Enable") }}</button></form>
+    {% endif %}
+  </div>
 </section>
+{% if auto_on %}
+{{ m.confirm('auto-off', _('Disable automatic switching'),
+   (_n('{n} domain stops switching on its own.', '{n} domains stop switching on their own.', auto_count) if auto_count else _('No domain can switch on its own right now (none has the reactive or preventive policy with a Cloudflare credential); nothing changes until it is enabled again.')) ~ ' ' ~
+   (_n('{n} of them is on Gcore now and stays there until you return it to Cloudflare.', '{n} of them are on Gcore now and stay there until you return them to Cloudflare.', auto_on_gcore) if auto_on_gcore else _('Domains on Gcore stay there until you return them to Cloudflare.')),
+   '/ajustes/cambio/automatico', _('Disable for all domains'), 'pause', true, {'enabled': '0'}) }}
+{% endif %}
 
 <section class="card" aria-labelledby="tiempos">
   <div class="card__head"><h2 id="tiempos">{{ m.icon('clock') }} {{ _("Switching times") }}</h2></div>
-  <form method="post" action="/ajustes/operacion/tiempos">{{ csrf_field() }}
+  {{ m.card_flash(flash, 'tiempos') }}
+  <form method="post" action="/ajustes/cambio/tiempos">{{ csrf_field() }}
     <div class="table-wrap">
       <table class="table">
         <thead><tr><th scope="col">{{ _("Priority") }}</th><th scope="col">{{ _("Switch before a match (min)") }}</th><th scope="col">{{ _("Return after no blocks for (min)") }}</th></tr></thead>
         <tbody>
           {% for p, t in timings.items() %}
+          {% set pname = {'critical': _("Critical"), 'medium': _("Medium"), 'low': _("Low")}[p] %}
           <tr>
-            <th scope="row">{{ {'critical': _("Critical"), 'medium': _("Medium"), 'low': _("Low")}[p] }}</th>
-            <td><input type="number" name="match_lead_{{ p }}" value="{{ t.match_lead }}" min="{{ limits.match_lead[0] }}" max="{{ limits.match_lead[1] }}" required aria-label="{{ _('Switch before a match (min)') }}" aria-describedby="tiempos-help"> <span class="muted mono">{{ _("default {n}", n=t.default_lead) }}</span></td>
-            <td><input type="number" name="return_after_{{ p }}" value="{{ t.return_after }}" min="{{ limits.return_after[0] }}" max="{{ limits.return_after[1] }}" required aria-label="{{ _('Return after no blocks for (min)') }}" aria-describedby="tiempos-help"> <span class="muted mono">{{ _("default {n}", n=t.default_wait) }}</span></td>
+            <th scope="row">{{ pname }}</th>
+            <td><input type="number" name="match_lead_{{ p }}" value="{{ t.match_lead }}" min="{{ limits.match_lead[0] }}" max="{{ limits.match_lead[1] }}" required aria-label="{{ _('{priority}: switch before a match (min)', priority=pname) }}" aria-describedby="tiempos-help"> <span class="muted mono">{{ _("default {n}", n=t.default_lead) }}</span></td>
+            <td><input type="number" name="return_after_{{ p }}" value="{{ t.return_after }}" min="{{ limits.return_after[0] }}" max="{{ limits.return_after[1] }}" required aria-label="{{ _('{priority}: return after no blocks for (min)', priority=pname) }}" aria-describedby="tiempos-help"> <span class="muted mono">{{ _("default {n}", n=t.default_wait) }}</span></td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
     <div class="card__foot actions-end">{{ m.more("tiempos-help", _("The defaults come from two months of block history: blocks start a median of 68 min before kick-off (90 % within the previous 2 h), and a released IP was blocked again within 15 min only 0.05 % of the time. A longer lead protects more of the match at the cost of more time and traffic on Gcore.")) }}
-      <button class="btn" type="submit" name="reset" value="1" formnovalidate>{{ m.icon('refresh') }} {{ _("Restore defaults") }}</button>
+      <button class="btn" type="button" data-open="tiempos-reset">{{ m.icon('refresh') }} {{ _("Restore defaults") }}</button>
       <button class="btn btn--primary" type="submit">{{ _("Save times") }}</button>
     </div>
   </form>
 </section>
-
-<section class="card" aria-labelledby="feed">
-  <div class="card__head"><h2 id="feed">{{ m.icon('refresh') }} {{ _("Block feed polling") }}</h2><span class="pill {{ 'pill--free' if feed_now == feed_idle else 'pill--nodata' }}">{{ _("now every {seconds} s", seconds=feed_now) }}</span></div>
-  <form method="post" action="/ajustes/operacion/feed">{{ csrf_field() }}
-    <div class="card__body stack-gap">
-      <div class="form-inline card__fields">
-        <div>
-          <label for="feed-interval">{{ _("Read the feed every") }}</label>
-          <select id="feed-interval" name="seconds" aria-describedby="feed-help">{% for v in feed_options %}<option value="{{ v }}"{% if v == feed_idle %} selected{% endif %}>{{ _("{seconds} s (default)", seconds=v) if v == 300 else _("{seconds} s", seconds=v) }}</option>{% endfor %}</select>
-        </div>
-      </div>
-    </div>
-    <div class="card__foot actions-end">{{ m.more("feed-help", _("Interval while nothing is going on. It reads every 90 s during a match window (with the longest lead of Switching times), while any hostname is on Gcore, during blocks, without a match calendar and after a failed read. Each read downloads about 0.4 MB. Preventive switching before a match does not depend on this interval.")) }}<button class="btn btn--primary" type="submit">{{ _("Save interval") }}</button></div>
-  </form>
-</section>
-
-<section class="card" aria-labelledby="idioma">
-  <div class="card__head"><h2 id="idioma">{{ m.icon('language') }} {{ _("Language of history and alerts") }}</h2><span class="mono muted">{{ LANGS[notify_lang] }}</span></div>
-  <form method="post" action="/ajustes/operacion/idioma">{{ csrf_field() }}
-    <div class="card__body stack-gap">
-      <p id="idioma-help" class="help" style="margin:0">{{ _("Used for new history entries, Telegram and email alerts, and terminal commands. Entries already stored stay in the language they were written in.") }}</p>
-      <div class="form-inline card__fields">
-        <div>
-          <label for="notify-lang">{{ _("Language") }}</label>
-          <select id="notify-lang" name="lang" aria-describedby="idioma-help">{% for code, name in LANGS.items() %}<option value="{{ code }}" lang="{{ code }}"{% if code == notify_lang %} selected{% endif %}>{{ name }}</option>{% endfor %}</select>
-        </div>
-      </div>
-    </div>
-    <div class="card__foot actions-end"><button class="btn btn--primary" type="submit">{{ _("Save language") }}</button></div>
-  </form>
-</section>
+{{ m.confirm('tiempos-reset', _('Restore the default times'), _('The six times go back to their defaults; the ones you set are lost.'), '/ajustes/cambio/tiempos', _('Restore defaults'), 'refresh', false, {'reset': '1'}) }}
 
 <section class="card" aria-labelledby="calendario">
   <div class="card__head"><h2 id="calendario">{{ m.icon('calendar') }} {{ _("Match calendar") }}</h2>{% if calendar %}<span class="mono muted">{{ _n("{n} match", "{n} matches", calendar.matches|length) }} · {{ _m("read at {time}", time=calendar.fetched_at|hhmm) }}</span>{% endif %}</div>
-  <div class="card__body stack-gap">
-    <ul class="checks">
-      {% for source, covers in [('ESPN', _('LaLiga and LaLiga Hypermotion · no key')), ('football-data.org', _('LaLiga · free key'))] %}
-      {% set result = calendar.sources.get(source) if calendar else none %}
-      <li><span>{{ source }} <span class="muted">({{ covers }})</span>{% if result and result != 'ok' %}<br><span class="help">{{ result }}</span>{% endif %}</span>
-        <span class="pill {{ 'pill--free' if result == 'ok' else ('pill--blocked' if result else 'pill--nodata') }}">{{ _('Responding') if result == 'ok' else (_('Failing') if result else (_('No key') if source == 'football-data.org' and not fd.configured else _('Pending'))) }}</span></li>
-      {% endfor %}
-    </ul>
-    {% if calendar_error %}<p class="notice notice--error" style="margin:0">{{ m.icon('alert') }} {{ _("No calendar: {error}", error=calendar_error) }}</p>{% endif %}
-    <p id="fd-help" class="help" style="margin:0">{{ _("Both sources are used at once: a match counts if it appears in either. With only one responding there is still a calendar. It is read every 3 h.") }}</p>
-  </div>
-  <form method="post" action="/ajustes/operacion/football-data">{{ csrf_field() }}
-    <div class="card__body form-inline card__fields" style="padding-top:0">
-      <div>
-        <label for="fd-token">{{ _("football-data.org key") }}</label>
-        <input id="fd-token" type="password" name="token" autocomplete="off" spellcheck="false" required aria-describedby="fd-help"{% if fd.configured %} placeholder="{{ _('Saved · {hint}', hint=fd.hint) }}"{% endif %}>
+  {{ m.card_flash(flash, 'calendario') }}
+  <form method="post" action="/ajustes/cambio/football-data">{{ csrf_field() }}
+    <div class="card__body stack-gap">
+      <p id="fd-help" class="card__intro">{{ _("Both sources are used at once: a match counts if it appears in either. With only one responding there is still a calendar. It is read every 3 h.") }}</p>
+      <ul class="checks">
+        {% for source, covers in [('ESPN', _('LaLiga and LaLiga Hypermotion · no key')), ('football-data.org', _('LaLiga · free key'))] %}
+        {% set result = calendar.sources.get(source) if calendar else none %}
+        <li><span>{{ source }} <span class="muted">({{ covers }})</span>{% if result and result != 'ok' %}<br><span class="help">{{ result }}</span>{% endif %}</span>
+          <span class="pill {{ 'pill--free' if result == 'ok' else ('pill--blocked' if result else 'pill--nodata') }}">{{ _('Responding') if result == 'ok' else (_('Failing') if result else (_('No key') if source == 'football-data.org' and not fd.configured else _('Pending'))) }}</span></li>
+        {% endfor %}
+      </ul>
+      {% if calendar_error %}<p class="notice notice--error flush">{{ m.icon('alert') }} {{ _("No calendar: {error}", error=calendar_error) }}</p>{% endif %}
+      <div class="form-inline card__fields">
+        <div>
+          <label for="fd-token">{{ _("football-data.org key") }}</label>
+          <input id="fd-token" type="password" name="token" autocomplete="off" spellcheck="false" required aria-describedby="fd-help{{ " fd-origin" if fd.configured or fd.env_state else "" }}"{% if fd.configured %} placeholder="{{ _('Saved · {hint}', hint=fd.hint) }}"{% endif %}>
+        </div>
       </div>
+      {% if fd.configured or fd.env_state %}<p id="fd-origin" class="help flush">{{ m.secret_origin(fd) }}</p>{% endif %}
+      {{ m.env_warning(fd) }}
     </div>
     <div class="card__foot actions-end">
-      {% if fd.configured and fd.source == 'panel' %}<button class="btn btn--danger" type="submit" formaction="/ajustes/operacion/football-data/eliminar" formnovalidate>{{ m.icon('trash') }} {{ _("Delete key") }}</button>{% endif %}
+      {{ m.more("fd-more", _m("Free key from football-data.org (register, then copy it from your account). Saved encrypted and in <code>FOOTBALL_DATA_TOKEN</code> of the server's .env.")) }}
+      {% if fd.configured %}<button class="btn btn--danger" type="button" data-open="quitar-fd">{{ m.icon('x') }} {{ _("Remove key") }}</button>{% endif %}
       <button class="btn btn--primary" type="submit">{{ _('Replace and test') if fd.configured else _('Save and test') }}</button>
     </div>
   </form>
 </section>
+{% if fd.configured %}{{ m.confirm('quitar-fd', _('Remove the football-data.org key'), _('The calendar keeps only ESPN as its source.'), '/ajustes/cambio/football-data/quitar', _('Remove key'), 'x') }}{% endif %}
 
-<section class="card" aria-labelledby="cuota">
-  <div class="card__head"><h2 id="cuota">{{ m.icon('chart') }} {{ _("Gcore quota") }}</h2></div>
-  <form method="post" action="/ajustes/operacion/cuota">{{ csrf_field() }}
+<section class="card" aria-labelledby="feed">
+  <div class="card__head"><h2 id="feed">{{ m.icon('refresh') }} {{ _("Block feed polling") }}</h2><span class="pill {{ 'pill--free' if feed_now == feed_idle else 'pill--nodata' }}">{{ _("now every {seconds} s · {reason}", seconds=feed_now, reason=feed_why) }}</span></div>
+  {{ m.card_flash(flash, 'feed') }}
+  <form method="post" action="/ajustes/cambio/feed">{{ csrf_field() }}
     <div class="card__body stack-gap">
+      <p class="card__intro">{{ _("How often the block feed is read while nothing is going on.") }}</p>
       <div class="form-inline card__fields">
         <div>
-          <label for="gcore_quota_gb">{{ _("Free traffic per month (GB)") }}</label>
-          <input id="gcore_quota_gb" type="number" name="gcore_quota_gb" value="{{ quota_gb }}" min="1" max="1000000" required aria-describedby="cuota-help">
+          <label for="feed-interval">{{ _("Read the feed every") }}</label>
+          <select id="feed-interval" name="seconds" aria-describedby="feed-help">{% for v, label in feed_options %}<option value="{{ v }}"{% if v == feed_idle %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
         </div>
       </div>
     </div>
-    <div class="card__foot actions-end">{{ m.more("cuota-help", _("It is compared with the total monthly traffic of each account (served to users + fetched from the origin), read every hour. It alerts when passing 70 %, 90 % and 100 %, and when 2 free CDN resources are left.")) }}<button class="btn btn--primary" type="submit">{{ _("Save quota") }}</button></div>
+    <div class="card__foot actions-end">{{ m.more("feed-help", _("It reads every 90 s during a match window (with the longest lead of Switching times), while any hostname is on Gcore, during blocks, without a match calendar and after a failed read. Each read downloads about 0.4 MB. Preventive switching before a match does not depend on this interval.")) }}<button class="btn btn--primary" type="submit">{{ _("Save interval") }}</button></div>
   </form>
-</section>
-
-{% import "_ui030.html" as u030 %}{{ u030.error_reporting_card(error_reporting) }}
-
-<section class="card" aria-labelledby="cifrado">
-  <div class="card__head"><h2 id="cifrado">{{ m.icon('lock') }} {{ _("Credential encryption") }}</h2></div>
-  <div class="card__body">
-    {% if key_on_disk %}
-    <p class="notice notice--warn" style="margin:0">{{ m.icon('alert') }} {{ _m("The master key is in <code>data/.secret_key</code>, next to the database. So that a copy of the database is useless without it, set <code>MULTICDN_SECRET_KEY</code> in the environment and keep the key outside the VPS.") }}</p>
-    {% else %}
-    <p class="notice notice--ok" style="margin:0">{{ m.icon('check') }} {{ _m("The master key comes from <code>MULTICDN_SECRET_KEY</code>.") }}</p>
-    {% endif %}
-  </div>
-</section>
-
-<section class="card" aria-labelledby="retencion">
-  <div class="card__head"><h2 id="retencion">{{ m.icon('history') }} {{ _("History retention") }}</h2><span class="mono muted">{{ _n("{n} event", "{n} events", ev_stats.count) }}{% if ev_stats.oldest %} · {{ _m("since {when}", when=ev_stats.oldest|when) }}{% endif %}</span></div>
-  <form method="post" action="/ajustes/operacion/retencion">{{ csrf_field() }}
-    <div class="card__body stack-gap">
-      <div class="form-inline card__fields">
-        <div>
-          <label for="events_max_days">{{ _("Keep events (days)") }}</label>
-          <input id="events_max_days" type="number" name="events_max_days" value="{{ ev_days }}" min="7" max="3650" required aria-describedby="retencion-help">
-        </div>
-        <div>
-          <label for="events_max_rows">{{ _("Maximum number of events") }}</label>
-          <input id="events_max_rows" type="number" name="events_max_rows" value="{{ ev_rows }}" min="500" max="1000000" step="500" required aria-describedby="retencion-help">
-        </div>
-      </div>
-    </div>
-    <div class="card__foot actions-end">{{ m.more("retencion-help", _("Whichever limit is reached first applies. The cleanup runs at startup, every 6 hours and when saving. certbot logs are limited to 10 copies; the server logs are managed by systemd or Docker.")) }}<button class="btn btn--primary" type="submit">{{ _("Save retention") }}</button></div>
-  </form>
-</section>
-
-<section class="card" aria-labelledby="exportar">
-  <div class="card__head"><h2 id="exportar">{{ m.icon('download') }} {{ _("Inventory copy") }}</h2></div>
-  <div class="card__foot actions-end"><a class="btn" href="/ajustes/inventario.yaml">{{ m.icon('download') }} {{ _("Export inventory (YAML, no secrets)") }}</a></div>
 </section>
 {% endblock %}

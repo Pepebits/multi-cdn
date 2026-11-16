@@ -1,46 +1,58 @@
 {% extends "base.html" %}
+{% import "_macros.html" as m %}
 {% block title %}{{ _("Notifications") }}{% endblock %}
 {% block crumb %}{{ m.crumbs(_('Notifications'), [(_('Settings'), '/ajustes/cuentas')]) }}{% endblock %}
-{% block heading %}{{ _("Settings") }}{% endblock %}
+{% block heading %}{{ _("Settings") }} · {{ tab_label }}{% endblock %}
 
 {% macro field(f, type='password') -%}
 <div class="field">
-  <label for="v-{{ f.name }}">{{ _(f.label) }}</label>
+  <label for="v-{{ f.name }}">{{ f.label }}</label>
   <div class="field__status">
     {% if f.configured %}
       <span class="pill pill--free">{{ _("Configured") }}</span>
       <span class="mono">{{ f.hint }}</span>
-      <span class="muted">{% if f.source == 'entorno' %}{{ _("from an environment variable") }}{% else %}{{ _m("saved {when}", when=f.updated_at|when) }}{% endif %}</span>
-      {% if f.source == 'panel' %}
-      <button class="btn btn--danger btn--sm" type="submit" formaction="/ajustes/notificaciones/{{ f.name }}/eliminar" formnovalidate>{{ _("Remove") }}<span class="visually-hidden"> {{ _(f.label) }}</span></button>
-      {% endif %}
+      <button class="btn btn--danger btn--sm" type="button" data-open="quitar-{{ f.name }}">{{ _("Remove value") }}<span class="visually-hidden"> {{ f.label }}</span></button>
     {% else %}
       <span class="pill pill--nodata">{{ _("Not configured") }}</span>
     {% endif %}
   </div>
-  <input id="v-{{ f.name }}" type="{{ type }}" name="{{ f.name }}" autocomplete="off" spellcheck="false"
+  <input id="v-{{ f.name }}" type="{{ type }}" name="{{ f.name }}" autocomplete="off" spellcheck="false"{% if type == 'url' %} inputmode="url" autocapitalize="none"{% endif %}
          placeholder="{{ _('Type to replace') if f.configured else '' }}" aria-describedby="h-{{ f.name }}">
-  <p id="h-{{ f.name }}" class="help">{{ _(f.help) }}{% if f.configured %} {{ _("Leave it empty to keep the current one.") }}{% endif %}</p>
+  <p id="h-{{ f.name }}" class="help">{{ f.help }}{% if f.configured %} {{ _("Leave it empty to keep the current one.") }}{% endif %}</p>
+  {% if f.configured or f.env_state %}<p class="help">{{ m.secret_origin(f) }}</p>{% endif %}
+  {{ m.env_warning(f) }}
 </div>
+{%- endmacro %}
+
+{% macro remove_dialog(f) -%}
+{% if f.configured %}{{ m.confirm('quitar-' ~ f.name, _('Remove {field}', field=f.label), _('The value is removed from the panel and from the server\'s .env. Notifications that need it stop until you set it again.'), '/ajustes/notificaciones/' ~ f.name ~ '/eliminar', _('Remove value'), 'x') }}{% endif %}
 {%- endmacro %}
 
 {% block content %}
 {{ m.settings_tabs(tab) }}
 
 {% for canal, title, a, b in [('telegram', 'Telegram', fields.telegram_token, fields.telegram_chat_id), ('email', 'Email', fields.smtp_url, fields.alert_email_to)] %}
+{% set ready = a.configured and b.configured %}{% set testable = ready if canal == 'telegram' else a.configured %}
 <section class="card" aria-labelledby="canal-{{ canal }}">
-  <div class="card__head"><h2 id="canal-{{ canal }}">{{ m.icon('send' if canal == 'telegram' else 'mail') }} {{ title }}</h2></div>
+  <div class="card__head"><h2 id="canal-{{ canal }}">{{ m.icon('send' if canal == 'telegram' else 'mail') }} {{ title }}</h2>
+    <span class="pill {{ 'pill--free' if ready else 'pill--nodata' }}">{{ _('Ready') if ready else _('Not configured') }}</span></div>
+  {{ m.card_flash(flash, 'canal-' ~ canal) }}
   <form method="post" action="/ajustes/notificaciones/canal/{{ canal }}">{{ csrf_field() }}
-    <div class="card__body form-grid form-grid--2">
-      {{ field(a) }}
-      {{ field(b, 'text') }}
+    <div class="card__body stack-gap">
+      <p class="card__intro">{{ _("Alerts of switches, blocks and failures arrive by Telegram.") if canal == 'telegram' else _("The same alerts, by email.") }}</p>
+      <div class="form-grid form-grid--2">
+        {{ field(a) }}
+        {{ field(b, 'text') }}
+      </div>
     </div>
     <div class="card__foot actions-end">
-      <button class="btn btn--ok" type="submit" formaction="/ajustes/notificaciones/probar/{{ canal }}" formnovalidate>{{ m.icon('send' if canal == 'telegram' else 'play') }} {{ _('Send a test message') if canal == 'telegram' else _('Test SMTP connection') }}</button>
+      {{ m.more("canal-" ~ canal ~ "-help", _m("Saved encrypted in the database and also in the server's <code>.env</code> (<code>{a}</code>, <code>{b}</code>), so both stay equal. The test uses the saved values: save first.", a=a.env, b=b.env)) }}
+      <button class="btn btn--ok" type="submit" formaction="/ajustes/notificaciones/probar/{{ canal }}" formnovalidate{% if not testable %} disabled{% endif %}>{{ m.icon('send' if canal == 'telegram' else 'play') }} {{ _('Test the saved settings') }}</button>
       <button class="btn btn--primary" type="submit">{{ _("Save {channel}", channel=title) }}</button>
     </div>
   </form>
 </section>
+{{ remove_dialog(a) }}{{ remove_dialog(b) }}
 {% endfor %}
 
 <section class="card" aria-labelledby="latido">
@@ -51,17 +63,60 @@
     {% elif beat %}<span class="pill pill--blocked">{{ _("Needs review") }}</span>
     {% else %}<span class="pill pill--neutral">{{ _("Pending") }}</span>{% endif %}
   </div>
+  {{ m.card_flash(flash, 'latido') }}
   <form method="post" action="/ajustes/notificaciones/latido">{{ csrf_field() }}
     <div class="card__body stack-gap">
-      <p style="margin:0">{{ _m("Every 5 min the panel tells an external service that it is still working. If it stops doing so (panel hung, VPS down) or one of its tasks stops, that service alerts you by email or Telegram. Create a check on healthchecks.io with <strong>period 5 min and grace 10 min</strong> and paste its ping URL here.") }}</p>
-      {{ field(fields.heartbeat_url, 'password') }}
-      {% if beat %}<p class="help" style="margin:0">{{ _m("Last heartbeat: {when}", when=beat.at|when) }} · {{ _('all good') if beat.ok else _('failure reported') }} · {{ _('sent') if beat.result == 'ok' else _('not sent ({result})', result=beat.result) }} · {{ beat.detail }}</p>
-      {% else %}<p class="help" style="margin:0">{{ _("Right now:") }} {{ _('all good') if beat_health[0] else _('with failures') }} · {{ beat_health[1]|join('; ') }}</p>{% endif %}
+      <p class="card__intro">{{ _m("Every 5 min the panel tells an external service that it is still working. If it stops doing so (panel hung, VPS down) or one of its tasks stops, that service alerts you by email or Telegram. Create a check on healthchecks.io with <strong>period 5 min and grace 10 min</strong> and paste its ping URL here.") }}</p>
+      {{ field(fields.heartbeat_url, 'url') }}
+      <div class="beat-status">
+        {% if beat %}<p class="help flush">{{ _m("Last heartbeat: {when}", when=beat.at|when) }} · {{ _('sent') if beat.result == 'ok' else _('not sent ({result})', result=beat.result) }} · {{ _('all good') if beat.ok else _('failure reported') }}</p>{% endif %}
+        <p class="help flush">{{ _("Right now:") }} {% if not beat_failures %}<strong>{{ _("no failures") }}</strong>{% else %}<strong>{{ _n("{n} failure", "{n} failures", beat_failures|length) }}</strong>{% endif %}</p>
+        <ul class="beat-list">
+          {% for x in beat_failures %}<li class="beat-list__fail">{{ m.icon('alert') }} <span>{{ x }}</span></li>{% endfor %}
+          {% for x in beat_notes %}<li>{{ m.icon('info') }} <span>{{ x }}</span></li>{% endfor %}
+        </ul>
+      </div>
     </div>
     <div class="card__foot actions-end">
-      {% if fields.heartbeat_url.configured %}<button class="btn btn--ok" type="submit" formaction="/ajustes/notificaciones/latido/probar" formnovalidate>{{ m.icon('play') }} {{ _("Send heartbeat now") }}</button>{% endif %}
+      {{ m.more("latido-help", _("Only the panel's own tasks count as a failure (DNS check, reading Cloudflare, the switching engine); the notes are sent along as information. Without a heartbeat URL nothing is sent.")) }}
+      <button class="btn btn--ok" type="submit" formaction="/ajustes/notificaciones/latido/probar" formnovalidate{% if not fields.heartbeat_url.configured %} disabled{% endif %}>{{ m.icon('play') }} {{ _("Send heartbeat now") }}</button>
       <button class="btn btn--primary" type="submit">{{ _("Save and send heartbeat") }}</button>
     </div>
+  </form>
+</section>
+{{ remove_dialog(fields.heartbeat_url) }}
+
+<section class="card" aria-labelledby="idioma">
+  <div class="card__head"><h2 id="idioma">{{ m.icon('language') }} {{ _("Language of history and alerts") }}</h2></div>
+  {{ m.card_flash(flash, 'idioma') }}
+  <form method="post" action="/ajustes/notificaciones/idioma">{{ csrf_field() }}
+    <div class="card__body stack-gap">
+      <p id="idioma-help" class="card__intro">{{ _("Used for new history entries, Telegram and email alerts, and terminal commands. Entries already stored stay in the language they were written in.") }}</p>
+      <div class="form-inline card__fields">
+        <div>
+          <label for="notify-lang">{{ _("Language") }}</label>
+          <select id="notify-lang" name="lang" aria-describedby="idioma-help">{% for code, name in LANGS.items() %}<option value="{{ code }}" lang="{{ code }}"{% if code == notify_lang %} selected{% endif %}>{{ name }}</option>{% endfor %}</select>
+        </div>
+      </div>
+    </div>
+    <div class="card__foot actions-end"><button class="btn btn--primary" type="submit">{{ _("Save language") }}</button></div>
+  </form>
+</section>
+
+<section class="card" aria-labelledby="cuota">
+  <div class="card__head"><h2 id="cuota">{{ m.icon('chart') }} {{ _("Gcore quota") }}</h2></div>
+  {{ m.card_flash(flash, 'cuota') }}
+  <form method="post" action="/ajustes/notificaciones/cuota">{{ csrf_field() }}
+    <div class="card__body stack-gap">
+      <p class="card__intro">{{ _("Alerts before the free Gcore traffic of the month runs out.") }}</p>
+      <div class="form-inline card__fields">
+        <div>
+          <label for="gcore_quota_gb">{{ _("Free traffic per month (GB)") }}</label>
+          <input id="gcore_quota_gb" type="number" name="gcore_quota_gb" value="{{ quota_gb }}" min="1" max="1000000" required aria-describedby="cuota-help">
+        </div>
+      </div>
+    </div>
+    <div class="card__foot actions-end">{{ m.more("cuota-help", _("It is compared with the total monthly traffic of each account (served to users + fetched from the origin), read every hour. It alerts when passing 70 %, 90 % and 100 %, and when 2 free CDN resources are left.")) }}<button class="btn btn--primary" type="submit">{{ _("Save quota") }}</button></div>
   </form>
 </section>
 {% endblock %}
