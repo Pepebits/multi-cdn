@@ -1534,6 +1534,7 @@ async def servidor_editar(request: Request, server_id: str, new_id: str = Form(.
     if server_id not in s.inventory.servers:
         raise HTTPException(404)
     try:
+        s.store.validate_server(origin_ipv4.strip() or None, private_address.strip() or None)  # before renaming
         s.store.rename_server(server_id, new_id)
         target = new_id.strip().lower()
         s.store.upsert_server(target, origin_ipv4.strip() or None, private_address.strip() or None)
@@ -1546,11 +1547,24 @@ async def servidor_editar(request: Request, server_id: str, new_id: str = Form(.
     return _card(url, f"servidor-{target}", ok=tr("Server {server} saved", server=target))
 
 
+def hostnames_on_backup(s: State, server_id: str) -> list[str]:
+    """Hostnames of this server that are on Gcore now (public DNS or the live Cloudflare record):
+    returning them to Cloudflare needs the origin IP."""
+    return sorted(h.name for d in s.inventory.domains.values() for h in d.hostnames
+                  if h.server == server_id and (((r := s.resolutions.get(h.name)) and r.provider == "gcore")
+                                                or (s.cf_live.get(h.name) or {}).get("to_backup")))
+
+
 @app.post("/ajustes/servidores/{server_id}/quitar-ip")
 async def servidor_quitar_ip(request: Request, server_id: str):
     s = _state(request)
     if server_id not in s.inventory.servers:
         raise HTTPException(404)
+    if on_backup := hostnames_on_backup(s, server_id):
+        return _card(request.url_for("ajustes_servidores"), f"servidor-{server_id}", error=trn(
+            "{hostnames} is served by Gcore now and needs this IP to go back to Cloudflare: switch it back first",
+            "{hostnames} are served by Gcore now and need this IP to go back to Cloudflare: switch them back first",
+            len(on_backup), hostnames=", ".join(on_backup)))
     s.secrets.delete(origin_key(server_id))
     s.events.add(actor=_actor(request), kind="config", summary=tn("Server {server}: origin IP removed", server=server_id))
     await _after_inventory_change(s)

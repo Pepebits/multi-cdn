@@ -37,10 +37,11 @@
       <p class="help flush er-note">{{ m.icon('lock') }} {{ _("Only errors are sent. IP addresses (the origin's included), emails and token-looking values are removed before anything leaves the server; no cookies, headers, request bodies or local variables.") }}</p>
     </div>
     <div class="card__foot actions-end">
+      {#- Save first in the page so Enter in the DSN field saves; CSS (btn--last) still shows it last. #}
+      <button class="btn btn--primary btn--last" type="submit">{{ _("Save DSN") }}</button>
       {{ m.more("errores-help", _m("The DSN is saved encrypted and in <code>MULTICDN_SENTRY_DSN</code> of config/secrets.env. The server must be a public name (not an IP or a local name) with https. <code>MULTICDN_SENTRY_ENVIRONMENT</code> and <code>MULTICDN_SENTRY_TRACES_SAMPLE_RATE</code> are set only in .env.")) }}
       {% if dsn.configured %}<button class="btn btn--danger" type="button" data-open="quitar-dsn">{{ m.icon('x') }} {{ _("Remove DSN") }}</button>{% endif %}
       <button class="btn btn--ok" type="submit" formaction="/ajustes/sistema/errores/probar" formnovalidate{% if not er.enabled %} disabled{% endif %}>{{ m.icon('send') }} {{ _("Send test error") }}</button>
-      <button class="btn btn--primary" type="submit">{{ _("Save DSN") }}</button>
     </div>
   </form>
 </section>

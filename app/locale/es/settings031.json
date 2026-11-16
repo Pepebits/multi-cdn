@@ -164,6 +164,8 @@
   "the file cannot be read": "no se puede leer el fichero",
   "the value cannot be written to the file": "el valor no se puede escribir en el fichero",
   "Could not update config/secrets.env ({reason}): set {keys} there yourself, or the file's value comes back on the next restart.": "No se pudo actualizar config/secrets.env ({reason}): pon {keys} allí a mano, o al reiniciar volverá el valor del fichero.",
+  "{hostnames} is served by Gcore now and needs this IP to go back to Cloudflare: switch it back first": "{hostnames} está ahora en Gcore y necesita esta IP para volver a Cloudflare: devuélvelo primero",
+  "{hostnames} are served by Gcore now and need this IP to go back to Cloudflare: switch them back first": "{hostnames} están ahora en Gcore y necesitan esta IP para volver a Cloudflare: devuélvelos primero",
   "{label}: config/secrets.env could not be updated; on the next restart its value will replace the panel's": "{label}: no se pudo actualizar config/secrets.env; al reiniciar, su valor sustituirá al del panel",
   "config/secrets.env cannot be read: the panel keeps its saved values and imports nothing from it until it can": "No se puede leer config/secrets.env: el panel conserva sus valores guardados y no importa nada de él hasta que pueda",
   "config/secrets.env has variables the panel does not manage ({keys}): they are ignored; move them to .env": "config/secrets.env tiene variables que el panel no gestiona ({keys}): se ignoran; muévelas al .env",

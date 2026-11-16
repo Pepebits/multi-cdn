@@ -74,12 +74,15 @@
     </header>
 
     <main id="contenido" class="content" tabindex="-1">
-      {#- Settings show the message inside the card that was saved (m.card_flash). -#}
-      {% if not (settings_cards and flash and flash.card) %}
+      {#- Settings show the message inside the card that was saved (m.card_flash marks it shown);
+          rendered first so that a message for a card that is not on the page (gone, renamed)
+          still shows here, above everything. -#}
+      {% set page_content %}{% block content %}{% endblock %}{% endset %}
+      {% if not (flash and flash.shown) %}
       {% if flash_ok %}<p class="notice notice--ok" role="status">{{ m.icon('check') }} {{ flash_ok }}</p>{% endif %}
       {% if flash_error %}<p class="notice notice--error" role="alert">{{ m.icon('alert') }} {{ flash_error }}</p>{% endif %}
       {% endif %}
-      {% block content %}{% endblock %}
+      {{ page_content }}
     </main>
 
     <footer class="footer">

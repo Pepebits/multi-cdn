@@ -46,9 +46,10 @@
       </div>
     </div>
     <div class="card__foot actions-end">
+      {#- Save first in the page so Enter in a field saves; CSS (btn--last) still shows it last. #}
+      <button class="btn btn--primary btn--last" type="submit">{{ _("Save {channel}", channel=title) }}</button>
       {{ m.more("canal-" ~ canal ~ "-help", _m("Saved encrypted in the database and also in <code>config/secrets.env</code> (<code>{a}</code>, <code>{b}</code>), so both stay equal. The test uses the saved values: save first.", a=a.env, b=b.env)) }}
       <button class="btn btn--ok" type="submit" formaction="/ajustes/notificaciones/probar/{{ canal }}" formnovalidate{% if not testable %} disabled{% endif %}>{{ m.icon('send' if canal == 'telegram' else 'play') }} {{ _('Test the saved settings') }}</button>
-      <button class="btn btn--primary" type="submit">{{ _("Save {channel}", channel=title) }}</button>
     </div>
   </form>
 </section>
@@ -78,9 +79,9 @@
       </div>
     </div>
     <div class="card__foot actions-end">
+      <button class="btn btn--primary btn--last" type="submit">{{ _("Save and send heartbeat") }}</button>
       {{ m.more("latido-help", _("Only the panel's own tasks count as a failure (DNS check, reading Cloudflare, the switching engine); the notes are sent along as information. Without a heartbeat URL nothing is sent.")) }}
       <button class="btn btn--ok" type="submit" formaction="/ajustes/notificaciones/latido/probar" formnovalidate{% if not fields.heartbeat_url.configured %} disabled{% endif %}>{{ m.icon('play') }} {{ _("Send heartbeat now") }}</button>
-      <button class="btn btn--primary" type="submit">{{ _("Save and send heartbeat") }}</button>
     </div>
   </form>
 </section>

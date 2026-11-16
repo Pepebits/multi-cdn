@@ -100,12 +100,18 @@ class InventoryStore:
         return Inventory(servers=servers, domains=domains)
 
     # ---------- servidores ----------
+    @staticmethod
+    def validate_server(origin_ipv4: str | None, private_address: str | None) -> str | None:
+        """Raises ValueError for an origin IP or private address that cannot be saved; returns the
+        normalised private address. Nothing is saved."""
+        if origin_ipv4:
+            ipaddress.IPv4Address(origin_ipv4.strip())
+        return normalize_private_address(private_address)
+
     def upsert_server(self, server_id: str, origin_ipv4: str | None, private_address: str | None) -> None:
         if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,31}", server_id):
             raise ValueError(tr("invalid server identifier (lowercase letters, numbers and hyphens)"))
-        if origin_ipv4:
-            ipaddress.IPv4Address(origin_ipv4.strip())
-        private_address = normalize_private_address(private_address)  # valida antes de guardar nada
+        private_address = self.validate_server(origin_ipv4, private_address)  # valida antes de guardar nada
         if origin_ipv4:
             self.secrets.set(origin_key(server_id), origin_ipv4.strip())
         self.conn.execute(

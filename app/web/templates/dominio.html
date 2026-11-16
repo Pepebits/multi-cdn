@@ -156,6 +156,8 @@
 <section class="card" aria-labelledby="hostnames">
   <div class="card__head"><h2 id="hostnames">{{ m.icon('globe') }} Hostnames</h2></div>
   <form method="post" action="/dominios/{{ d.name }}/hostnames">{{ csrf_field() }}
+    {#- Enter in a field must save, not press the first row's "Remove": the first submit button wins. #}
+    <button class="visually-hidden" type="submit" tabindex="-1" aria-hidden="true">{{ _('Save hostnames') }}</button>
     <div class="table-wrap" role="region" tabindex="0" aria-label="{{ _('Hostnames table, scrollable') }}">
       <table class="stack">
         <caption class="visually-hidden">{{ _('Hostnames of the domain, their public DNS and their backup configuration') }}</caption>

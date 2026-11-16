@@ -733,6 +733,8 @@ details.more[open] > summary { margin-bottom: 0; }
 /* "Más información" a la izquierda del pie; abierto, ocupa la fila entera encima de los botones */
 .card__foot > details.more { margin-right: auto; align-self: center; }
 .card__foot > details.more[open] { flex: 1 1 100%; order: -1; margin-right: 0; }
+/* The save button comes first in the page (Enter in a field presses the first submit button) but shows last */
+.actions-end > .btn--last { order: 1; }
 
 /* ---------- Settings (0.3.1) ---------- */
 .flush { margin: 0; }

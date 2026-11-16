@@ -114,6 +114,7 @@
 {# The message of a save, inside the card that was saved (?card=<id>; the page anchor is the same id). #}
 {% macro card_flash(flash, id) -%}
 {%- if flash and flash.card == id -%}
+{%- if flash.update({'shown': true}) %}{% endif -%}{#- base.html shows it globally when no card did -#}
 {%- if flash.ok %}<p class="notice notice--ok card__flash" role="status">{{ icon('check') }} {{ flash.ok }}</p>{% endif -%}
 {%- if flash.error %}<p class="notice notice--error card__flash" role="alert">{{ icon('alert') }} {{ flash.error }}</p>{% endif -%}
 {%- endif -%}
