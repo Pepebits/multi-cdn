@@ -1,6 +1,15 @@
 """Cliente de pruebas autenticado: hace el login real (contraseña + TOTP) y añade el token CSRF."""
 
+import os
+import tempfile
 import time
+
+# Before any app module is imported (app.main reads the database and the .env when it is
+# imported): never the developer's data/multicdn.db, .env or error-reporting DSN.
+os.environ["MULTICDN_DB"] = os.path.join(tempfile.mkdtemp(prefix="multicdn-tests-"), "multicdn.db")
+os.environ["MULTICDN_DOTENV"] = "/nonexistent/.env"
+for _var in ("MULTICDN_ENV_PATH", "MULTICDN_SENTRY_DSN"):
+    os.environ.pop(_var, None)
 
 import pytest
 from fastapi.testclient import TestClient
@@ -45,9 +54,12 @@ def login(client: TestClient, username: str = USER, password: str = PASSWORD) ->
 
 
 @pytest.fixture(autouse=True)
-def no_developer_env(monkeypatch):
+def no_developer_env(monkeypatch, tmp_path):
     """Los tests nunca leen el .env del desarrollador (ni su IP de origen ni sus tokens)."""
     monkeypatch.setenv("MULTICDN_DOTENV", "/nonexistent/.env")
+    # Nor open the developer's database (data/multicdn.db): a test that does not choose one gets
+    # an empty database of its own.
+    monkeypatch.setenv("MULTICDN_DB", str(tmp_path / "isolated" / "multicdn.db"))
     # Nor write any .env, nor import a secret from the developer's environment.
     from app.envfile import MANAGED
     for var in (*MANAGED, "MULTICDN_ENV_PATH"):
