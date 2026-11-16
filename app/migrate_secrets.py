@@ -108,6 +108,11 @@ def migrate(env_path: Path, secrets_path: Path, out=print, now: datetime | None 
     if unmanaged:
         out(f"    WARNING: {secrets_path} has variables the panel does not manage: {', '.join(unmanaged)}.")
         out("    They would override .env (MULTICDN_DRY_RUN there keeps the panel in dry run). Move them to .env.")
+    broken = sorted(k for k in envparse.parse(env_text, {**os.environ}).invalid if k in MANAGED_KEYS)
+    if broken:
+        out(f"    {env_path} has lines the panel cannot read for: {', '.join(broken)} (an unclosed quote?).")
+        out("    Nothing was moved: fix those lines and run it again.")
+        return 1
     new_env, new_secrets, moved, kept = plan(env_text, secrets_text)
     if not moved and not kept:
         return 0

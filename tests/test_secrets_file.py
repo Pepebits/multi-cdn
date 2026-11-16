@@ -266,3 +266,31 @@ def test_cli_migrate_secrets(tmp_path, monkeypatch):
     from app import cli
     assert cli.main(["migrate-secrets"]) == 0
     assert Path("config/secrets.env").read_text().endswith("SMTP_URL=x\n") and "SMTP_URL" not in Path(".env").read_text()
+
+
+def test_a_temporary_file_left_by_a_crash_never_blocks_saves(secrets_file):
+    for name in (".secrets.env.1.1.tmp", f".secrets.env.{os.getpid()}.tmp"):
+        (secrets_file.parent / name).write_text("left by a crash\n")
+    assert envfile.update_file(secrets_file, "TELEGRAM_CHAT_ID", "-500") is True
+    assert "TELEGRAM_CHAT_ID=-500" in secrets_file.read_text()
+
+
+def test_migration_with_an_unreadable_managed_line_changes_nothing(tmp_path):
+    env = tmp_path / ".env"
+    original = 'MULTICDN_SECRET_KEY=k\nTELEGRAM_BOT_TOKEN="unclosed\nMULTICDN_DRY_RUN=false\n'
+    env.write_text(original)
+    (tmp_path / "config").mkdir()
+    secrets = tmp_path / "config" / "secrets.env"
+    secrets.write_text("")
+    out = []
+    assert migrate(env, secrets, out=out.append) == 1
+    assert env.read_text() == original and secrets.read_text() == ""
+    assert not list(tmp_path.glob(".env.bak-*"))
+    assert "TELEGRAM_BOT_TOKEN" in "\n".join(out)
+
+
+def test_compose_does_not_load_the_secrets_file_as_environment():
+    compose = (Path(__file__).parent.parent / "compose.yaml").read_text()
+    env_file = compose.split("env_file:")[1].split("environment:")[0]
+    assert "secrets.env" not in "\n".join(l for l in env_file.splitlines() if not l.strip().startswith("#"))
+    assert "target: /app/config" in compose

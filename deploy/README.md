@@ -427,8 +427,9 @@ it was created with, cannot undo a change made in the panel. Precedence:
 **If the file cannot be read** (permissions, not UTF-8), the panel imports nothing at all,
 keeps the values it has, and shows an error in *Settings → System* and in the open problems.
 
-With Docker, `compose.yaml` passes `.env` and then `config/secrets.env` (optional) as
-`env_file`, mounts the **folder** `./config` read-write at `/app/config`
+With Docker, `compose.yaml` passes only `.env` as `env_file`. `config/secrets.env` is **not**
+an `env_file`: the panel reads and writes it itself through the **folder** `./config`, mounted
+read-write at `/app/config`
 (`MULTICDN_SECRETS_PATH=/app/config/secrets.env`; a folder so the file can be replaced
 atomically, which also keeps editors that save with a rename working) and does not mount
 `.env` at all. `deploy/install.sh` creates `config/` (700) and `config/secrets.env` (600) owned
@@ -450,12 +451,15 @@ database and warns on that value, in *Settings → System → Panel secrets file
 problems: on the next restart the file's value would replace the one saved in the panel, so
 update that line yourself.
 
-> 🔒 The container can write only inside `config/`. It cannot change `.env`, so it can never
-> turn off dry run, change the master key or the `${...}` values Compose uses:
-> `config/secrets.env` is only an `env_file`, never read for interpolation.
+> 🔒 The container can write only inside `config/`, and nothing there reaches its environment
+> or Compose: the panel only takes its own variables from that file. It can never turn off dry
+> run, change the master key, add variables such as `PYTHONPATH` or read the `${...}` values of
+> the host.
 
-> ⚠️ `chmod` on the folder or the file resets the ACL mask: run `deploy/install.sh` (or the
-> `setfacl` lines) again afterwards.
+> ⚠️ `chmod` on the folder or the file, `python -m app.cli migrate-secrets` run by hand, or an
+> editor that saves the file as 0600 can reset the ACL mask: run `deploy/install.sh` (or the
+> `setfacl` lines) again afterwards. `install.sh` stops without changing anything if `setfacl`
+> is missing.
 
 ---
 

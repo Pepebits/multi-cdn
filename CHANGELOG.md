@@ -12,12 +12,16 @@ Settings overhaul, from a review of every settings page on desktop and phone.
 - **The error-reporting DSN can be set, tested and removed from the panel** (Settings →
   System), and applies at once to logged errors; "Send test error" shows the event id. Only the
   server's scheme and host are ever shown.
-- **Secrets stay in sync with the server's `.env`.** Values saved or removed in the panel are
-  also written to `.env` (only the panel-managed variables, never `MULTICDN_SECRET_KEY` or
-  `MULTICDN_DRY_RUN`; a copy of the previous file is kept in `data/env-backups/`). At start-up
-  the `.env` has priority, and every import is recorded in the history without the value. If
-  the file cannot be written, the panel says so on the value, in Settings → System and in the
-  open problems.
+- **Panel secrets file `config/secrets.env`.** The values the panel manages (Telegram, email,
+  heartbeat, error-reporting DSN, football-data and the Cloudflare/Gcore tokens) live in that
+  file, which the panel reads at start-up (it has priority) and rewrites atomically when you
+  save or remove a value in Settings; every import is recorded in the history without the
+  value. `.env` keeps the master key, dry run and the server settings, and the container can no
+  longer change it. Backups of the secrets file (`data/secrets-backups/`) never contain the
+  master key. If the file cannot be read or written, the panel keeps its own values and says so
+  in Settings → System and in the open problems.
+- Env files are read the way Docker Compose reads them (inline comments, quotes, `$$`,
+  duplicates: the last one wins).
 - **Confirmation before dangerous actions**: disabling automatic switching (with how many
   domains it affects), deleting a credential or a server, restoring default times, regenerating
   recovery codes, removing a saved value or the DSN.
@@ -38,10 +42,19 @@ Settings overhaul, from a review of every settings page on desktop and phone.
 - The feed status says why it is reading every 90 s (e.g. a match in 60 min).
 - Spanish wording: "avisos" and "latido" throughout.
 
+### Fixed
+- A malformed error-reporting DSN no longer stops the panel from starting.
+- Sending a test error no longer blocks the switching engine for a few seconds.
+- Pressing Enter in a settings field saves it instead of pressing another button.
+- A server's origin IP cannot be removed while one of its hostnames is on Gcore.
+
 ### Upgrading
-- Run `deploy/install.sh` again (or add the `.env` mount from `compose.yaml` and give the
-  container user write access: `setfacl -m u:10001:rw .env`), then `docker compose up -d`.
-  Without it everything works, but values changed in the panel are not written to `.env`.
+- Install `acl` if missing (`sudo apt install acl`) and run `deploy/install.sh` again: it creates
+  `config/`, gives the container access to it with an ACL and moves the panel-managed lines
+  from `.env` to `config/secrets.env` (keeping a copy of the previous `.env` as
+  `.env.bak-<date>`; delete it once the panel works, it holds your tokens). Before upgrading,
+  check that any such line left in `.env` still holds the value in use: at the first start the
+  file's value replaces the one saved in the panel.
 
 ## [0.3.0] - 2026-11-15
 

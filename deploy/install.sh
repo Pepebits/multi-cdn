@@ -58,34 +58,37 @@ if command -v setfacl >/dev/null 2>&1; then
 fi
 
 say "Preparing $SECRETS_DIR/ for the panel's secrets (the container may write only there)"
+# The panel reads its secrets only from this file (it is not an env_file), so the container
+# user must be able to read it BEFORE any value is moved here.
+if ! command -v setfacl >/dev/null 2>&1; then
+  echo "    setfacl is not installed (Debian/Ubuntu: sudo apt install acl). Without it the panel"
+  echo "    could not read $SECRETS_FILE. Nothing was changed: install acl and run this script again."
+  exit 1
+fi
 mkdir -p "$SECRETS_DIR"
 [[ -e $SECRETS_FILE ]] || (umask 077; : > "$SECRETS_FILE")
 # The panel replaces the file when it saves (so its owner becomes uid 10001): yours again.
 sudo chown "$ME" "$SECRETS_DIR" "$SECRETS_FILE"
-chmod 700 "$SECRETS_DIR" && chmod 600 "$SECRETS_FILE" \
-  || echo "    Could not set the permissions of $SECRETS_DIR (700) and $SECRETS_FILE (600): set them yourself."
+# Owner-only for everyone else; the folder and the file (and files created there later, by the
+# panel or by an editor that saves with a rename) give access to uid 10001 and to you via ACL.
+# chmod first: it resets the ACL mask, which setfacl then sets again.
+chmod 700 "$SECRETS_DIR" && chmod 600 "$SECRETS_FILE"
+sudo setfacl -m "u:10001:rwx,u:$(id -u):rwx,d:u:10001:rw,d:u:$(id -u):rw" "$SECRETS_DIR"
+sudo setfacl -m "u:10001:rw,u:$(id -u):rw" "$SECRETS_FILE"
 
 say "Moving the panel-managed variables from $ENV_FILE to $SECRETS_FILE (if any are left there)"
 if command -v python3 >/dev/null 2>&1 && python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))'; then
   if ! python3 -m app.migrate_secrets "$ENV_FILE" "$SECRETS_FILE"; then
-    echo "    They were not moved. They keep working from $ENV_FILE; see deploy/README.md, \"Panel secrets file\"."
+    echo "    They were not moved and nothing was changed; see deploy/README.md, \"Panel secrets file\"."
+    exit 1
   fi
-else
-  echo "    python3 (3.9 or later) is not installed: move these lines from $ENV_FILE to $SECRETS_FILE by hand:"
-  grep -nE '^[[:space:]]*(export[[:space:]]+)?(TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID|SMTP_URL|ALERT_EMAIL_TO|FOOTBALL_DATA_TOKEN|MULTICDN_HEARTBEAT_URL|MULTICDN_SENTRY_DSN|CLOUDFLARE_API_TOKEN|GCORE_API_TOKEN)[[:space:]]*=' "$ENV_FILE" \
-    | cut -d= -f1 | sed 's/^/      line /' || echo "      (none)"
-fi
-
-say "Letting the container user (uid 10001) write $SECRETS_DIR/"
-if command -v setfacl >/dev/null 2>&1; then
-  # The folder (to replace the file atomically) and the file; files created there later (by the
-  # panel or by an editor that saves with a rename) inherit access for uid 10001 and for you.
-  sudo setfacl -m "u:10001:rwx,u:$(id -u):rwx,d:u:10001:rw,d:u:$(id -u):rw" "$SECRETS_DIR"
+  # The migration rewrites the file: give it the ACL again.
   sudo setfacl -m "u:10001:rw,u:$(id -u):rw" "$SECRETS_FILE"
 else
-  echo "    setfacl is not installed (Debian/Ubuntu: sudo apt install acl). Without it the panel cannot"
-  echo "    write $SECRETS_FILE: values saved in the panel stay only in its database and the panel warns."
-  echo "    Install acl and run this script again."
+  echo "    python3 (3.9 or later) is not installed: move these lines from $ENV_FILE to $SECRETS_FILE by hand,"
+  echo "    then run this script again:"
+  grep -nE '^[[:space:]]*(export[[:space:]]+)?(TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID|SMTP_URL|ALERT_EMAIL_TO|FOOTBALL_DATA_TOKEN|MULTICDN_HEARTBEAT_URL|MULTICDN_SENTRY_DSN|CLOUDFLARE_API_TOKEN|GCORE_API_TOKEN)[[:space:]]*=' "$ENV_FILE" \
+    | cut -d= -f1 | sed 's/^/      line /' || echo "      (none)"
 fi
 
 say "Building and starting"

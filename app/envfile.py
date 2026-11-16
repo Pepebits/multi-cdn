@@ -7,8 +7,8 @@ Compose interpolation such as MULTICDN_ENV_FILE) stays in the main .env, which t
 cannot read or write: Compose passes it with env_file only.
 
 With Docker, compose.yaml mounts the host folder ./config at /app/config (read-write) and sets
-MULTICDN_SECRETS_PATH=/app/config/secrets.env. The same file is also an env_file (after .env,
-optional), never a source of Compose interpolation.
+MULTICDN_SECRETS_PATH=/app/config/secrets.env. It is NOT an env_file: only the panel reads it,
+and only its own variables, so nothing written there reaches the container's environment.
 
 Precedence at every start (panel, CLI, error reporting before the app exists), see env_sync:
 
@@ -35,6 +35,7 @@ from __future__ import annotations
 import errno
 import logging
 import os
+import tempfile
 import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -216,8 +217,16 @@ def _new_file_mode(folder: Path) -> int:
 
 def _write_atomic(path: Path, data: bytes) -> None:
     folder = path.parent
-    tmp = folder / f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, _new_file_mode(folder))
+    # A unique name (pid is always 1 in the container): a temp file left by a crash never blocks
+    # later saves.
+    fd, name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=folder)
+    tmp = Path(name)
+    try:
+        os.fchmod(fd, _new_file_mode(folder))
+    except BaseException:
+        os.close(fd)
+        tmp.unlink(missing_ok=True)
+        raise
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(data)

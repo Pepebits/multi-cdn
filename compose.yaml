@@ -1,7 +1,7 @@
 # docker compose up -d --build   (deploy/install.sh prepares data/ and config/ first)
 # El panel queda en 127.0.0.1:8765 del VPS, sin publicar en Internet. Acceso por túnel SSH
 # (ssh -N -L 8765:127.0.0.1:8765 <usuario>@<IP>) o Tailscale (sudo tailscale serve --bg 8765).
-# Needs Docker Compose 2.24 or later (env_file with `required: false`).
+# Needs Docker Compose 2.24 or later (env_file with `path:`).
 services:
   panel:
     # Imagen publicada; `docker compose up -d --build` la construye desde este repo en su lugar.
@@ -14,10 +14,10 @@ services:
       # folder, or the path in MULTICDN_ENV_FILE (set in the environment or in this folder's .env).
       # Only passed as environment: it is not mounted, so the container cannot change it.
       - path: ${MULTICDN_ENV_FILE:-.env}
-      # The values the panel manages (tokens, alert channels, DSN), written by the panel itself.
-      # Loaded after .env, so a value here wins. Only an env_file: never used for ${...} above.
-      - path: ${MULTICDN_SECRETS_DIR:-./config}/secrets.env
-        required: false
+      # The values the panel manages (tokens, alert channels, DSN) live in config/secrets.env,
+      # which is NOT an env_file: the panel reads and writes it itself through the mount below
+      # and only accepts its own variables, so nothing written there can change the container's
+      # environment (dry run, PYTHONPATH…) or reach Compose.
     environment:
       # Where the panel reads and writes its secrets file: the folder below, mounted read-write
       # (a folder, so the file can be replaced atomically). See deploy/README.md, "Panel secrets file".
