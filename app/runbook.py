@@ -35,13 +35,13 @@ def _state():
     db = os.environ.get("MULTICDN_DB", "data/multicdn.db")
     secrets = SecretStore(db)
     events = EventStore(db)
-    events.listeners.append(Notifier(secrets))
     from . import i18n
     from .main import load_notify_lang
     load_notify_lang(events)
     i18n.set_ui(i18n.notify_lang())  # the terminal speaks the notification language
     from .env_sync import sync
-    sync(secrets, events)
+    sync(secrets, events)  # config/secrets.env has priority at startup, as in the panel
+    events.listeners.append(Notifier(secrets))  # after the import, as in the panel (lifespan)
     state = State(store=InventoryStore(secrets), secrets=secrets, creds=CredentialStore(secrets),
                   auth=AuthStore(secrets), events=events,
                   dry_run_env=os.environ.get("MULTICDN_DRY_RUN", "true").lower() != "false")
