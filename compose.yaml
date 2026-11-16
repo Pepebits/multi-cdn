@@ -9,6 +9,10 @@ services:
     build: .
     container_name: multicdn-panel
     restart: unless-stopped
+    # Runs as the user who installed it (deploy/install.sh writes MULTICDN_UID/MULTICDN_GID to .env),
+    # so data/ and config/ are simply yours: no ACL, no sudo to edit config/secrets.env. Without
+    # them, the image's own user (uid 10001). Never root: install.sh refuses uid 0.
+    user: "${MULTICDN_UID:-10001}:${MULTICDN_GID:-10001}"
     env_file:
       # Settings and master key (MULTICDN_SECRET_KEY, MULTICDN_DRY_RUN, ORIGIN_*…): .env in this
       # folder, or the path in MULTICDN_ENV_FILE (set in the environment or in this folder's .env).

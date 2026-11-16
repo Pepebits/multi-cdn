@@ -13,7 +13,7 @@ Also available as ``python -m app.cli migrate-secrets``. What it does:
   that is the value the container saw).
 - before changing .env a full copy is kept next to it as .env.bak-<UTC timestamp> (0600).
 - both files are written atomically (temporary file, fsync, rename); .env keeps its permissions,
-  the secrets file gets 0600 (install.sh then adds the ACL for the container user).
+  the secrets file gets 0600 (the container runs as the same user, see compose.yaml).
 - prints which variables moved (never their values), and warns about variables in the secrets
   file that the panel does not manage (they would override .env; the panel ignores them).
 

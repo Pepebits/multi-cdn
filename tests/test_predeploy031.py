@@ -107,7 +107,6 @@ def test_install_moves_the_panel_values_and_survives_a_dotenv_that_is_not_ours(t
     _shim(bindir, "sudo", 'exit 0')  # chown/setfacl as root: only recorded
     _shim(bindir, "setfacl", "exit 0")
     _shim(bindir, "curl", "exit 0")
-    _shim(bindir, "uname", "echo Linux")  # the ACL path, also when the tests run on macOS
     # chmod of .env fails, as when the file belongs to someone else
     _shim(bindir, "chmod", 'case "${@: -1}" in .env) exit 1;; esac; exec /bin/chmod "$@"')
     env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "SHIM_LOG": str(log)}
@@ -116,10 +115,32 @@ def test_install_moves_the_panel_values_and_survives_a_dotenv_that_is_not_ours(t
     r = subprocess.run(["bash", str(repo / "deploy" / "install.sh")], cwd=repo, env=env, capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "is not yours" in r.stdout and "Moved from .env to config/secrets.env: TELEGRAM_CHAT_ID" in r.stdout
-    assert (repo / ".env").read_text() == "MULTICDN_SECRET_KEY=k\nMULTICDN_DRY_RUN=true\n"
+    uid, gid = os.getuid(), os.getgid()
+    # The container runs as the installing user (compose.yaml: user MULTICDN_UID:MULTICDN_GID).
+    assert (repo / ".env").read_text() == f"MULTICDN_SECRET_KEY=k\nMULTICDN_DRY_RUN=true\nMULTICDN_UID={uid}\nMULTICDN_GID={gid}\n"
     assert "TELEGRAM_CHAT_ID=-100" in (repo / "config" / "secrets.env").read_text()
     assert stat.S_IMODE((repo / "config").stat().st_mode) == 0o700
     assert stat.S_IMODE((repo / "config" / "secrets.env").stat().st_mode) == 0o600
     calls = log.read_text()
-    assert "u:10001:rwx" in calls and "d:u:10001:rw" in calls and "docker compose up -d --build" in calls
+    assert "u:10001:rwx" not in calls and "docker compose up -d --build" in calls  # no ACL any more
     assert "setfacl -x u:10001 .env" in calls  # the write access of 0.3.1 builds is taken back
+
+
+def test_install_twice_keeps_one_uid_line_and_compose_runs_as_that_user(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "deploy").mkdir(parents=True)
+    shutil.copy(ROOT / "deploy" / "install.sh", repo / "deploy" / "install.sh")
+    (repo / "app").symlink_to(ROOT / "app")
+    (repo / ".env").write_text("MULTICDN_SECRET_KEY=k\nMULTICDN_UID=1\n")
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    for name in ("docker", "sudo", "curl"):
+        _shim(bindir, name, "exit 0")
+    env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "SHIM_LOG": str(tmp_path / "log")}
+    for _ in range(2):
+        r = subprocess.run(["bash", str(repo / "deploy" / "install.sh")], cwd=repo, env=env, capture_output=True, text=True)
+        assert r.returncode == 0, r.stdout + r.stderr
+    text = (repo / ".env").read_text()
+    assert text.count("MULTICDN_UID=") == 1 and f"MULTICDN_UID={os.getuid()}" in text
+    assert text.count("MULTICDN_GID=") == 1
+    assert 'user: "${MULTICDN_UID:-10001}:${MULTICDN_GID:-10001}"' in (ROOT / "compose.yaml").read_text()

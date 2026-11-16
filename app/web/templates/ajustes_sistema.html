@@ -77,7 +77,7 @@
     {% endif %}
   </div>
   <div class="card__foot actions-end">
-    {{ m.more("env-help", _m("The panel only writes the values it manages ({keys}) and refuses any other. <code>MULTICDN_SECRET_KEY</code>, <code>MULTICDN_DRY_RUN</code> and the rest of the settings live in <code>.env</code>, which is not mounted into the container: the panel cannot change it. Before each write a copy of the previous managed lines is kept in <code>data/secrets-backups/</code> (the last 10). With Docker the folder <code>config/</code> is mounted into the container with write access for its user (uid 10001).", keys=env_managed|join(', '))) }}
+    {{ m.more("env-help", _m("The panel only writes the values it manages ({keys}) and refuses any other. <code>MULTICDN_SECRET_KEY</code>, <code>MULTICDN_DRY_RUN</code> and the rest of the settings live in <code>.env</code>, which is not mounted into the container: the panel cannot change it. Before each write a copy of the previous managed lines is kept in <code>data/secrets-backups/</code> (the last 10). With Docker the folder <code>config/</code> is mounted into the container, which runs as the user who installed it.", keys=env_managed|join(', '))) }}
     <a class="btn" href="{{ DEPLOY_GUIDE }}#panel-secrets-file-configsecretsenv" rel="external">{{ m.icon('external') }} {{ _("Deployment guide") }}</a>
   </div>
 </section>

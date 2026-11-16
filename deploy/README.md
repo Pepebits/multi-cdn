@@ -26,9 +26,8 @@ examples use `/var/www/multi-cdn`; any folder works.
 
 ## 1. Install the panel
 
-Requirements: Docker with Compose 2.24 or later, `python3` 3.9 or later, and `setfacl` (the
-`acl` package: `sudo apt install acl` on Debian/Ubuntu, see
-[Panel secrets file](#panel-secrets-file-configsecretsenv) for other systems).
+Requirements: Docker with Compose 2.24 or later and `python3` 3.9 or later, as a normal user
+with access to Docker (not root: the panel runs as the user who installs it).
 
 ```bash
 cd /var/www
@@ -436,34 +435,22 @@ an `env_file`: the panel reads and writes it itself through the **folder** `./co
 read-write at `/app/config`
 (`MULTICDN_SECRETS_PATH=/app/config/secrets.env`; a folder so the file can be replaced
 atomically, which also keeps editors that save with a rename working) and does not mount
-`.env` at all. `deploy/install.sh` creates `config/` (700) and `config/secrets.env` (600) owned
-by you and gives the container user (uid 10001) access with an ACL, inherited by files created
-there later:
+`.env` at all.
 
-```bash
-# setfacl comes with the acl package:
-sudo apt install acl        # Debian, Ubuntu
-sudo dnf install acl        # Fedora, RHEL, Rocky, Alma (yum on older ones)
-sudo apk add acl            # Alpine
-sudo pacman -S acl          # Arch
-sudo zypper install acl     # openSUSE
-
-sudo setfacl -m u:10001:rwx,u:$(id -u):rwx,d:u:10001:rw,d:u:$(id -u):rw config
-sudo setfacl -m u:10001:rw,u:$(id -u):rw config/secrets.env
-```
-
-`install.sh` stops without changing anything if `setfacl` is missing and tells you the command
-for your system. On **macOS with Docker Desktop** no ACL is needed (Docker Desktop shares the
-folder with the container whatever its owner) and `install.sh` skips that step. With rootless
-Docker or Podman the container's uid 10001 maps to another host uid: give that uid access
-instead (`podman unshare` or the subuid range), or the panel will report that it cannot write
-the file.
+**The container runs as you.** `deploy/install.sh` writes your uid and gid to `.env`
+(`MULTICDN_UID`, `MULTICDN_GID`; `compose.yaml` uses them in `user:`) and makes `data/` and
+`config/` yours (`config/` 700, `config/secrets.env` 600). No ACL, and you edit
+`config/secrets.env` without `sudo`. Run it as a normal user with access to Docker: as root,
+the container keeps the image's own user (uid 10001) instead of running as root. This works
+the same on any Linux distribution and on macOS with Docker Desktop. With rootless Docker or
+Podman your uid maps to the container's root user namespace: it still works, the files stay
+yours.
 
 To keep the folder elsewhere, set `MULTICDN_SECRETS_DIR=/path/of/your/choice` in the
 environment or in `.env` (Compose and `install.sh` both read it). `MULTICDN_ENV_FILE` moves
 `.env` itself the same way; a relative path without `./` works for both.
 
-If the panel cannot write the file (no ACL, read-only, not mounted), it still saves in its
+If the panel cannot write the file (wrong owner, read-only, not mounted), it still saves in its
 database and warns on that value, in *Settings → System → Panel secrets file* and in the open
 problems: on the next restart the file's value would replace the one saved in the panel, so
 update that line yourself.
@@ -473,10 +460,9 @@ update that line yourself.
 > run, change the master key, add variables such as `PYTHONPATH` or read the `${...}` values of
 > the host.
 
-> ⚠️ `chmod` on the folder or the file, `python -m app.cli migrate-secrets` run by hand, or an
-> editor that saves the file as 0600 can reset the ACL mask: run `deploy/install.sh` (or the
-> `setfacl` lines) again afterwards. `install.sh` stops without changing anything if `setfacl`
-> is missing.
+> ⚠️ Edit `config/secrets.env` as yourself, not with `sudo`: a file owned by root cannot be
+> read by the panel. If that happens, run `deploy/install.sh` again (it gives `data/` and
+> `config/` back to you).
 
 ---
 
@@ -488,10 +474,13 @@ update that line yourself.
 cd /var/www/multi-cdn && git pull && deploy/install.sh
 ```
 
-From 0.3.0 or earlier to 0.3.1: run `deploy/install.sh` after `git pull`. It moves the
+From 0.3.0 or earlier to 0.3.2: run `deploy/install.sh` after `git pull`, as the user who will
+own the panel (not root): from now on the container runs as that user, so the script gives it
+`data/` (it belonged to uid 10001) and `config/`, and writes `MULTICDN_UID`/`MULTICDN_GID` to
+`.env`. It moves the
 panel-managed lines from `.env` to `config/secrets.env` (a full copy of the previous `.env` is
 kept next to it as `.env.bak-<date>`, permissions 600; it prints which variables moved, never
-their values), creates `config/` with the ACL for the container and starts the new
+their values), creates `config/` and starts the new
 `compose.yaml` (Docker Compose 2.24 or later). The move needs `python3` 3.9 or later on the
 server; without it the script lists the lines to move by hand. Once the panel works, delete the
 `.env.bak-*` copy (it holds your tokens). On its first start 0.3.1 imports into the database
@@ -501,11 +490,11 @@ every value of `config/secrets.env` that differs from it (see
 By hand, without `install.sh`:
 
 ```bash
+printf 'MULTICDN_UID=%s\nMULTICDN_GID=%s\n' "$(id -u)" "$(id -g)" >> .env
+sudo chown -R "$(id -u):$(id -g)" data && chmod 700 data
 mkdir -p config && chmod 700 config
 python3 -m app.migrate_secrets .env config/secrets.env   # or move the lines yourself
 chmod 600 config/secrets.env
-sudo setfacl -m u:10001:rwx,u:$(id -u):rwx,d:u:10001:rw,d:u:$(id -u):rw config
-sudo setfacl -m u:10001:rw,u:$(id -u):rw config/secrets.env
 docker compose up -d
 ```
 

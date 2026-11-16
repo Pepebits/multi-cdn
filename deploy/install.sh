@@ -42,10 +42,36 @@ if [[ -f data/.secret_key ]]; then
   exit 1
 fi
 
-say "Preparing data/ for the container user (uid 10001)"
+# The container runs as you (compose.yaml: user MULTICDN_UID:MULTICDN_GID), so data/ and config/
+# are yours. As root it would run as root: then it keeps the image's own user, uid 10001.
+if [[ $(id -u) -eq 0 ]]; then
+  RUN_UID=10001 RUN_GID=10001
+  echo "    Running as root: the container keeps its own user (uid 10001). Prefer a normal user with docker access."
+else
+  RUN_UID=$(id -u) RUN_GID=$(id -g)
+fi
+# Compose reads ${MULTICDN_UID} from ./.env (next to compose.yaml).
+set_project_var() {
+  local name=$1 value=$2 file=.env
+  [[ -e $file ]] || (umask 077; : > "$file")
+  if grep -qE "^[[:space:]]*$name=" "$file"; then
+    [[ $(grep -E "^[[:space:]]*$name=" "$file" | tail -n 1 | cut -d= -f2-) == "$value" ]] && return 0
+    local tmp; tmp=$(mktemp "$file.XXXXXX")
+    awk -v k="$name" -v v="$value" 'BEGIN{FS=OFS="="} $0 ~ "^[[:space:]]*"k"=" {print k"="v; next} {print}' "$file" > "$tmp"
+    cat "$tmp" > "$file" && rm -f "$tmp"
+  else
+    printf '%s=%s\n' "$name" "$value" >> "$file"
+  fi
+}
+set_project_var MULTICDN_UID "$RUN_UID"
+set_project_var MULTICDN_GID "$RUN_GID"
+
+say "Preparing data/ for the panel (owner uid $RUN_UID)"
 mkdir -p data
-sudo chown -R 10001:10001 data
-sudo chmod 700 data
+if [[ $(stat -c %u data 2>/dev/null || stat -f %u data) != "$RUN_UID" ]] || find data ! -user "$RUN_UID" -print -quit 2>/dev/null | grep -q .; then
+  sudo chown -R "$RUN_UID:$RUN_GID" data
+fi
+chmod 700 data 2>/dev/null || sudo chmod 700 data
 
 say "Keeping $ENV_FILE private: the container only receives its values (env_file), it cannot change it"
 if ! chmod 600 "$ENV_FILE" 2>/dev/null; then
@@ -58,35 +84,17 @@ if command -v setfacl >/dev/null 2>&1; then
 fi
 
 say "Preparing $SECRETS_DIR/ for the panel's secrets (the container may write only there)"
-# The panel reads its secrets only from this file (it is not an env_file), so the container
-# user must be able to read it BEFORE any value is moved here.
-# macOS (Docker Desktop) shares files with the container whatever their owner: no ACL needed.
-NEED_ACL=1
-[[ $(uname -s) == Darwin ]] && NEED_ACL=0
-if (( NEED_ACL )) && ! command -v setfacl >/dev/null 2>&1; then
-  echo "    setfacl is not installed. Without it the panel could not read $SECRETS_FILE."
-  if command -v apt-get >/dev/null 2>&1; then echo "    Install it with: sudo apt install acl"
-  elif command -v dnf >/dev/null 2>&1; then echo "    Install it with: sudo dnf install acl"
-  elif command -v yum >/dev/null 2>&1; then echo "    Install it with: sudo yum install acl"
-  elif command -v apk >/dev/null 2>&1; then echo "    Install it with: sudo apk add acl"
-  elif command -v pacman >/dev/null 2>&1; then echo "    Install it with: sudo pacman -S acl"
-  elif command -v zypper >/dev/null 2>&1; then echo "    Install it with: sudo zypper install acl"
-  else echo "    Install your system's acl package (it provides setfacl)."
-  fi
-  echo "    Nothing was changed: install it and run this script again."
-  exit 1
-fi
-acl() { if (( NEED_ACL )); then sudo setfacl "$@"; fi; }
 mkdir -p "$SECRETS_DIR"
 [[ -e $SECRETS_FILE ]] || (umask 077; : > "$SECRETS_FILE")
-# The panel replaces the file when it saves (so its owner becomes uid 10001): yours again.
-if (( NEED_ACL )); then sudo chown "$ME" "$SECRETS_DIR" "$SECRETS_FILE"; fi
-# Owner-only for everyone else; the folder and the file (and files created there later, by the
-# panel or by an editor that saves with a rename) give access to uid 10001 and to you via ACL.
-# chmod first: it resets the ACL mask, which setfacl then sets again.
-chmod 700 "$SECRETS_DIR" && chmod 600 "$SECRETS_FILE"
-acl -m "u:10001:rwx,u:$(id -u):rwx,d:u:10001:rw,d:u:$(id -u):rw" "$SECRETS_DIR"
-acl -m "u:10001:rw,u:$(id -u):rw" "$SECRETS_FILE"
+if find "$SECRETS_DIR" ! -user "$RUN_UID" -print -quit 2>/dev/null | grep -q .; then
+  sudo chown -R "$RUN_UID:$RUN_GID" "$SECRETS_DIR"
+fi
+chmod 700 "$SECRETS_DIR" 2>/dev/null || sudo chmod 700 "$SECRETS_DIR"
+chmod 600 "$SECRETS_FILE" 2>/dev/null || sudo chmod 600 "$SECRETS_FILE"
+# 0.3.1 gave the container user an ACL on config/: not needed any more.
+if command -v setfacl >/dev/null 2>&1; then
+  sudo setfacl -b "$SECRETS_DIR" "$SECRETS_FILE" 2>/dev/null || true
+fi
 
 say "Moving the panel-managed variables from $ENV_FILE to $SECRETS_FILE (if any are left there)"
 if command -v python3 >/dev/null 2>&1 && python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))'; then
@@ -94,8 +102,7 @@ if command -v python3 >/dev/null 2>&1 && python3 -c 'import sys; sys.exit(sys.ve
     echo "    They were not moved and nothing was changed; see deploy/README.md, \"Panel secrets file\"."
     exit 1
   fi
-  # The migration rewrites the file: give it the ACL again.
-  acl -m "u:10001:rw,u:$(id -u):rw" "$SECRETS_FILE"
+  [[ $(id -u) -eq 0 ]] && chown "$RUN_UID:$RUN_GID" "$SECRETS_FILE"
 else
   echo "    python3 (3.9 or later) is not installed: move these lines from $ENV_FILE to $SECRETS_FILE by hand,"
   echo "    then run this script again:"

@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-11-16
+
+### Changed
+- **The container runs as the user who installs it** (`deploy/install.sh` writes `MULTICDN_UID`
+  and `MULTICDN_GID` to `.env`; `compose.yaml` uses them in `user:`). `data/` and `config/`
+  are simply yours: no ACL and no `acl` package, and `config/secrets.env` can be edited without
+  `sudo`. The same on any Linux distribution and on macOS with Docker Desktop. As root,
+  `install.sh` keeps the image's own user (uid 10001) instead of running the panel as root.
+
+### Upgrading
+- Run `deploy/install.sh` as the user who will own the panel (not root). It gives that user
+  `data/` (it belonged to uid 10001) and `config/`, removes the ACL that 0.3.1 set, and moves
+  the panel-managed lines from `.env` to `config/secrets.env` if that was not done yet.
+
 ## [0.3.1] - 2026-11-16
 
 Settings overhaul, from a review of every settings page on desktop and phone.
@@ -238,6 +252,7 @@ during the court-ordered blocks of Cloudflare IPs, by moving DNS to a second CDN
 - **Docker image** (~160 MB, Alpine, Python 3.15, non-root, read-only friendly) published to
   GitHub Container Registry and Docker Hub.
 
+[0.3.2]: https://github.com/Pepebits/multi-cdn/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Pepebits/multi-cdn/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Pepebits/multi-cdn/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/Pepebits/multi-cdn/compare/v0.2.1...v0.2.2
