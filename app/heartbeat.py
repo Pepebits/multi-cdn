@@ -50,7 +50,13 @@ def valid_url(url: str) -> bool:
     host = (parts.hostname or "").rstrip(".")
     if parts.scheme != "https" or not host or parts.username is not None or parts.password is not None:
         return False
-    if port not in (None, 443) or "." not in host or host == "localhost" or host.endswith(_LOCAL_SUFFIXES):
+    return port in (None, 443) and public_hostname(host)
+
+
+def public_hostname(host: str) -> bool:
+    """A public DNS name: not an IP literal, not localhost or a local suffix."""
+    host = (host or "").rstrip(".").lower()
+    if not host or "." not in host or host == "localhost" or host.endswith(_LOCAL_SUFFIXES):
         return False
     try:
         ipaddress.ip_address(host)
@@ -133,26 +139,41 @@ STALE_TEXT = {
 }
 
 
-def health(state, now: datetime | None = None) -> tuple[bool, list[str]]:
-    """(¿funciona el panel?, mensajes). Solo las tareas del propio panel cuentan como fallo;
-    lo que depende de terceros (feed, calendario) se informa pero no lo marca como caído."""
+CF_FAILING = N_("reading Cloudflare has been failing for more than 15 min")
+FEED_OLD = N_("block feed without recent data")
+FEED_STALE = N_("block feed answering with old data: automatic switching is not deciding")
+CALENDAR_DOWN = N_("match calendar not available")
+DRY_RUN = N_("dry run mode")
+LIVE = N_("live mode")
+
+
+def checks(state, now: datetime | None = None) -> tuple[list[str], list[str]]:
+    """(failures, notes), untranslated (N_): only the panel's own tasks count as failures;
+    what depends on third parties (feed, calendar) is a note. Translate with tr() to show them
+    or tn() to send them."""
     now = now or datetime.now(UTC)
     stale = liveness(state, now)
-    problems, notes = [tn(STALE_TEXT[k]) for k in stale], []
+    failures, notes = [STALE_TEXT[k] for k in stale], []
     if "cloudflare" not in stale:
         # The loop runs but its reads fail (token revoked, API down): a switch would fail too.
         since = getattr(state, "started_at", None)
         cf_ok_at = getattr(state, "cf_ok_at", {})
         if any((last := cf_ok_at.get(n, since)) is None or now - last > CF_MAX for n in _needs_cf(state)):
-            problems.append(tn("reading Cloudflare has been failing for more than 15 min"))
+            failures.append(CF_FAILING)
     if state.feed is None or now - state.feed.fetched_at > FEED_WARN:
-        notes.append(tn("block feed without recent data"))
+        notes.append(FEED_OLD)
     elif state.feed.is_stale(now):
-        notes.append(tn("block feed answering with old data: automatic switching is not deciding"))
+        notes.append(FEED_STALE)
     if state.calendar_error:
-        notes.append(tn("match calendar not available"))
-    notes.append(tn("dry run mode") if state.dry_run else tn("live mode"))
-    return not problems, problems + notes
+        notes.append(CALENDAR_DOWN)
+    notes.append(DRY_RUN if state.dry_run else LIVE)
+    return failures, notes
+
+
+def health(state, now: datetime | None = None) -> tuple[bool, list[str]]:
+    """(¿funciona el panel?, mensajes en el idioma de los avisos) for the heartbeat."""
+    failures, notes = checks(state, now)
+    return not failures, [tn(x) for x in failures + notes]
 
 
 async def beat(state, now: datetime | None = None) -> Beat | None:
