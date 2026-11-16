@@ -4,6 +4,45 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-11-16
+
+Settings overhaul, from a review of every settings page on desktop and phone.
+
+### Added
+- **The error-reporting DSN can be set, tested and removed from the panel** (Settings →
+  System), and applies at once to logged errors; "Send test error" shows the event id. Only the
+  server's scheme and host are ever shown.
+- **Secrets stay in sync with the server's `.env`.** Values saved or removed in the panel are
+  also written to `.env` (only the panel-managed variables, never `MULTICDN_SECRET_KEY` or
+  `MULTICDN_DRY_RUN`; a copy of the previous file is kept in `data/env-backups/`). At start-up
+  the `.env` has priority, and every import is recorded in the history without the value. If
+  the file cannot be written, the panel says so on the value, in Settings → System and in the
+  open problems.
+- **Confirmation before dangerous actions**: disabling automatic switching (with how many
+  domains it affects), deleting a credential or a server, restoring default times, regenerating
+  recovery codes, removing a saved value or the DSN.
+- A warning (also in open problems) when 2 or fewer recovery codes are left.
+
+### Changed
+- **Settings has six tabs in setup order**: Provider accounts, Servers, Notifications,
+  Automatic switching (was Operation) and the new System, plus My account. The language of
+  alerts and the Gcore quota moved to Notifications. Old links redirect.
+- Every card follows one pattern: explanation and fields in the body, actions in the footer,
+  secondary help behind "More info", commands and variables formatted as code.
+- Save messages appear inside the card that was saved.
+- **The origin IP is no longer shown after saving** (only a hint); removing it is a separate,
+  confirmed action.
+- Test buttons are disabled until something is saved, and say they test the saved settings.
+- The heartbeat status lists failures and notes separately, in the interface language.
+- An origin firewall that is not installed is shown as a warning with a link to the guide.
+- The feed status says why it is reading every 90 s (e.g. a match in 60 min).
+- Spanish wording: "avisos" and "latido" throughout.
+
+### Upgrading
+- Run `deploy/install.sh` again (or add the `.env` mount from `compose.yaml` and give the
+  container user write access: `setfacl -m u:10001:rw .env`), then `docker compose up -d`.
+  Without it everything works, but values changed in the panel are not written to `.env`.
+
 ## [0.3.0] - 2026-11-15
 
 Reliability and observability, from a review of a week of production logs.
@@ -186,6 +225,7 @@ during the court-ordered blocks of Cloudflare IPs, by moving DNS to a second CDN
 - **Docker image** (~160 MB, Alpine, Python 3.15, non-root, read-only friendly) published to
   GitHub Container Registry and Docker Hub.
 
+[0.3.1]: https://github.com/Pepebits/multi-cdn/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Pepebits/multi-cdn/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/Pepebits/multi-cdn/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Pepebits/multi-cdn/compare/v0.2.0...v0.2.1
