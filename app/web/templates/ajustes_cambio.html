@@ -91,7 +91,7 @@
       {{ m.env_warning(fd) }}
     </div>
     <div class="card__foot actions-end">
-      {{ m.more("fd-more", _m("Free key from football-data.org (register, then copy it from your account). Saved encrypted and in <code>FOOTBALL_DATA_TOKEN</code> of the server's .env.")) }}
+      {{ m.more("fd-more", _m("Free key from football-data.org (register, then copy it from your account). Saved encrypted and in <code>FOOTBALL_DATA_TOKEN</code> of config/secrets.env.")) }}
       {% if fd.configured %}<button class="btn btn--danger" type="button" data-open="quitar-fd">{{ m.icon('x') }} {{ _("Remove key") }}</button>{% endif %}
       <button class="btn btn--primary" type="submit">{{ _('Replace and test') if fd.configured else _('Save and test') }}</button>
     </div>

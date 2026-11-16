@@ -1,182 +1,19 @@
-"""0.3.1 Settings overhaul: .env sync, error reporting DSN, six tabs, card messages and confirmations."""
+"""0.3.1 Settings overhaul: error reporting DSN, six tabs, card messages and confirmations (the secrets
+file: test_secrets_file.py)."""
 
-import os
 import re
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 import sentry_sdk
 
-from app import env_sync, envfile, error_reporting
-from app.envparse import parse
+from app import error_reporting
 from app.db import EventStore
 from app.problems import open_problems
 from app.secrets_store import SecretStore
 
 TOKEN = "123456789:telegram-token-for-tests-0001"
 DSN = "https://f0e1d2c3b4a5968778695a4b3c2d1e0f@errors.example.com/42"
-
-
-@pytest.fixture
-def env_file(tmp_path, monkeypatch):
-    path = tmp_path / "config.env"
-    path.write_text("# Multi-CDN\nMULTICDN_SECRET_KEY=keep-me\n\n# alerts\nTELEGRAM_CHAT_ID=-100\nMULTICDN_DRY_RUN=true\n")
-    path.chmod(0o600)
-    monkeypatch.setenv("MULTICDN_ENV_PATH", str(path))
-    monkeypatch.setenv("MULTICDN_DB", str(tmp_path / "t.db"))
-    return path
-
-
-# ---------------------------------------------------------------- envfile
-
-def test_render_updates_in_place_and_keeps_everything_else():
-    text = "# head\nA=1\nTELEGRAM_CHAT_ID=-100  \n  # TELEGRAM_BOT_TOKEN=commented\nexport SMTP_URL=x\nZ=2"
-    out = envfile.render(text, "TELEGRAM_CHAT_ID", "-200")
-    assert out == text.replace("TELEGRAM_CHAT_ID=-100  ", "TELEGRAM_CHAT_ID=-200")
-    out = envfile.render(text, "SMTP_URL", "smtps://user:pa ss@mail.example.com:465")
-    assert "export SMTP_URL='smtps://user:pa ss@mail.example.com:465'\n" in out and out.startswith("# head\nA=1\n")
-    # a commented line is not the variable: append at the end, under the marker
-    out = envfile.render(text, "TELEGRAM_BOT_TOKEN", TOKEN)
-    assert out == text + "\n\n" + envfile.MARKER + "\nTELEGRAM_BOT_TOKEN=" + TOKEN + "\n"
-    assert envfile.render(out, "ALERT_EMAIL_TO", "ops@example.com").count(envfile.MARKER) == 1
-    # removal: the line goes, nothing else moves
-    assert envfile.render(text, "TELEGRAM_CHAT_ID", None) == "# head\nA=1\n  # TELEGRAM_BOT_TOKEN=commented\nexport SMTP_URL=x\nZ=2"
-
-
-@pytest.mark.parametrize("value", ["a=b=c", "with spaces", "x#y", "it's $HOME", 'q"uote\'s', "plain-value_1"])
-def test_quoting_round_trips(value):
-    line = envfile.render("", "SMTP_URL", value).splitlines()[-1]
-    assert parse(line + "\n", {}).values["SMTP_URL"] == value
-
-
-def test_update_env_rejects_newlines_and_unmanaged_keys(env_file):
-    with pytest.raises(ValueError):
-        envfile.update_env(env_file, "SMTP_URL", "a\nMULTICDN_DRY_RUN=false")
-    for key in ("MULTICDN_SECRET_KEY", "MULTICDN_DRY_RUN", "PATH"):
-        with pytest.raises(ValueError):
-            envfile.update_env(env_file, key, "x")
-    assert "MULTICDN_SECRET_KEY=keep-me" in env_file.read_text()
-
-
-def test_update_env_writes_in_place_with_backups(env_file, monkeypatch):
-    inode = env_file.stat().st_ino
-    before = env_file.read_text()
-    assert envfile.update_env(env_file, "TELEGRAM_CHAT_ID", "-300") is True
-    assert env_file.read_text() == before.replace("-100", "-300")
-    assert env_file.stat().st_ino == inode and env_file.stat().st_mode & 0o777 == 0o600  # same file (bind mount)
-    backups = sorted(envfile.backups_dir().glob(".env-*"))
-    assert len(backups) == 1 and backups[0].read_text() == before and backups[0].stat().st_mode & 0o777 == 0o600
-    assert envfile.update_env(env_file, "TELEGRAM_CHAT_ID", "-300") is False  # no change, no backup
-    for i in range(12):
-        envfile.update_env(env_file, "TELEGRAM_CHAT_ID", f"-{400 + i}")
-    assert len(list(envfile.backups_dir().glob(".env-*"))) == envfile.BACKUPS_KEEP
-
-
-def test_update_env_reasons(tmp_path, monkeypatch):
-    monkeypatch.setenv("MULTICDN_DB", str(tmp_path / "t.db"))
-    with pytest.raises(envfile.EnvFileError) as exc:
-        envfile.update_env(tmp_path / "missing.env", "SMTP_URL", "x")
-    assert exc.value.code == "missing"
-    if os.geteuid() != 0:
-        locked = tmp_path / "locked.env"
-        locked.write_text("A=1\n")
-        locked.chmod(0o400)
-        with pytest.raises(envfile.EnvFileError) as exc:
-            envfile.update_env(locked, "SMTP_URL", "x")
-        assert exc.value.code == "not_writable"
-
-
-# ---------------------------------------------------------------- sync at startup
-
-def test_env_wins_at_startup_and_leaves_an_event_without_the_value(make_client, monkeypatch):
-    client = make_client(TELEGRAM_BOT_TOKEN=TOKEN)
-    state = client.app.state.mc
-    assert state.secrets.get("telegram_token") == TOKEN and state.secrets.status("telegram_token").source == "env"
-    events = [e.summary for e in state.events.list(limit=20)]
-    assert "Token del bot de Telegram actualizado desde el .env del servidor" in events
-    assert not any(TOKEN in e for e in events)
-    # a value saved in the panel (with .env not writable) is replaced by .env on the next start
-    state.secrets.set("telegram_token", "999:panel-value-that-loses-on-restart")
-    env_sync.sync(state.secrets, state.events)  # what the next start does (lifespan)
-    assert state.secrets.get("telegram_token") == TOKEN
-    # same value: no new event
-    n = len(state.events.list(limit=100))
-    env_sync.sync(state.secrets, state.events)
-    assert len(state.events.list(limit=100)) == n
-
-
-def test_provider_tokens_follow_the_env(make_client, monkeypatch):
-    client = make_client(CLOUDFLARE_API_TOKEN="cf-env-token-0001", GCORE_API_TOKEN="gc-env-token-0001")
-    state = client.app.state.mc
-    cf = state.creds.list("cloudflare")
-    assert len(cf) == 1 and state.creds.secret(cf[0].id) == "cf-env-token-0001"
-    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "cf-env-token-0002")
-    assert state.creds.import_env("Imported") == ["cloudflare"]
-    assert [state.creds.secret(c.id) for c in state.creds.list("cloudflare")] == ["cf-env-token-0002"]  # same one
-    assert state.creds.env_status(cf[0])["state"] == "sync"
-    # deleting it in the panel removes the line from .env (here: not configured, so it stays and says so)
-    client.post(f"/ajustes/cuentas/{cf[0].id}/eliminar")
-    assert state.creds.env_removed() == ["CLOUDFLARE_API_TOKEN"]
-    page = client.get("/ajustes/cuentas").text
-    assert "No se pudo quitar <code>CLOUDFLARE_API_TOKEN</code>" in page
-
-
-def test_provider_token_adopts_an_existing_credential(tmp_path, monkeypatch):
-    monkeypatch.setenv("MULTICDN_DB", str(tmp_path / "t.db"))
-    secrets = SecretStore(tmp_path / "t.db")
-    from app.credentials import CredentialStore
-    creds = CredentialStore(secrets)
-    cid = creds.add("gcore", "Importada del entorno", "gc-same-token-1")  # imported by 0.3.0, in Spanish
-    monkeypatch.setenv("GCORE_API_TOKEN", "gc-same-token-1")
-    assert creds.import_env("Imported from the environment") == [] and creds.env_credential("gcore").id == cid
-
-
-def test_cli_startup_imports_too(tmp_path, monkeypatch):
-    monkeypatch.setenv("MULTICDN_DB", str(tmp_path / "t.db"))
-    monkeypatch.setenv("FOOTBALL_DATA_TOKEN", "fd-token-from-env-1")
-    from app import cli
-    _auth, events = cli._store()
-    assert SecretStore(tmp_path / "t.db").get("football_data_token") == "fd-token-from-env-1"
-    assert "football-data.org" in events.list(limit=1)[0].summary
-
-
-# ---------------------------------------------------------------- write-back from the panel
-
-def test_panel_save_writes_env_and_process_environment(make_client, env_file):
-    client = make_client(MULTICDN_ENV_PATH=str(env_file))
-    r = client.post("/ajustes/notificaciones/canal/telegram", data={"telegram_token": TOKEN, "telegram_chat_id": ""},
-                    follow_redirects=False)
-    assert "card=canal-telegram" in r.headers["location"] and r.headers["location"].endswith("#canal-telegram")
-    text = env_file.read_text()
-    assert text.startswith("# Multi-CDN\nMULTICDN_SECRET_KEY=keep-me\n\n# alerts\nTELEGRAM_CHAT_ID=-100\n")
-    assert f"{envfile.MARKER}\nTELEGRAM_BOT_TOKEN={TOKEN}\n" in text
-    assert os.environ["TELEGRAM_BOT_TOKEN"] == TOKEN
-    page = client.get("/ajustes/notificaciones").text
-    assert "igual que en el .env" in page
-    client.post("/ajustes/notificaciones/telegram_token/eliminar")
-    assert "TELEGRAM_BOT_TOKEN" not in env_file.read_text() and "TELEGRAM_BOT_TOKEN" not in os.environ
-    page = client.get("/ajustes/sistema").text
-    assert "El panel puede escribirlo" in page and str(env_file) in page
-
-
-def test_unwritable_env_warns_keeps_db_and_loses_on_restart(make_client, tmp_path, monkeypatch):
-    if os.geteuid() == 0:
-        pytest.skip("root can write anything")
-    path = tmp_path / "ro.env"
-    path.write_text("TELEGRAM_CHAT_ID=-100\n")
-    path.chmod(0o400)
-    client = make_client(MULTICDN_ENV_PATH=str(path), TELEGRAM_CHAT_ID="-100")
-    state = client.app.state.mc
-    r = client.post("/ajustes/notificaciones/canal/telegram", data={"telegram_chat_id": "-555"}, follow_redirects=True)
-    assert state.secrets.get("telegram_chat_id") == "-555"
-    assert "No se pudo actualizar el .env del servidor (sin permiso para escribirlo)" in r.text
-    page = client.get("/ajustes/notificaciones").text
-    assert "Actualiza <code>TELEGRAM_CHAT_ID</code> en el .env a mano" in page
-    assert any(p.key == "env:TELEGRAM_CHAT_ID" and p.href == "/ajustes/sistema#env" for p in open_problems(state))
-    assert "<code>TELEGRAM_CHAT_ID</code>" in client.get("/ajustes/sistema").text
-    env_sync.sync(state.secrets, state.events)  # next start
-    assert state.secrets.get("telegram_chat_id") == "-100"
 
 
 # ---------------------------------------------------------------- error reporting DSN
@@ -359,14 +196,3 @@ def test_feed_reason(client):
     assert feed_reason_text(state, now) == "partido en 60 min"
     state.calendar = Calendar([], fetched_at=now)
     assert feed_reason_text(state, now) == "sin actividad"
-
-
-def test_startup_reads_the_env_file_not_the_stale_container_environment(env_file, monkeypatch):
-    # `docker restart` keeps the environment the container was created with: the file wins.
-    monkeypatch.setenv("TELEGRAM_CHAT_ID", "-1")            # stale: the panel changed it to -100 in the file
-    monkeypatch.setenv("SMTP_URL", "smtps://old@mail.example.com:465")  # stale: removed from the file
-    secrets, events = SecretStore(env_file.parent / "t.db"), EventStore(env_file.parent / "t.db")
-    env_sync.sync(secrets, events)
-    assert secrets.get("telegram_chat_id") == "-100" and secrets.get("smtp_url") is None
-    assert os.environ["TELEGRAM_CHAT_ID"] == "-100" and "SMTP_URL" not in os.environ
-    assert os.environ.get("MULTICDN_SECRET_KEY") != "keep-me"  # unmanaged lines are never loaded or touched

@@ -25,7 +25,7 @@
 {%- endmacro %}
 
 {% macro remove_dialog(f) -%}
-{% if f.configured %}{{ m.confirm('quitar-' ~ f.name, _('Remove {field}', field=f.label), _('The value is removed from the panel and from the server\'s .env. Notifications that need it stop until you set it again.'), '/ajustes/notificaciones/' ~ f.name ~ '/eliminar', _('Remove value'), 'x') }}{% endif %}
+{% if f.configured %}{{ m.confirm('quitar-' ~ f.name, _('Remove {field}', field=f.label), _('The value is removed from the panel and from config/secrets.env. Notifications that need it stop until you set it again.'), '/ajustes/notificaciones/' ~ f.name ~ '/eliminar', _('Remove value'), 'x') }}{% endif %}
 {%- endmacro %}
 
 {% block content %}
@@ -46,7 +46,7 @@
       </div>
     </div>
     <div class="card__foot actions-end">
-      {{ m.more("canal-" ~ canal ~ "-help", _m("Saved encrypted in the database and also in the server's <code>.env</code> (<code>{a}</code>, <code>{b}</code>), so both stay equal. The test uses the saved values: save first.", a=a.env, b=b.env)) }}
+      {{ m.more("canal-" ~ canal ~ "-help", _m("Saved encrypted in the database and also in <code>config/secrets.env</code> (<code>{a}</code>, <code>{b}</code>), so both stay equal. The test uses the saved values: save first.", a=a.env, b=b.env)) }}
       <button class="btn btn--ok" type="submit" formaction="/ajustes/notificaciones/probar/{{ canal }}" formnovalidate{% if not testable %} disabled{% endif %}>{{ m.icon('send' if canal == 'telegram' else 'play') }} {{ _('Test the saved settings') }}</button>
       <button class="btn btn--primary" type="submit">{{ _("Save {channel}", channel=title) }}</button>
     </div>

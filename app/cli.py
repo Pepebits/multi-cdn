@@ -12,6 +12,7 @@ Usage (the Spanish names of 0.1.0 still work as aliases):
   python -m app.cli backup [<file>]
   python -m app.cli status                              (where each domain is served)
   python -m app.cli switch <domain> gcore|cloudflare [--yes] [--force]
+  python -m app.cli migrate-secrets [<.env> [<config/secrets.env>]]   (deploy/install.sh runs it)
 """
 
 from __future__ import annotations
@@ -35,7 +36,7 @@ def _store() -> tuple[AuthStore, EventStore]:
     _speak_notify_lang(events)
     secrets = SecretStore(db)
     from .env_sync import sync
-    sync(secrets, events)  # the server's .env has priority at startup, also from the terminal
+    sync(secrets, events)  # config/secrets.env has priority at startup, also from the terminal
     return AuthStore(secrets), events
 
 
@@ -73,6 +74,7 @@ COMMANDS = {
     "backup": ["copia-seguridad"],
     "status": ["estado"],
     "switch": ["cambiar"],
+    "migrate-secrets": [],
 }
 
 
@@ -106,11 +108,19 @@ def _parser() -> argparse.ArgumentParser:
     sw.add_argument("--yes", "--si", dest="yes", action="store_true", help="do not ask for confirmation")
     sw.add_argument("--force", "--forzar", dest="force", action="store_true",
                     help="move to Gcore even if the pre-check fails")
+    ms = add("migrate-secrets", "move the panel-managed variables from .env to config/secrets.env (0.3.1)")
+    ms.add_argument("env_file", nargs="?", default=".env")
+    ms.add_argument("secrets_file", nargs="?", default="config/secrets.env")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.cmd == "migrate-secrets":  # on the host, before the panel exists: no database, no .env loading
+        from pathlib import Path
+
+        from .migrate_secrets import migrate
+        return migrate(Path(args.env_file), Path(args.secrets_file))
     load_dotenv()
     from .error_reporting import init as init_error_reporting
     init_error_reporting("cli")  # logging stays quiet: the CLI prints its own output

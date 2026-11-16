@@ -1,7 +1,7 @@
 """Optional error reporting to Sentry or GlitchTip (any Sentry-compatible server).
 
 Off by default: without a DSN nothing is initialised or sent. The DSN is set in Settings →
-System (or MULTICDN_SENTRY_DSN in the server's .env, synced with the panel like every secret)
+System (or MULTICDN_SENTRY_DSN in config/secrets.env, synced with the panel like every secret)
 and read from the encrypted database before the app exists; a change in the panel applies at
 once to logged errors (reconfigure) and fully after a restart.
 
@@ -206,16 +206,18 @@ def environment() -> str:
 
 
 def stored_dsn() -> str | None:
-    """The DSN before the app exists: from the encrypted database (after importing the
-    server's .env, which has priority at startup), else from MULTICDN_SENTRY_DSN when there is
-    no database yet (first start: the panel imports it right after). Anything wrong reading the
-    database: logged, and error reporting stays off."""
+    """The DSN before the app exists: from the encrypted database (after importing
+    config/secrets.env, which has priority at startup), else from MULTICDN_SENTRY_DSN when there
+    is no database yet (first start: the panel imports it right after). Anything wrong reading
+    it: logged, and error reporting stays off."""
     try:
-        from .envfile import refresh_environ
-        refresh_environ()
+        from . import envfile
+        view = envfile.load()
+        env_value = None if view.configured and not view.readable else (
+            os.environ.get("MULTICDN_SENTRY_DSN", "").strip() or None)
     except Exception as exc:
-        log.warning("error reporting: could not read the server's .env (%s)", type(exc).__name__)
-    env_value = os.environ.get("MULTICDN_SENTRY_DSN", "").strip() or None
+        log.warning("error reporting: could not read %s (%s)", "config/secrets.env", type(exc).__name__)
+        env_value = None
     db = Path(os.environ.get("MULTICDN_DB", "data/multicdn.db"))
     if not db.is_file():
         return env_value

@@ -10,13 +10,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-import os
-
 from .i18n import N_, translate, tr, trn
 from .secrets_store import SecretStore, _hint
 
 PROVIDERS = {"cloudflare": "Cloudflare", "gcore": "Gcore"}
-# Provider tokens that can also come from the server's .env (synced at startup, see secrets_store).
+# Provider tokens that can also come from config/secrets.env (synced at startup, see envfile).
 ENV_TOKENS = {"cloudflare": "CLOUDFLARE_API_TOKEN", "gcore": "GCORE_API_TOKEN"}
 ENV_LABEL = N_("Imported from the environment")
 
@@ -129,22 +127,23 @@ class CredentialStore:
         self.conn.execute("DELETE FROM provider_credentials WHERE id=?", (cred_id,))
         self.secrets.delete(_key(cred_id))
 
-    # ---- sync with the server's .env (CLOUDFLARE_API_TOKEN, GCORE_API_TOKEN)
+    # ---- sync with config/secrets.env (CLOUDFLARE_API_TOKEN, GCORE_API_TOKEN)
     def env_credential(self, provider: str) -> Credential | None:
-        """The credential that holds the .env token of this provider, if it still exists."""
+        """The credential that holds the secrets-file token of this provider, if it still exists."""
         cred_id = self.secrets.meta(f"env_cred:{provider}")
         try:
             return self.get(int(cred_id)) if cred_id else None
         except ValueError:
             return None
 
-    def import_env(self, label: str) -> list[str]:
-        """At startup the .env token of each provider has priority: if it differs from the
+    def import_env(self, label: str, source: dict[str, str]) -> list[str]:
+        """At startup the token of each provider in `source` (variable -> value, see
+        envfile.import_source) has priority: if it differs from the
         credential that holds it, that credential is updated (or created, named `label`; or an
         existing credential with that same token is adopted). Returns the providers updated."""
         imported = []
         for provider, env in ENV_TOKENS.items():
-            value = os.environ.get(env, "").strip()
+            value = (source.get(env) or "").strip()
             if not value:
                 continue
             linked = self.env_credential(provider)
@@ -173,8 +172,8 @@ class CredentialStore:
         return imported
 
     def env_status(self, cred: Credential) -> dict:
-        """Where the credential's value comes from (env | panel), when, the .env variable it is
-        synced with (only the credential that holds the .env token) and how they compare."""
+        """Where the credential's value comes from (env | panel), when, the secrets-file variable
+        it is synced with (only the credential that holds that token) and how they compare."""
         from .secrets_store import env_state
         src = self.secrets.source(_key(cred.id))
         linked = self.env_credential(cred.provider)
@@ -184,10 +183,11 @@ class CredentialStore:
                 "state": state, "error": self.secrets.env_error(env) if state == "differs" else None}
 
     def env_removed(self) -> list[str]:
-        """.env variables still set whose credential was deleted in the panel (the panel could
-        not remove the line): the next start creates it again."""
+        """Secrets-file variables still set whose credential was deleted in the panel (the panel
+        could not remove the line): the next start creates it again."""
+        from .envfile import current
         return [env for provider, env in ENV_TOKENS.items()
-                if os.environ.get(env, "").strip() and self.env_credential(provider) is None
+                if current(env) and self.env_credential(provider) is None
                 and self.secrets.meta(f"env_cred:{provider}")]
 
     @staticmethod

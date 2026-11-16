@@ -139,8 +139,30 @@ def open_problems(state, now: datetime | None = None) -> list[Problem]:
 
     for m in env_mismatches(state):
         items.append(Problem(f"env:{m['env']}", "warn",
-                             tr("{label}: the server's .env could not be updated; on the next restart its value will "
+                             tr("{label}: config/secrets.env could not be updated; on the next restart its value will "
                                 "replace the panel's", label=m["label"]),
+                             None, "/ajustes/sistema#env", _settings("System")))
+    from . import envfile
+    view = envfile.view()
+    if view.configured and not view.readable:
+        items.append(Problem("secrets-file", "error",
+                             tr("config/secrets.env cannot be read: the panel keeps its saved values and imports "
+                                "nothing from it until it can"),
+                             None, "/ajustes/sistema#env", _settings("System")))
+    if view.unmanaged:
+        items.append(Problem("secrets-unmanaged", "warn",
+                             tr("config/secrets.env has variables the panel does not manage ({keys}): they are ignored; "
+                                "move them to .env", keys=", ".join(view.unmanaged)),
+                             None, "/ajustes/sistema#env", _settings("System")))
+    if "MULTICDN_DRY_RUN" in view.unmanaged:
+        items.append(Problem("secrets-dry-run", "error",
+                             tr("MULTICDN_DRY_RUN is in config/secrets.env: the panel stays in dry run until that line "
+                                "is removed (set it only in .env)"),
+                             None, "/ajustes/sistema#env", _settings("System")))
+    if view.invalid:
+        items.append(Problem("secrets-invalid", "warn",
+                             tr("config/secrets.env: the value of {keys} has line breaks or control characters and is "
+                                "ignored", keys=", ".join(view.invalid)),
                              None, "/ajustes/sistema#env", _settings("System")))
 
     far = datetime.max.replace(tzinfo=UTC)

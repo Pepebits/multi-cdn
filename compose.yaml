@@ -1,6 +1,7 @@
-# docker compose up -d --build
+# docker compose up -d --build   (deploy/install.sh prepares data/ and config/ first)
 # El panel queda en 127.0.0.1:8765 del VPS, sin publicar en Internet. Acceso por túnel SSH
 # (ssh -N -L 8765:127.0.0.1:8765 <usuario>@<IP>) o Tailscale (sudo tailscale serve --bg 8765).
+# Needs Docker Compose 2.24 or later (env_file with `required: false`).
 services:
   panel:
     # Imagen publicada; `docker compose up -d --build` la construye desde este repo en su lugar.
@@ -8,20 +9,26 @@ services:
     build: .
     container_name: multicdn-panel
     restart: unless-stopped
-    # Configuración y clave maestra: .env en esta carpeta. Para guardarlas en otro sitio, define
-    # MULTICDN_ENV_FILE (en el entorno o en este mismo .env) con la ruta que prefieras.
     env_file:
+      # Settings and master key (MULTICDN_SECRET_KEY, MULTICDN_DRY_RUN, ORIGIN_*…): .env in this
+      # folder, or the path in MULTICDN_ENV_FILE (set in the environment or in this folder's .env).
+      # Only passed as environment: it is not mounted, so the container cannot change it.
       - path: ${MULTICDN_ENV_FILE:-.env}
+      # The values the panel manages (tokens, alert channels, DSN), written by the panel itself.
+      # Loaded after .env, so a value here wins. Only an env_file: never used for ${...} above.
+      - path: ${MULTICDN_SECRETS_DIR:-./config}/secrets.env
+        required: false
     environment:
-      # The same .env, mounted read-write: what is saved in the panel is written back to it, so
-      # both stay equal (only the values the panel manages; never MULTICDN_SECRET_KEY). Its
-      # owner keeps it 600; deploy/install.sh gives the container user (uid 10001) write access.
-      MULTICDN_ENV_PATH: /app/config/.env
+      # Where the panel reads and writes its secrets file: the folder below, mounted read-write
+      # (a folder, so the file can be replaced atomically). See deploy/README.md, "Panel secrets file".
+      MULTICDN_SECRETS_PATH: /app/config/secrets.env
     ports:
       - "127.0.0.1:8765:8765"
     volumes:
       - ./data:/app/data
-      - ${MULTICDN_ENV_FILE:-.env}:/app/config/.env
+      - type: bind
+        source: ${MULTICDN_SECRETS_DIR:-./config}
+        target: /app/config
     read_only: true
     tmpfs:
       - /tmp

@@ -140,21 +140,21 @@
 </dialog>
 {%- endmacro %}
 
-{# Where a saved secret comes from and whether the server's .env agrees (secrets_store.env_state). #}
+{# Where a saved secret comes from and whether config/secrets.env agrees (secrets_store.env_state). #}
 {% macro secret_origin(st) -%}
 <span class="muted secret-origin">
-  {%- if st.source == 'env' %}{{ _m("From .env · imported {when}", when=st.updated_at|when) }}
+  {%- if st.source == 'env' %}{{ _m("From config/secrets.env or the environment · imported {when}", when=st.updated_at|when) }}
   {%- elif st.updated_at %}{{ _m("Saved in the panel · {when}", when=st.updated_at|when) }}{% endif -%}
-  {%- if st.env_state == 'sync' %} · {{ _("in sync with .env") }}
-  {%- elif st.env_state == 'panel_only' %} · {{ _("only in the panel (not in .env)") }}
-  {%- elif st.env_state == 'differs' %} · <strong>{{ _("saved in the panel; .env could not be updated") }}</strong>
-  {%- elif st.env_state == 'env_only' %}{{ _("Removed in the panel; .env could not be updated") }}{% endif -%}
+  {%- if st.env_state == 'sync' %} · {{ _("in sync with config/secrets.env") }}
+  {%- elif st.env_state == 'panel_only' %} · {{ _("only in the panel (not in config/secrets.env)") }}
+  {%- elif st.env_state == 'differs' %} · <strong>{{ _("saved in the panel; config/secrets.env could not be updated") }}</strong>
+  {%- elif st.env_state == 'env_only' %}{{ _("Removed in the panel; config/secrets.env could not be updated") }}{% endif -%}
 </span>
 {%- endmacro %}
 
 {% macro env_warning(st) -%}
 {%- if st.env_state in ('differs', 'env_only') -%}
-<p class="notice notice--warn flush">{{ icon('alert') }} {{ _m("Could not update the server's .env ({reason}): on the next restart the .env value will replace this one. Update <code>{key}</code> in .env yourself.", reason=_(ENV_REASONS.get(st.env_error or 'error')), key=st.env) }}</p>
+<p class="notice notice--warn flush">{{ icon('alert') }} {{ _m("Could not update config/secrets.env ({reason}): on the next restart the file's value will replace this one. Update <code>{key}</code> in the file yourself.", reason=_(ENV_REASONS.get(st.env_error or 'error')), key=st.env) }}</p>
 {%- endif -%}
 {%- endmacro %}
 

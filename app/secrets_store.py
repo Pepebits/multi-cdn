@@ -4,11 +4,11 @@ La clave maestra viene de MULTICDN_SECRET_KEY. Si no existe, se genera una en
 data/.secret_key (permisos 600) y el panel avisa: para que las copias de la base
 de datos no sirvan sin la clave, guárdala fuera del VPS o pásala por entorno.
 
-Sync with the server's .env (0.3.1), so both stay equal: at startup (panel and CLI) the .env
-has priority and every env-backed secret that differs is imported here (``import_env``, see
-env_sync); saving or removing a value in the panel writes it back to .env (envfile). When the
-panel cannot write .env, the status says so (``env_state``) and the next start restores the
-.env value.
+Sync with the panel's secrets file, config/secrets.env (0.3.1), so both stay equal: at startup
+(panel and CLI) the file has priority and every env-backed secret that differs is imported here
+(``import_env``, see env_sync and envfile for the precedence); saving or removing a value in the
+panel writes it back to the file (envfile). When the panel cannot write it, the status says so
+(``env_state``) and the next start restores the file's value.
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS secrets (
     updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS secret_meta (
-    key TEXT PRIMARY KEY,     -- env_error:<VAR>, env_cred:<provider>, env_written_at
+    key TEXT PRIMARY KEY,     -- env_error:<VAR>, env_cred:<provider>, env_seen:<VAR>, env_written_at
     value TEXT NOT NULL
 );
 """
@@ -62,17 +62,19 @@ class SecretStatus:
     source: str | None  # panel | env | None
     hint: str | None
     updated_at: datetime | None
-    env: str = ""                   # the .env variable behind it
+    env: str = ""                   # the secrets-file variable behind it
     env_state: str | None = None    # see env_state()
-    env_error: str | None = None    # why .env could not be updated (envfile reason code)
+    env_error: str | None = None    # why the file could not be updated (envfile reason code)
 
 
 def env_state(env: str, current: str | None) -> str | None:
-    """How the value in use compares with the server's .env (as this process sees it):
-    "sync" equal · "panel_only" not in .env · "differs" .env has another value · "env_only"
-    removed in the panel but still in .env · None neither has it. "differs" and "env_only"
-    happen only when the panel could not write .env: on the next start .env wins."""
-    value = os.environ.get(env, "").strip() if env else ""
+    """How the value in use compares with the secrets file (envfile.current: the file when one
+    is configured, else the process environment): "sync" equal · "panel_only" not in the file ·
+    "differs" the file has another value · "env_only" removed in the panel but still in the file
+    · None neither has it. "differs" and "env_only" happen only when the panel could not write
+    the file: on the next start the file wins."""
+    from .envfile import current as file_value
+    value = (file_value(env) or "") if env else ""
     if current is None:
         return "env_only" if value else None
     if not value:
@@ -160,7 +162,7 @@ class SecretStore:
                 return self.fernet.decrypt(row[0]).decode()
             except InvalidToken:
                 return None  # clave maestra cambiada: tratar como no configurado
-        return None  # the .env is imported at startup (import_env): the database is the only source
+        return None  # the secrets file is imported at startup (import_env): the database is the only source
 
     def hint(self, name: str) -> str | None:
         row = self.conn.execute("SELECT hint FROM secrets WHERE name = ?", (name,)).fetchone()
@@ -171,7 +173,7 @@ class SecretStore:
         row = self.conn.execute("SELECT source, updated_at FROM secrets WHERE name = ?", (name,)).fetchone()
         return (row[0], datetime.fromisoformat(row[1])) if row else None
 
-    # ---- sync with the server's .env
+    # ---- sync with the secrets file (config/secrets.env)
     def meta(self, key: str) -> str | None:
         row = self.conn.execute("SELECT value FROM secret_meta WHERE key = ?", (key,)).fetchone()
         return row[0] if row else None
@@ -185,13 +187,14 @@ class SecretStore:
         self.conn.execute("DELETE FROM secret_meta WHERE key = ?", (key,))
         self.conn.commit()
 
-    def import_env(self) -> list[str]:
-        """At startup the server's .env has priority: every secret whose .env value differs from
-        the stored one is imported; returns their names (equal values import nothing, so a
-        restart does not repeat the history entry)."""
+    def import_env(self, source: dict[str, str]) -> list[str]:
+        """At startup the secrets file has priority: every secret whose value in `source`
+        (variable -> value, envfile.import_source) differs from the stored one is imported;
+        returns their names (equal values import nothing, so a restart does not repeat the
+        history entry)."""
         imported = []
         for name, (_label, env, _help) in CREDENTIALS.items():
-            value = os.environ.get(env, "").strip()
+            value = (source.get(env) or "").strip()
             if not value or self.get(name) == value:
                 continue
             self.set(name, value, source="env")
@@ -200,7 +203,7 @@ class SecretStore:
         return imported
 
     def env_error(self, env: str) -> str | None:
-        """Why the last write of this variable to .env failed (envfile reason code)."""
+        """Why the last write of this variable to the secrets file failed (envfile reason code)."""
         return self.meta(f"env_error:{env}")
 
     def status(self, name: str) -> SecretStatus:

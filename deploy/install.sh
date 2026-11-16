@@ -7,8 +7,24 @@ cd "$(dirname "$0")/.."
 say() { echo "==> $*"; }
 docker compose version >/dev/null 2>&1 || { echo "Docker with the compose plugin is required"; exit 1; }
 
+# A variable from the environment, else from this folder's .env (Compose reads that file for
+# ${...} in compose.yaml too), else the default.
+setting() {
+  local name=$1 default=$2 value=${!1:-}
+  if [[ -z $value && -r .env ]]; then
+    value=$(sed -n "s/^[[:space:]]*\(export[[:space:]]\{1,\}\)\{0,1\}$name[[:space:]]*=[[:space:]]*//p" .env | tail -n 1 \
+            | sed "s/[[:space:]]#.*$//; s/^[\"']//; s/[\"'][[:space:]]*$//")
+  fi
+  echo "${value:-$default}"
+}
+
 # Settings and master key: .env in the repository folder, unless MULTICDN_ENV_FILE points elsewhere.
-ENV_FILE=${MULTICDN_ENV_FILE:-.env}
+ENV_FILE=$(setting MULTICDN_ENV_FILE .env)
+# The panel's secrets (the values it manages): config/secrets.env, unless MULTICDN_SECRETS_DIR.
+SECRETS_DIR=$(setting MULTICDN_SECRETS_DIR config)
+SECRETS_FILE="${SECRETS_DIR%/}/secrets.env"
+ME="$(id -u):$(id -g)"
+
 if [[ ! -f $ENV_FILE ]]; then
   say "Creating $ENV_FILE with a new master key"
   key=$(openssl rand -base64 32 | tr '+/' '-_')
@@ -19,6 +35,7 @@ if [[ ! -f $ENV_FILE ]]; then
   echo "    Edit $ENV_FILE (ORIGIN_VPS1_IPV4, MULTICDN_ACME_EMAIL) and run this script again."
   exit 0
 fi
+[[ -r $ENV_FILE ]] || { echo "Cannot read $ENV_FILE: make it yours (sudo chown $(id -u):$(id -g) $ENV_FILE) and run this again."; exit 1; }
 grep -q '^MULTICDN_SECRET_KEY=.\+' "$ENV_FILE" || { echo "MULTICDN_SECRET_KEY is empty in $ENV_FILE"; exit 1; }
 if [[ -f data/.secret_key ]]; then
   echo "There is a key in data/.secret_key: move it to MULTICDN_SECRET_KEY in $ENV_FILE and delete it from data/ (one source for the key)."
@@ -30,14 +47,45 @@ mkdir -p data
 sudo chown -R 10001:10001 data
 sudo chmod 700 data
 
-say "Letting the panel keep $ENV_FILE in sync (uid 10001 may write it; owner and 600 stay)"
-chmod 600 "$ENV_FILE"
+say "Keeping $ENV_FILE private: the container only receives its values (env_file), it cannot change it"
+if ! chmod 600 "$ENV_FILE" 2>/dev/null; then
+  echo "    $ENV_FILE is not yours, so its permissions were not changed. Make sure only you can read it:"
+  echo "    sudo chown $ME $ENV_FILE && chmod 600 $ENV_FILE"
+fi
+# 0.3.1 development builds let the container write .env: take that back.
 if command -v setfacl >/dev/null 2>&1; then
-  sudo setfacl -m u:10001:rw "$ENV_FILE"
+  sudo setfacl -x u:10001 "$ENV_FILE" 2>/dev/null || true
+fi
+
+say "Preparing $SECRETS_DIR/ for the panel's secrets (the container may write only there)"
+mkdir -p "$SECRETS_DIR"
+[[ -e $SECRETS_FILE ]] || (umask 077; : > "$SECRETS_FILE")
+# The panel replaces the file when it saves (so its owner becomes uid 10001): yours again.
+sudo chown "$ME" "$SECRETS_DIR" "$SECRETS_FILE"
+chmod 700 "$SECRETS_DIR" && chmod 600 "$SECRETS_FILE" \
+  || echo "    Could not set the permissions of $SECRETS_DIR (700) and $SECRETS_FILE (600): set them yourself."
+
+say "Moving the panel-managed variables from $ENV_FILE to $SECRETS_FILE (if any are left there)"
+if command -v python3 >/dev/null 2>&1 && python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))'; then
+  if ! python3 -m app.migrate_secrets "$ENV_FILE" "$SECRETS_FILE"; then
+    echo "    They were not moved. They keep working from $ENV_FILE; see deploy/README.md, \"Panel secrets file\"."
+  fi
+else
+  echo "    python3 (3.9 or later) is not installed: move these lines from $ENV_FILE to $SECRETS_FILE by hand:"
+  grep -nE '^[[:space:]]*(export[[:space:]]+)?(TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID|SMTP_URL|ALERT_EMAIL_TO|FOOTBALL_DATA_TOKEN|MULTICDN_HEARTBEAT_URL|MULTICDN_SENTRY_DSN|CLOUDFLARE_API_TOKEN|GCORE_API_TOKEN)[[:space:]]*=' "$ENV_FILE" \
+    | cut -d= -f1 | sed 's/^/      line /' || echo "      (none)"
+fi
+
+say "Letting the container user (uid 10001) write $SECRETS_DIR/"
+if command -v setfacl >/dev/null 2>&1; then
+  # The folder (to replace the file atomically) and the file; files created there later (by the
+  # panel or by an editor that saves with a rename) inherit access for uid 10001 and for you.
+  sudo setfacl -m "u:10001:rwx,u:$(id -u):rwx,d:u:10001:rw,d:u:$(id -u):rw" "$SECRETS_DIR"
+  sudo setfacl -m "u:10001:rw,u:$(id -u):rw" "$SECRETS_FILE"
 else
   echo "    setfacl is not installed (Debian/Ubuntu: sudo apt install acl). Without it the panel cannot"
-  echo "    write $ENV_FILE: values saved in the panel stay only in its database and the panel warns."
-  echo "    Install acl and run this script again, or run: sudo setfacl -m u:10001:rw $ENV_FILE"
+  echo "    write $SECRETS_FILE: values saved in the panel stay only in its database and the panel warns."
+  echo "    Install acl and run this script again."
 fi
 
 say "Building and starting"

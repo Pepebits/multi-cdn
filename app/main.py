@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
-from . import alerts, env_sync, envfile, error_reporting, heartbeat, i18n, notify, origin_health, proxy
+from . import alerts, env_sync, envfile, envparse, error_reporting, heartbeat, i18n, notify, origin_health, proxy
 from .auth import AuthStore, totp_uri
 from .gcore_setup import RENEW_BEFORE, Job, prepare_domain, renew_and_check
 from .gcore_usage import refresh_usage
@@ -428,7 +428,7 @@ async def lifespan(app: FastAPI):
             store.import_inventory(load_inventory())
     events = EventStore(db_path)
     load_notify_lang(events)
-    env_sync.sync(secrets, events, creds)  # the server's .env has priority at startup
+    env_sync.sync(secrets, events, creds)  # config/secrets.env has priority at startup
     events.listeners.append(Notifier(secrets))
     state = State(
         store=store, secrets=secrets, creds=creds, auth=AuthStore(secrets), events=events,
@@ -1338,12 +1338,19 @@ def _settings_page(request: Request, tab: str, template: str, **extra) -> HTMLRe
         request, "ajustes", tab=tab, tab_label=tr(SETTINGS_TABS[tab]), settings_cards=True, **extra))
 
 
+def _env_warning(reason: str | None, keys: str) -> str:
+    """Why a value saved in the panel is not in config/secrets.env, and what to do ("" if it is)."""
+    if not reason:
+        return ""
+    return tr("Could not update config/secrets.env ({reason}): set {keys} there yourself, or the file's value "
+              "comes back on the next restart.", reason=tr(envfile.REASONS.get(reason, envfile.REASONS["error"])), keys=keys)
+
+
 def _with_env_warning(message: str, reason: str | None, key: str) -> str:
-    """A save in the panel whose write-back to .env failed: say it in the same message."""
+    """A save in the panel whose write-back to the secrets file failed: say it in the same message."""
     if not reason:
         return message
-    return tr("{message}. Could not update the server's .env ({reason}): update {key} there yourself.",
-              message=message.rstrip("."), reason=tr(envfile.REASONS[reason]), key=key)
+    return f"{message.rstrip('.')}. {_env_warning(reason, key)}"
 
 
 def _secret_save(s: State, name: str, value: str | None) -> str | None:
@@ -1355,8 +1362,8 @@ def _env_view(source: str | None, at, env: str | None, state: str | None, error:
 
 
 def env_mismatches(s: State) -> list[dict]:
-    """Secrets whose value in the server's .env differs from the panel's (the panel could not
-    write .env): on the next start .env replaces them. For Settings → System and open problems."""
+    """Secrets whose value in config/secrets.env differs from the panel's (the panel could not
+    write the file): on the next start the file replaces them. For Settings → System and open problems."""
     out = []
     for st in s.secrets.all_status():
         if st.env_state in ("differs", "env_only"):
@@ -1460,9 +1467,7 @@ async def cuenta_rotar(request: Request, cred_id: int, secret: str = Form("")):
     extra = ""
     if (linked := s.creds.env_credential(cred.provider)) and linked.id == cred_id:
         env = ENV_TOKENS[cred.provider]
-        if reason := envfile.write_back(s.secrets, env, secret):
-            extra = tr("Could not update the server's .env ({reason}): update {key} there yourself.",
-                       reason=tr(envfile.REASONS[reason]), key=env)
+        extra = _env_warning(envfile.write_back(s.secrets, env, secret), env)
     return await _probe_credential(request, cred_id, extra)
 
 
@@ -1589,13 +1594,14 @@ async def canal_guardar(request: Request, canal: str):
     if canal not in CHANNELS:
         raise HTTPException(404)
     form = await request.form()
-    saved, failed = [], None
-    for name in CHANNELS[canal]:
-        value = str(form.get(name, "")).strip()
+    saved, failed, failed_keys = [], None, []
+    values = {name: str(form.get(name, "")).strip() for name in CHANNELS[canal]}
+    if any(envparse.bad_chars(v) for v in values.values()):
+        return _card(request.url_for("ajustes_notificaciones"), f"canal-{canal}", error=tr("Enter a value"))
+    for name, value in values.items():
         if value:
-            if any(c in value for c in "\r\n"):
-                return _card(request.url_for("ajustes_notificaciones"), f"canal-{canal}", error=tr("Enter a value"))
-            failed = _secret_save(s, name, value) or failed
+            if reason := _secret_save(s, name, value):
+                failed, failed_keys = reason, [*failed_keys, CREDENTIALS[name][1]]
             saved.append(CREDENTIALS[name][0])  # translated at use: tr()/tn() below
     url = request.url_for("ajustes_notificaciones")
     if not saved:
@@ -1603,7 +1609,7 @@ async def canal_guardar(request: Request, canal: str):
     s.events.add(actor=_actor(request), kind="config",
                  summary=tn("Notifications: {fields} updated", fields=", ".join(tn(x) for x in saved)))
     msg = tr("Saved: {fields}", fields=", ".join(tr(x) for x in saved))
-    return _card(url, f"canal-{canal}", ok=_with_env_warning(msg, failed, ".env"))
+    return _card(url, f"canal-{canal}", ok=_with_env_warning(msg, failed, ", ".join(failed_keys)))
 
 
 @app.post("/ajustes/notificaciones/latido")
@@ -1617,23 +1623,32 @@ async def latido_guardar(request: Request, heartbeat_url: str = Form("")):
     if os.environ.get("MULTICDN_OFFLINE") != "1" and not await heartbeat.host_is_public(host, s.inventory.origin_ips):
         return _card(url, "latido", error=tr("The ping URL must point to a public server: {host} does not resolve to a public address",
                                              host=host))
-    _secret_save(s, "heartbeat_url", value)
+    reason = _secret_save(s, "heartbeat_url", value)
     s.events.add(actor=_actor(request), kind="config", summary=tn("External heartbeat: URL updated"))
-    return await latido_probar(request)
+    return await _beat_now(request, _env_warning(reason, "MULTICDN_HEARTBEAT_URL"))
 
 
 @app.post("/ajustes/notificaciones/latido/probar")
 async def latido_probar(request: Request):
+    return await _beat_now(request)
+
+
+async def _beat_now(request: Request, warning: str = "") -> RedirectResponse:
+    """Sends a heartbeat now and says how it went (plus `warning`, when saving left one)."""
     s = _state(request)
     url = request.url_for("ajustes_notificaciones")
     b = await heartbeat.beat(s)
     if b is None:
-        return _card(url, "latido", error=tr("The external heartbeat URL is missing"))
-    if b.result != "ok":
-        return _card(url, "latido", error=tr("Could not send the heartbeat: {result}", result=b.result))
-    if b.ok:
-        return _card(url, "latido", ok=tr("Heartbeat sent: all good"))
-    return _card(url, "latido", ok=tr("Heartbeat sent: failure reported ({detail})", detail=b.detail))
+        msg, ok = tr("The external heartbeat URL is missing"), False
+    elif b.result != "ok":
+        msg, ok = tr("Could not send the heartbeat: {result}", result=b.result), False
+    elif b.ok:
+        msg, ok = tr("Heartbeat sent: all good"), True
+    else:
+        msg, ok = tr("Heartbeat sent: failure reported ({detail})", detail=b.detail), True
+    if warning:
+        msg = f"{msg.rstrip('.')}. {warning}"
+    return _card(url, "latido", **({"ok": msg} if ok else {"error": msg}))
 
 
 # Fixed paths before /ajustes/notificaciones/{name}: the first matching route wins.
@@ -1678,7 +1693,7 @@ async def notificacion_guardar(request: Request, name: str, value: str = Form(""
     if name not in NOTIFY_FIELDS:
         raise HTTPException(404)
     url = request.url_for("ajustes_notificaciones")
-    if not value.strip() or any(c in value for c in "\r\n"):
+    if not value.strip() or envparse.bad_chars(value.strip()):
         return _card(url, _field_card(name), error=tr("Enter a value"))
     reason = _secret_save(s, name, value)
     s.events.add(actor=_actor(request), kind="config", summary=tn("Notifications: {fields} updated", fields=tn(CREDENTIALS[name][0])))
@@ -1832,7 +1847,7 @@ async def automatico_global(request: Request, enabled: str = Form("")):
 async def football_data_guardar(request: Request, token: str = Form("")):
     s = _state(request)
     url = request.url_for("ajustes_cambio")
-    if not token.strip() or any(c in token for c in "\r\n"):
+    if not token.strip() or envparse.bad_chars(token.strip()):
         return _card(url, "calendario", error=tr("Enter the key"))
     reason = _secret_save(s, "football_data_token", token)
     s.events.add(actor=_actor(request), kind="config", summary=tn("football-data.org key saved"))
@@ -1841,7 +1856,8 @@ async def football_data_guardar(request: Request, token: str = Form("")):
     if result == "ok":
         msg = tr("Key saved and verified · {n} matches in the calendar", n=len(s.calendar.matches))
         return _card(url, "calendario", ok=_with_env_warning(msg, reason, "FOOTBALL_DATA_TOKEN"))
-    return _card(url, "calendario", error=tr("Key saved, but football-data.org is not responding properly: {result}", result=result))
+    msg = tr("Key saved, but football-data.org is not responding properly: {result}", result=result)
+    return _card(url, "calendario", error=_with_env_warning(msg, reason, "FOOTBALL_DATA_TOKEN"))
 
 
 @app.post("/ajustes/cambio/football-data/quitar")
@@ -1865,7 +1881,7 @@ async def ajustes_sistema(request: Request):
         ev_stats=s.events.stats(), ev_days=s.events.get_setting("events_max_days"),
         ev_rows=s.events.get_setting("events_max_rows"), error_reporting=error_reporting.status(),
         dsn=s.secrets.status("sentry_dsn"), env_file=envfile.status(s.secrets), env_mismatches=env_mismatches(s),
-        env_managed=sorted(envfile.MANAGED))
+        env_managed=sorted(envfile.MANAGED), secrets_display=envfile.DISPLAY)
 
 
 DSN_PROBLEMS = {

@@ -4,11 +4,12 @@ import os
 import tempfile
 import time
 
-# Before any app module is imported (app.main reads the database and the .env when it is
-# imported): never the developer's data/multicdn.db, .env or error-reporting DSN.
+# Before any app module is imported (app.main reads the database, the .env and the secrets file
+# when it is imported): never the developer's data/multicdn.db, .env, config/secrets.env or
+# error-reporting DSN.
 os.environ["MULTICDN_DB"] = os.path.join(tempfile.mkdtemp(prefix="multicdn-tests-"), "multicdn.db")
 os.environ["MULTICDN_DOTENV"] = "/nonexistent/.env"
-for _var in ("MULTICDN_ENV_PATH", "MULTICDN_SENTRY_DSN"):
+for _var in ("MULTICDN_SECRETS_PATH", "MULTICDN_ENV_PATH", "MULTICDN_SENTRY_DSN"):
     os.environ.pop(_var, None)
 
 import pytest
@@ -60,10 +61,11 @@ def no_developer_env(monkeypatch, tmp_path):
     # Nor open the developer's database (data/multicdn.db): a test that does not choose one gets
     # an empty database of its own.
     monkeypatch.setenv("MULTICDN_DB", str(tmp_path / "isolated" / "multicdn.db"))
-    # Nor write any .env, nor import a secret from the developer's environment.
-    from app.envfile import MANAGED
-    for var in (*MANAGED, "MULTICDN_ENV_PATH"):
+    # Nor write any secrets file, nor import a secret from the developer's environment.
+    from app import envfile
+    for var in (*envfile.MANAGED, "MULTICDN_SECRETS_PATH", "MULTICDN_ENV_PATH"):
         monkeypatch.delenv(var, raising=False)
+    envfile.reset()
     # Existing tests assert the Spanish texts, which also checks the Spanish catalog; test_i18n
     # covers English and the language choice.
     monkeypatch.setenv("MULTICDN_LANG", "es")

@@ -35,37 +35,47 @@
       <p class="help flush er-note">{{ m.icon('lock') }} {{ _("Only errors are sent. IP addresses (the origin's included), emails and token-looking values are removed before anything leaves the server; no cookies, headers, request bodies or local variables.") }}</p>
     </div>
     <div class="card__foot actions-end">
-      {{ m.more("errores-help", _m("The DSN is saved encrypted and in <code>MULTICDN_SENTRY_DSN</code> of the server's .env. The server must be a public name (not an IP or a local name) with https. <code>MULTICDN_SENTRY_ENVIRONMENT</code> and <code>MULTICDN_SENTRY_TRACES_SAMPLE_RATE</code> are set only in .env.")) }}
+      {{ m.more("errores-help", _m("The DSN is saved encrypted and in <code>MULTICDN_SENTRY_DSN</code> of config/secrets.env. The server must be a public name (not an IP or a local name) with https. <code>MULTICDN_SENTRY_ENVIRONMENT</code> and <code>MULTICDN_SENTRY_TRACES_SAMPLE_RATE</code> are set only in .env.")) }}
       {% if dsn.configured %}<button class="btn btn--danger" type="button" data-open="quitar-dsn">{{ m.icon('x') }} {{ _("Remove DSN") }}</button>{% endif %}
       <button class="btn btn--ok" type="submit" formaction="/ajustes/sistema/errores/probar" formnovalidate{% if not er.enabled %} disabled{% endif %}>{{ m.icon('send') }} {{ _("Send test error") }}</button>
       <button class="btn btn--primary" type="submit">{{ _("Save DSN") }}</button>
     </div>
   </form>
 </section>
-{% if dsn.configured %}{{ m.confirm('quitar-dsn', _('Remove the error reporting DSN'), _('Error reporting turns off at once: nothing else is sent. The DSN is also removed from the server\'s .env.'), '/ajustes/sistema/errores/quitar', _('Remove DSN'), 'x') }}{% endif %}
+{% if dsn.configured %}{{ m.confirm('quitar-dsn', _('Remove the error reporting DSN'), _('Error reporting turns off at once: nothing else is sent. The DSN is also removed from config/secrets.env.'), '/ajustes/sistema/errores/quitar', _('Remove DSN'), 'x') }}{% endif %}
 
 <section class="card" aria-labelledby="env">
-  <div class="card__head"><h2 id="env">{{ m.icon('wrench') }} {{ _("Server configuration (.env)") }}</h2>
-    {% if env_mismatches %}<span class="pill pill--warn">{{ _("Out of sync") }}</span>{% elif env_file.writable %}<span class="pill pill--free">{{ _("Synced") }}</span>{% else %}<span class="pill pill--warn">{{ _("Read only") }}</span>{% endif %}</div>
+  {% set env_trouble = env_file.error or env_mismatches or env_file.unmanaged or env_file.invalid %}
+  <div class="card__head"><h2 id="env">{{ m.icon('wrench') }} {{ _("Panel secrets file (config/secrets.env)") }}</h2>
+    {% if env_trouble %}<span class="pill pill--warn">{{ _("Needs review") }}</span>{% elif env_file.writable %}<span class="pill pill--free">{{ _("Synced") }}</span>{% else %}<span class="pill pill--warn">{{ _("Read only") }}</span>{% endif %}</div>
   <div class="card__body stack-gap">
-    <p class="card__intro">{{ _("Credentials and keys are kept in two places that stay equal: the encrypted database, which the panel uses, and the server's .env. At startup the .env has priority; what you save here is written back to it.") }}</p>
+    <p class="card__intro">{{ _("The credentials and keys the panel manages are kept in two places that stay equal: the encrypted database, which the panel uses, and config/secrets.env on the server. At start-up config/secrets.env has priority; changes in the panel are written there. Removing a line from the file does not remove the value from the panel.") }}</p>
     <dl class="kv">
-      <div><dt>{{ _("File") }}</dt><dd>{% if env_file.path %}<code>{{ env_file.path }}</code>{% else %}{{ _("not configured (MULTICDN_ENV_PATH)") }}{% endif %}</dd></div>
-      <div><dt>{{ _("The panel can write it") }}</dt><dd>{{ _("yes") if env_file.writable else (_("no: the file does not exist") if env_file.configured and not env_file.exists else _("no")) }}</dd></div>
+      <div><dt>{{ _("File") }}</dt><dd>{% if env_file.path %}<code>{{ env_file.path }}</code>{% else %}{{ _("not configured (MULTICDN_SECRETS_PATH)") }}{% endif %}</dd></div>
+      <div><dt>{{ _("The panel can write it") }}</dt><dd>{{ _("yes") if env_file.writable else _("no") }}</dd></div>
       <div><dt>{{ _("Last write by the panel") }}</dt><dd>{{ env_file.written_at|when if env_file.written_at else _("never") }}</dd></div>
     </dl>
+    {% if env_file.error %}
+    <p class="notice notice--error flush">{{ m.icon('alert') }} {{ _("The panel cannot read config/secrets.env: it keeps the values saved here and imports nothing from the file until it can read it. Check the file's permissions (deploy/install.sh sets them).") }}</p>
+    {% endif %}
+    {% if env_file.unmanaged %}
+    <p class="notice notice--warn flush">{{ m.icon('alert') }} {{ _m("config/secrets.env has variables the panel does not manage, and ignores them: {keys}. Move them to .env.", keys=env_file.unmanaged|join(', ')) }}{% if 'MULTICDN_DRY_RUN' in env_file.unmanaged %} {{ _("While MULTICDN_DRY_RUN is there, the panel stays in dry run.") }}{% endif %}</p>
+    {% endif %}
+    {% if env_file.invalid %}
+    <p class="notice notice--warn flush">{{ m.icon('alert') }} {{ _m("These values in config/secrets.env have line breaks or control characters and are ignored: {keys}.", keys=env_file.invalid|join(', ')) }}</p>
+    {% endif %}
     {% if env_mismatches %}
     <div class="notice notice--warn">
-      <p class="flush">{{ m.icon('alert') }} {{ _n("{n} value differs from the server's .env: on the next restart the .env value replaces the panel's. Update it in .env yourself:", "{n} values differ from the server's .env: on the next restart the .env values replace the panel's. Update them in .env yourself:", env_mismatches|length) }}</p>
+      <p class="flush">{{ m.icon('alert') }} {{ _n("{n} value differs from config/secrets.env: on the next restart the file's value replaces the panel's. Update it in the file yourself:", "{n} values differ from config/secrets.env: on the next restart the file's values replace the panel's. Update them in the file yourself:", env_mismatches|length) }}</p>
       <ul class="env-list">{% for x in env_mismatches %}<li><code>{{ x.env }}</code> · {{ x.label }} · {{ _(ENV_REASONS.get(x.error or 'error')) }}</li>{% endfor %}</ul>
     </div>
-    {% elif not env_file.writable %}
-    <p class="notice notice--warn flush">{{ m.icon('alert') }} {{ _("The panel cannot write the server's .env: values saved here stay only in the panel, and if .env has another value, it wins on the next restart.") }}</p>
+    {% elif not env_file.writable and not env_file.error %}
+    <p class="notice notice--warn flush">{{ m.icon('alert') }} {{ _("The panel cannot write config/secrets.env: values saved here stay only in the panel, and if the file has another value, it wins on the next restart.") }}</p>
     {% endif %}
   </div>
   <div class="card__foot actions-end">
-    {{ m.more("env-help", _m("The panel only edits the values it manages ({keys}); <code>MULTICDN_SECRET_KEY</code>, <code>MULTICDN_DRY_RUN</code> and every other line are never touched. Before each write a copy of the previous file is kept in <code>data/env-backups/</code> (the last 10). With Docker the .env is mounted into the container with write access for its user (uid 10001).", keys=env_managed|join(', '))) }}
-    <a class="btn" href="{{ DEPLOY_GUIDE }}#server-configuration-env" rel="external">{{ m.icon('external') }} {{ _("Deployment guide") }}</a>
+    {{ m.more("env-help", _m("The panel only writes the values it manages ({keys}) and refuses any other. <code>MULTICDN_SECRET_KEY</code>, <code>MULTICDN_DRY_RUN</code> and the rest of the settings live in <code>.env</code>, which is not mounted into the container: the panel cannot change it. Before each write a copy of the previous managed lines is kept in <code>data/secrets-backups/</code> (the last 10). With Docker the folder <code>config/</code> is mounted into the container with write access for its user (uid 10001).", keys=env_managed|join(', '))) }}
+    <a class="btn" href="{{ DEPLOY_GUIDE }}#panel-secrets-file-configsecretsenv" rel="external">{{ m.icon('external') }} {{ _("Deployment guide") }}</a>
   </div>
 </section>
 

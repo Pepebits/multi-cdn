@@ -19,7 +19,7 @@
   <div class="card__body stack-gap">
     <p class="card__intro">{{ _("You can add several per provider: one per Cloudflare account, or one token per domain if you limit them to one zone. Each domain chooses which one it uses on its settings page.") }}</p>
     {% for env in env_removed %}
-    <p class="notice notice--warn flush">{{ m.icon('alert') }} {{ _m("Could not remove <code>{key}</code> from the server's .env: on the next restart that token comes back as a new credential. Remove that line from .env yourself.", key=env) }}</p>
+    <p class="notice notice--warn flush">{{ m.icon('alert') }} {{ _m("Could not remove <code>{key}</code> from config/secrets.env: on the next restart that token comes back as a new credential. Remove that line from the file yourself.", key=env) }}</p>
     {% endfor %}
   </div>
   {% if creds %}
@@ -61,7 +61,7 @@
           <label for="rot-{{ c.id }}">{{ _("Replace credential") }}<span class="visually-hidden"> {{ _("of {label}", label=c.label) }}</span></label>
           <input id="rot-{{ c.id }}" type="password" name="secret" autocomplete="off" spellcheck="false" required{% if src.env %} aria-describedby="rot-help-{{ c.id }}"{% endif %}>
           <button class="btn" type="submit">{{ m.icon('refresh') }} {{ _("Replace") }}<span class="visually-hidden"> {{ c.label }}</span></button>
-          {% if src.env %}<p id="rot-help-{{ c.id }}" class="help span-all">{{ _m("It comes from <code>{key}</code> in the server's .env: replacing it here also updates that line.", key=src.env) }}</p>{% endif %}
+          {% if src.env %}<p id="rot-help-{{ c.id }}" class="help span-all">{{ _m("It comes from <code>{key}</code> in config/secrets.env: replacing it here also updates that line.", key=src.env) }}</p>{% endif %}
         </form>
       </div>
     </li>
@@ -72,7 +72,7 @@
   {% endif %}
 </section>
 {% for c, used, src in creds if not used %}
-{{ m.confirm('del-cred-' ~ c.id, _('Delete {label}', label=c.label), _('The credential is deleted from the panel. No domain uses it; the token itself stays valid at the provider until you revoke it there.') ~ (' ' ~ _('Its line in the server\'s .env is removed too.') if src.env else ''), '/ajustes/cuentas/' ~ c.id ~ '/eliminar', _('Delete credential')) }}
+{{ m.confirm('del-cred-' ~ c.id, _('Delete {label}', label=c.label), _('The credential is deleted from the panel. No domain uses it; the token itself stays valid at the provider until you revoke it there.') ~ (' ' ~ _('Its line in config/secrets.env is removed too.') if src.env else ''), '/ajustes/cuentas/' ~ c.id ~ '/eliminar', _('Delete credential')) }}
 {% endfor %}
 
 <section class="card" aria-labelledby="nueva-cuenta">
@@ -122,7 +122,7 @@
         </div>
       </div>
     </div>
-    <div class="card__foot actions-end">{{ m.more("nueva-cuenta-help", _m("Saved encrypted in the database and never shown again. A token in <code>CLOUDFLARE_API_TOKEN</code> or <code>GCORE_API_TOKEN</code> of the server's .env is imported at startup as its own credential, and replacing or deleting that credential here updates the .env too.")) }}
+    <div class="card__foot actions-end">{{ m.more("nueva-cuenta-help", _m("Saved encrypted in the database and never shown again. A token in <code>CLOUDFLARE_API_TOKEN</code> or <code>GCORE_API_TOKEN</code> of config/secrets.env is imported at startup as its own credential, and replacing or deleting that credential here updates the file too.")) }}
       <button class="btn btn--primary" type="submit">{{ m.icon('plus') }} {{ _("Save and verify") }}</button>
     </div>
   </form>

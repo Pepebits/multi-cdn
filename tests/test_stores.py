@@ -31,10 +31,10 @@ def test_env_is_imported_not_read_directly(stores, monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "telegram-env-value-9999")
     assert secrets.get("telegram_token") is None  # the database is the only source
     assert secrets.status("telegram_token").env_state == "env_only"
-    assert secrets.import_env() == ["telegram_token"]
+    assert secrets.import_env({"TELEGRAM_BOT_TOKEN": "telegram-env-value-9999"}) == ["telegram_token"]
     st = secrets.status("telegram_token")
     assert st.configured and st.source == "env" and st.hint == "····9999" and st.env_state == "sync"
-    assert secrets.import_env() == []  # same value: nothing to import
+    assert secrets.import_env({"TELEGRAM_BOT_TOKEN": "telegram-env-value-9999"}) == []  # same value: nothing to import
 
 
 def test_wrong_master_key_reads_as_unset(tmp_path, monkeypatch):
