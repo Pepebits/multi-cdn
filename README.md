@@ -140,6 +140,19 @@ credentials, history and engine state. Interface texts are English in the code, 
 Spanish catalog in `app/locale/es/` (a test checks that nothing is missing). Examples and
 tests only use `example.com` and documentation IPs.
 
+Where things live:
+
+- `app/main.py`: creates the app, starts the background tasks and applies the security middleware.
+- `app/routes/`: the pages, one module per section (`domains`, `settings`, `auth`…).
+- `app/tasks.py`: background tasks that read the feed, DNS, Cloudflare and the match calendar.
+- `app/state.py`: the state they share.
+- `app/engine/failover.py`: the switching engine.
+
+New and changed code, comments and identifiers are in English. Older Spanish comments are
+translated when their code is touched. URLs and form field names stay as they are, because
+bookmarks and saved forms depend on them. History events that code reacts to carry a code from
+`app/event_codes.py`; never match their translated text.
+
 ## 🔐 Security
 
 - Password + mandatory TOTP, recovery codes, short sessions and lockouts. The first user can
