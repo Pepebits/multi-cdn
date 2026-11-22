@@ -152,6 +152,45 @@ def test_remembered_ips_track_the_block_while_on_gcore(st):
     assert "ya se sirve por Gcore" in st.events.list(limit=1)[0].summary
 
 
+def test_rotating_cloudflare_ips_do_not_flap_the_block_state(st):
+    """Cloudflare da un par distinto de IPs en cada consulta: se vigilan todas las vistas hace poco,
+    así que el estado no cambia según el par que toque (pasó el 22/11/2026 con www en Cloudflare)."""
+    other = "188.114.97.0"
+    data = [{"ip": ip, "isp": "Movistar", "description": "Cloudflare",
+             "stateChanges": [{"timestamp": T0.strftime("%Y-%m-%d %H:%M:%SZ"), "state": ip == other}]}
+            for ip in (CF_IP, other)]
+    st.feed = parse_feed({"lastUpdate": T0.strftime("%Y-%m-%d %H:%M:%SZ"), "data": data})
+    gcore = Resolution("example.com", ("5.188.126.61",), "cl-test.gcorecdn.com.", "gcore")
+    states = []
+    for ip in (other, CF_IP, other, CF_IP):  # www se queda en Cloudflare con IPs que rotan
+        st.resolutions = {"example.com": gcore, "www.example.com": Resolution("www.example.com", (ip,), None, "cloudflare")}
+        st.engine.remember_ips("example.com", [ip], now=T0)
+        states.append(next(v for v in st.views() if v.name == "example.com").blocked_count)
+    assert states == [1, 1, 1, 1]
+
+
+def test_remembered_ips_expire(st):
+    eng = st.engine
+    eng.remember_ips("example.com", ["188.114.96.0"], now=T0)
+    eng.remember_ips("example.com", [CF_IP], now=T0 + timedelta(hours=1))
+    assert eng.get("example.com").cf_ips == ["188.114.96.0", CF_IP]
+    eng.remember_ips("example.com", [], now=T0 + timedelta(days=3))  # en Gcore: no olvida nada
+    assert eng.get("example.com").cf_ips == ["188.114.96.0", CF_IP]
+    eng.remember_ips("example.com", [CF_IP], now=T0 + failover.CF_IP_MEMORY)
+    assert eng.get("example.com").cf_ips == [CF_IP]
+    eng.reload()  # se guarda con la fecha y se vuelve a leer igual
+    assert eng.get("example.com").cf_seen == {CF_IP: T0 + failover.CF_IP_MEMORY}
+
+
+def test_old_ip_list_format_is_read(tmp_path):
+    import sqlite3
+    conn = sqlite3.connect(tmp_path / "x.db")
+    failover.EngineStore(conn)
+    conn.execute("INSERT INTO failover_state (domain, cf_ips) VALUES ('example.com', ?)", ('["188.114.96.3"]',))
+    conn.commit()
+    assert failover.EngineStore(conn).get("example.com").cf_ips == ["188.114.96.3"]
+
+
 def test_decide_uses_real_dns_outside_simulation(st):
     st.feed = feed(False)
     view = next(v for v in st.views() if v.name == "example.com")

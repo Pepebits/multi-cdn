@@ -99,8 +99,8 @@ def build_domain(
     name: str, domain: Domain, resolutions: dict[str, Resolution], feed: FeedSnapshot | None,
     known_cf_ips: list[str] | tuple[str, ...] = (),
 ) -> DomainView:
-    """known_cf_ips: últimas IPs de Cloudflare conocidas del dominio. Si ya está en Gcore, el DNS
-    público no las muestra, pero hay que seguir mirando si siguen bloqueadas para saber cuándo volver."""
+    """known_cf_ips: IPs de Cloudflare vistas para el dominio en las últimas horas. Se vigilan junto
+    a las de esta consulta: Cloudflare las rota y, estando en Gcore, el DNS público ya no las muestra."""
     hosts: list[HostView] = []
     cf_ips: set[str] = set()
     for h in domain.hostnames:
@@ -143,7 +143,8 @@ def build_domain(
         status = "mixed"
     label, tone = STATUS[status]
 
-    watched = cf_ips or set(known_cf_ips)
+    # Todas las IPs vistas hace poco, no solo las de la última consulta: Cloudflare las rota.
+    watched = cf_ips | set(known_cf_ips)
     monitored = sorted(ip for ip in watched if feed and feed.monitored(ip))
     rows: list[IspRow] = []
     for feed_name, display in ISPS.items():

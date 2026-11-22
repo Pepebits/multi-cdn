@@ -27,7 +27,7 @@ from .gcore_setup import RENEW_BEFORE, Job, prepare_domain, renew_and_check
 from .gcore_usage import refresh_usage
 from .gcore_usage import human as human_bytes
 from .i18n import N_, tn, tnn, tr, trn
-from .notifier import Notifier
+from .notifier import BLOCK_END, BLOCK_START, Notifier
 from .config import Domain, Inventory, load_dotenv, load_inventory
 from .credentials import ENV_TOKENS, PROVIDERS, CredentialStore
 from .db import EventStore
@@ -82,6 +82,7 @@ class State:
     cf_multi_records: dict = field(default_factory=dict)  # dominio -> hostnames con varios registros web
     jobs: dict = field(default_factory=dict)  # dominio -> Job de preparación en Gcore
     blocked_domains: set = field(default_factory=set)  # dominios con sus IPs de Cloudflare bloqueadas
+    block_clear_since: dict = field(default_factory=dict)  # dominio bloqueado -> desde cuándo no lo parece
     cf_live: dict = field(default_factory=dict)  # hostname -> registro actual en Cloudflare (to_backup, target)
     calendar: match_calendar.Calendar | None = None
     calendar_error: str | None = None
@@ -224,8 +225,8 @@ async def run_engine(state: State) -> None:
         await failover.evaluate(state, on_switched=recheck)
 
 
-# Start of the block alerts in every language they may have been stored in (see restore_block_state).
-BLOCK_START, BLOCK_END = ("Cloudflare IPs blocked", "IPs de Cloudflare bloqueadas"), ("Block ended", "Fin del bloqueo")
+# Sin bloqueo durante este tiempo antes de avisar de que ha terminado: el feed puede ir y venir.
+BLOCK_END_GRACE = timedelta(minutes=10)
 
 
 def restore_block_state(state: State) -> None:
@@ -237,8 +238,10 @@ def restore_block_state(state: State) -> None:
             state.blocked_domains.add(name)
 
 
-def check_block_transitions(state: State) -> None:
-    """Avisa cuando las IPs de Cloudflare de un dominio empiezan o dejan de estar bloqueadas."""
+def check_block_transitions(state: State, now: datetime | None = None) -> None:
+    """Avisa cuando las IPs de Cloudflare de un dominio empiezan o dejan de estar bloqueadas.
+    El fin solo se avisa tras BLOCK_END_GRACE seguido sin bloqueo."""
+    now = now or datetime.now(UTC)
     if state.feed is None or state.dns_checked_at is None:
         return  # sin DNS comprobado el estado del dominio aún no es fiable
     pending_cf = any(d.cloudflare_credential and d.zone_id for d in state.inventory.domains.values())
@@ -249,6 +252,8 @@ def check_block_transitions(state: State) -> None:
         blocked = d.blocked_count > 0
         cfg = state.inventory.domains[d.name]
         is_auto = auto and failover.eligible(cfg) and cfg.gcore_resource_id
+        if blocked:
+            state.block_clear_since.pop(d.name, None)
         if blocked and d.name not in state.blocked_domains:
             state.blocked_domains.add(d.name)
             if d.status == "cloudflare":
@@ -264,6 +269,10 @@ def check_block_transitions(state: State) -> None:
                                          d.blocked_count, where=where),
                              signals=[tn("{isp}: blocked", isp=r.name) for r in d.isp_rows if r.state == "blocked"])
         elif not blocked and d.name in state.blocked_domains:
+            clear_since = state.block_clear_since.setdefault(d.name, now)
+            if now - clear_since < BLOCK_END_GRACE:
+                continue
+            state.block_clear_since.pop(d.name, None)
             state.blocked_domains.discard(d.name)
             if d.status in ("cloudflare", "unknown"):
                 summary = tn("Block ended on its Cloudflare IPs")

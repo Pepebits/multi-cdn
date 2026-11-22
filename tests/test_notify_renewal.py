@@ -98,9 +98,43 @@ def test_block_start_and_end_alerts(client):
     restore_block_state(state)
     check_block_transitions(state)
     assert len([e for e in state.events.list(limit=10) if e.kind == "alert"]) == 1
+    # el fin solo se avisa tras BLOCK_END_GRACE seguido sin bloqueo; si vuelve antes, no hay avisos
+    from app.main import BLOCK_END_GRACE
+    t = datetime.now(UTC)
     state.feed = feed(False)
-    check_block_transitions(state)
+    check_block_transitions(state, now=t)
+    state.feed = feed(True)
+    check_block_transitions(state, now=t + timedelta(minutes=1))
+    state.feed = feed(False)
+    check_block_transitions(state, now=t + timedelta(minutes=2))
+    check_block_transitions(state, now=t + timedelta(minutes=2) + BLOCK_END_GRACE - timedelta(seconds=1))
+    assert len([e for e in state.events.list(limit=10) if e.kind == "alert"]) == 1
+    check_block_transitions(state, now=t + timedelta(minutes=2) + BLOCK_END_GRACE)
     assert "Fin del bloqueo" in state.events.list(limit=1)[0].summary
+    assert len([e for e in state.events.list(limit=10) if e.kind == "alert"]) == 2
+
+
+def test_flapping_block_alerts_are_capped_per_domain():
+    """Si el estado va y viene, tras BLOCK_BURST avisos se manda uno de silencio y nada más en 1 h."""
+    from app import notifier
+    sent = []
+    n = Notifier(FakeSecrets(telegram_token="t", telegram_chat_id="42"))
+
+    async def fake_send(event):
+        sent.append(event["summary"])
+    n.send = fake_send
+
+    async def flap():
+        for i in range(10):
+            # textos distintos cada vez para que no los agrupe la deduplicación por texto
+            summary = f"IPs de Cloudflare bloqueadas en {i} operadoras" if i % 2 else f"Fin del bloqueo {i}"
+            n(ev("alert", summary))
+        n(ev("alert", "Fin del bloqueo", domain="otro.example"))  # otro dominio: su propio tope
+        await asyncio.sleep(0.05)
+
+    asyncio.run(flap())
+    assert len(sent) == notifier.BLOCK_BURST + 2
+    assert "silencian 1 h" in sent[notifier.BLOCK_BURST]
 
 
 def test_due_for_renewal():

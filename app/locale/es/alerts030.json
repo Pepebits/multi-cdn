@@ -18,5 +18,6 @@
   "Save interval": "Guardar intervalo",
   "Feed interval saved": "Intervalo del feed guardado",
   "Choose one of the listed intervals": "Elige uno de los intervalos de la lista",
-  "Block feed read every {seconds} s when nothing is going on": "Feed de bloqueos leído cada {seconds} s cuando no pasa nada"
+  "Block feed read every {seconds} s when nothing is going on": "Feed de bloqueos leído cada {seconds} s cuando no pasa nada",
+  "Block state keeps changing; block alerts for this domain are muted for 1 h (see the panel history)": "El estado de bloqueo no deja de cambiar; se silencian 1 h los avisos de bloqueo de este dominio (ver historial del panel)"
 }

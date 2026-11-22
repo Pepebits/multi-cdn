@@ -53,6 +53,11 @@ MIN_GAP = timedelta(minutes=15)
 FLAP_WINDOW, FLAP_MAX = timedelta(hours=6), 4
 MANUAL_HOLD = timedelta(hours=1)
 MASS_BLOCK = 50  # IPs de Cloudflare bloqueadas en ≥3 operadoras
+# Cloudflare reparte un par distinto de su bloque anycast (p. ej. 188.114.96.x/97.x) en cada
+# consulta, y un usuario puede recibir cualquiera: se vigilan todas las IPs vistas en este periodo.
+# Con solo las de la última consulta el estado de bloqueo cambiaba cada minuto (22/11/2026).
+CF_IP_MEMORY = timedelta(hours=24)
+CF_IP_TOUCH = timedelta(hours=1)  # no reescribir la base de datos en cada consulta
 
 
 def timing_key(kind: str, priority: str) -> str:
@@ -86,7 +91,7 @@ DNS_BEFORE = {
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS failover_state (
     domain TEXT PRIMARY KEY,
-    cf_ips TEXT NOT NULL DEFAULT '[]',     -- últimas IPs de Cloudflare vistas (para seguir el bloqueo estando en Gcore)
+    cf_ips TEXT NOT NULL DEFAULT '[]',     -- IPs de Cloudflare vistas en CF_IP_MEMORY: {ip: última vez} (antes, lista)
     sim_backup INTEGER,                    -- modo simulación: 1/0 = el motor «cree» que está en Gcore/Cloudflare; NULL = el DNS real
     hold_until TEXT,                       -- pausa tras un cambio manual
     paused INTEGER NOT NULL DEFAULT 0,     -- pausa por demasiados cambios: hasta reanudar a mano
@@ -102,7 +107,7 @@ CREATE TABLE IF NOT EXISTS failover_state (
 @dataclass
 class DomainState:
     domain: str
-    cf_ips: list[str] = field(default_factory=list)
+    cf_seen: dict[str, datetime] = field(default_factory=dict)  # IP de Cloudflare → última vez vista
     sim_backup: bool | None = None  # solo en simulación; None = seguir el DNS real
     hold_until: datetime | None = None
     paused: bool = False
@@ -112,12 +117,24 @@ class DomainState:
     hold_reason: str | None = None
     error_code: str | None = None
 
+    @property
+    def cf_ips(self) -> list[str]:
+        return sorted(self.cf_seen)
+
     def held(self, now: datetime) -> bool:
         return self.paused or (self.hold_until is not None and now < self.hold_until)
 
 
 def _dt(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value) if value else None
+
+
+def _load_seen(raw: str) -> dict[str, datetime]:
+    data = json.loads(raw)
+    if isinstance(data, list):  # formato antiguo: solo las IPs, sin fecha
+        now = datetime.now(UTC)
+        return {ip: now for ip in data}
+    return {ip: datetime.fromisoformat(ts) for ip, ts in data.items()}
 
 
 class EngineStore:
@@ -143,7 +160,7 @@ class EngineStore:
         for row in self.conn.execute("SELECT domain, cf_ips, sim_backup, hold_until, paused, clear_since, switches,"
                                      " last_error, hold_reason, error_code FROM failover_state"):
             cache[row[0]] = DomainState(
-                domain=row[0], cf_ips=json.loads(row[1]), sim_backup=None if row[2] is None else bool(row[2]), hold_until=_dt(row[3]),
+                domain=row[0], cf_seen=_load_seen(row[1]), sim_backup=None if row[2] is None else bool(row[2]), hold_until=_dt(row[3]),
                 paused=bool(row[4]), clear_since=_dt(row[5]), switches=[datetime.fromisoformat(t) for t in json.loads(row[6])],
                 last_error=row[7], hold_reason=row[8], error_code=row[9])
         self._cache = cache
@@ -168,7 +185,7 @@ class EngineStore:
             " sim_backup=excluded.sim_backup, hold_until=excluded.hold_until, paused=excluded.paused,"
             " clear_since=excluded.clear_since, switches=excluded.switches, last_error=excluded.last_error,"
             " hold_reason=excluded.hold_reason, error_code=excluded.error_code",
-            (st.domain, json.dumps(st.cf_ips), None if st.sim_backup is None else int(st.sim_backup), st.hold_until and st.hold_until.isoformat(),
+            (st.domain, json.dumps({ip: ts.isoformat() for ip, ts in sorted(st.cf_seen.items())}), None if st.sim_backup is None else int(st.sim_backup), st.hold_until and st.hold_until.isoformat(),
              int(st.paused), st.clear_since and st.clear_since.isoformat(),
              json.dumps([t.isoformat() for t in st.switches]), st.last_error, st.hold_reason, st.error_code))
         self.conn.commit()
@@ -181,10 +198,18 @@ class EngineStore:
     def known_ips(self) -> dict[str, list[str]]:
         return {d: st.cf_ips for d, st in self._cache.items() if st.cf_ips}
 
-    def remember_ips(self, domain: str, ips: list[str]) -> None:
+    def remember_ips(self, domain: str, ips: list[str], now: datetime | None = None) -> None:
+        """Suma las IPs de Cloudflare vistas ahora y olvida las que llevan CF_IP_MEMORY sin aparecer.
+        Sin IPs (dominio en Gcore) no olvida nada: hacen falta para saber cuándo volver."""
+        if not ips:
+            return
+        now = now or datetime.now(UTC)
         st = self.get(domain)
-        if ips and sorted(ips) != sorted(st.cf_ips):
-            st.cf_ips = sorted(ips)
+        seen = {ip: ts for ip, ts in st.cf_seen.items() if now - ts < CF_IP_MEMORY}
+        stale = any(ip not in seen or now - seen[ip] >= CF_IP_TOUCH for ip in ips)
+        seen |= {ip: now for ip in ips}
+        if stale or seen.keys() != st.cf_seen.keys():
+            st.cf_seen = seen
             self.save(st)
 
     def manual_change(self, domain: str, *, to_backup: bool, simulated: bool, now: datetime | None = None) -> None:

@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Block alerts no longer flap every minute.** Cloudflare answers each DNS query with a different
+  pair from its anycast block (e.g. `188.114.96.x/97.x`), and the panel only watched the pair from
+  the last query: when one of them was blocked at an ISP, the block state flipped on every DNS
+  check, sending dozens of start/end alerts and delaying the return to Cloudflare. The engine now
+  remembers every Cloudflare IP seen for a domain in the last 24 h and checks all of them.
+- The "block ended" alert waits until there has been no block for 10 minutes in a row.
+- Block start/end alerts are capped at 4 per domain and hour; the fifth one says the rest are
+  muted for an hour (they stay in the history).
+
 ## [0.3.2] - 2026-11-16
 
 ### Changed

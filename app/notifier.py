@@ -7,6 +7,8 @@ Qué se avisa:
   - seguridad (bloqueo por intentos fallidos)
   - preparación en Gcore y renovación de certificados correctas
 Los avisos iguales se agrupan: el mismo texto no se repite en 10 minutos.
+Los de inicio y fin de bloqueo tienen además un tope por dominio (BLOCK_BURST por hora): si el
+estado va y viene, se avisa una vez de que se silencian y el resto queda solo en el historial.
 """
 
 from __future__ import annotations
@@ -26,6 +28,9 @@ from .i18n import LANGS, N_, tn, translate
 
 log = logging.getLogger("multicdn.notify")
 DEDUP_SECONDS = 600
+BLOCK_BURST, BLOCK_WINDOW = 4, 3600
+# Inicio de los avisos de bloqueo en cada idioma en que pueden estar guardados (ver main.restore_block_state).
+BLOCK_START, BLOCK_END = ("Cloudflare IPs blocked", "IPs de Cloudflare bloqueadas"), ("Block ended", "Fin del bloqueo")
 ICON = {"switch": "🔀", "alert": "⚠️", "error": "❌", "auth": "🔐", "config": "✅"}
 # Resúmenes de configuración que se avisan (mismas claves que en gcore_setup), en cualquier idioma:
 # el historial guarda el texto en el idioma en que se escribió.
@@ -71,6 +76,7 @@ class Notifier:
         self.secrets = secrets
         self.client_factory = client_factory
         self._recent: dict[str, float] = {}
+        self._block_sent: dict[str, list[float]] = {}  # dominio -> envíos de inicio/fin de bloqueo en la última hora
 
     # Llamado por EventStore.add (síncrono): programa el envío sin bloquear.
     def __call__(self, event: dict) -> None:
@@ -81,6 +87,15 @@ class Notifier:
         if now - self._recent.get(key, -DEDUP_SECONDS) < DEDUP_SECONDS:
             return
         self._recent[key] = now
+        if event["kind"] == "alert" and event["summary"].startswith(BLOCK_START + BLOCK_END):
+            domain = event.get("domain") or ""
+            sent = [t for t in self._block_sent.get(domain, []) if now - t < BLOCK_WINDOW]
+            self._block_sent[domain] = sent + [now]
+            if len(sent) > BLOCK_BURST:
+                return
+            if len(sent) == BLOCK_BURST:
+                event = {**event, "summary": tn(
+                    "Block state keeps changing; block alerts for this domain are muted for 1 h (see the panel history)")}
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
