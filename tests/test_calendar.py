@@ -69,13 +69,13 @@ def test_no_source_raises():
 
 
 def test_panel_saves_the_key_encrypted_and_shows_sources(client, monkeypatch):
-    from app import main
+    from app import tasks
     state = client.app.state.mc
 
     async def fake_fetch(http, now=None, football_data_token=None):
         assert football_data_token == "fd-token-123"
         return calendar.Calendar([], sources={"ESPN": "ok", "football-data.org": "ok"})
-    monkeypatch.setattr(main.match_calendar, "fetch_calendar", fake_fetch)
+    monkeypatch.setattr(tasks.match_calendar, "fetch_calendar", fake_fetch)
     r = client.post("/ajustes/operacion/football-data", data={"token": "fd-token-123"}, follow_redirects=True)
     assert "Clave guardada y verificada" in r.text and "Responde" in r.text
     row = state.secrets.conn.execute("SELECT ciphertext FROM secrets WHERE name='football_data_token'").fetchone()

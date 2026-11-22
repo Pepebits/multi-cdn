@@ -28,7 +28,7 @@ def _state():
     from .credentials import CredentialStore
     from .db import EventStore
     from .inventory_store import InventoryStore
-    from .main import State
+    from .state import State
     from .notifier import Notifier
     from .secrets_store import SecretStore
 
@@ -51,7 +51,7 @@ def _state():
 
 async def _observe(state) -> None:
     """DNS público y registros reales en Cloudflare, sin lanzar el motor automático."""
-    from .main import apply_cf_live, refresh_cloudflare
+    from .tasks import apply_cf_live, refresh_cloudflare
     from .signals import dnscheck
 
     await refresh_cloudflare(state, alert=False)  # alerts come only from the panel

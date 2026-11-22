@@ -77,7 +77,7 @@ def test_event_store_calls_listeners(tmp_path):
 
 
 def test_block_start_and_end_alerts(client):
-    from app.main import check_block_transitions
+    from app.tasks import check_block_transitions
     from app.signals.dnscheck import Resolution
     from app.signals.hayahora import parse_feed
     state = client.app.state.mc
@@ -100,13 +100,13 @@ def test_block_start_and_end_alerts(client):
     assert len(alerts) == 1 and "bloqueadas en 1 operadora" in alerts[0].summary
     assert "sigue en Cloudflare" in alerts[0].summary
     # un reinicio no repite el aviso: el estado se recupera del historial
-    from app.main import restore_block_state
+    from app.tasks import restore_block_state
     state.blocked_domains.clear()
     restore_block_state(state)
     check_block_transitions(state)
     assert len([e for e in state.events.list(limit=10) if e.kind == "alert"]) == 1
     # el fin solo se avisa tras BLOCK_END_GRACE seguido sin bloqueo; si vuelve antes, no hay avisos
-    from app.main import BLOCK_END_GRACE
+    from app.tasks import BLOCK_END_GRACE
     t = datetime.now(UTC)
     state.feed = feed(False)
     check_block_transitions(state, now=t)
@@ -215,7 +215,7 @@ def test_updating_an_existing_gcore_resource_is_not_announced():
 
 def test_restart_recovers_block_state_by_code(client):
     """El estado de bloqueo se recupera por el código, aunque el texto cambie o el aviso sea antiguo."""
-    from app.main import restore_block_state
+    from app.tasks import restore_block_state
     state = client.app.state.mc
     ev_add = state.events.add
     ev_add(actor="auto", kind="alert", domain="example.com", summary="texto reescrito", code=event_codes.BLOCK_START)
@@ -231,7 +231,7 @@ def test_restart_recovers_block_state_by_code(client):
 
 
 def test_restart_recovers_legacy_block_alerts_without_code(client):
-    from app.main import restore_block_state
+    from app.tasks import restore_block_state
     state = client.app.state.mc
     state.events.add(actor="auto", kind="alert", domain="example.com",
                      summary="IPs de Cloudflare bloqueadas en 1 operadora; ya se sirve por Gcore")

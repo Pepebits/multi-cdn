@@ -176,7 +176,7 @@ def test_cloudflare_sync_detects_tunnel_and_never_stores_origin_ip(client, monke
     import asyncio
     import sqlite3
 
-    from app.main import refresh_cloudflare
+    from app.tasks import refresh_cloudflare
     from app.providers import cloudflare as cfmod
 
     async def fake_records(token, zone_id):
@@ -277,7 +277,7 @@ def test_remove_single_hostname_keeps_dns_and_last_one_protected(client):
 
 
 def test_flattened_apex_on_gcore_is_recognised(client):
-    from app.main import apply_cf_live
+    from app.tasks import apply_cf_live
     from app.signals.dnscheck import Resolution
     state = client.app.state.mc
     state.resolutions = {"example.com": Resolution("example.com", ("93.123.17.254",), None, "other")}

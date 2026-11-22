@@ -10,6 +10,7 @@ import pytest
 
 from app import alerts, heartbeat
 from app import main as app_main
+from app import tasks
 from app.db import EventStore
 from app.signals import hayahora
 from app.signals.calendar import Calendar, Match
@@ -62,10 +63,10 @@ def test_fetch_feed_sends_etag_and_handles_304():
 def test_refresh_feed_on_304_keeps_data_and_refreshes_fetched_at(client):
     state = client.app.state.mc
     state.client, seen = feed_server([payload(), 304])
-    asyncio.run(app_main.refresh_feed(state))
+    asyncio.run(tasks.refresh_feed(state))
     first = state.feed
     first.fetched_at = datetime.now(UTC) - timedelta(minutes=5)
-    asyncio.run(app_main.refresh_feed(state))
+    asyncio.run(tasks.refresh_feed(state))
     assert seen == [None, '"v1"'] and state.feed is first
     assert datetime.now(UTC) - state.feed.fetched_at < timedelta(seconds=30) and state.feed_error is None
 
@@ -81,10 +82,10 @@ def quiet(client):
 
 
 def test_feed_interval_idle_and_setting(quiet, client):
-    assert app_main.feed_interval(quiet, T0) == 300
+    assert tasks.feed_interval(quiet, T0) == 300
     r = client.post("/ajustes/operacion/feed", data={"seconds": "120"}, follow_redirects=False)
     assert "ok=" in r.headers["location"] and quiet.events.get_setting("feed_interval") == 120
-    assert app_main.feed_interval(quiet, T0) == 120
+    assert tasks.feed_interval(quiet, T0) == 120
     for bad in ("100", "600", "x"):
         r = client.post("/ajustes/operacion/feed", data={"seconds": bad}, follow_redirects=False)
         assert "error=" in r.headers["location"]
@@ -96,46 +97,46 @@ def test_feed_interval_idle_and_setting(quiet, client):
 
 
 def test_feed_interval_fast_conditions(quiet):
-    lead_max = max(app_main.failover.match_lead(quiet, p) for p in app_main.failover.PRIORITIES)
+    lead_max = max(tasks.failover.match_lead(quiet, p) for p in tasks.failover.PRIORITIES)
     cases = []
     quiet.feed_error = "ConnectError: x"
-    cases.append(app_main.feed_interval(quiet, T0))
+    cases.append(tasks.feed_interval(quiet, T0))
     quiet.feed_error = None
-    cases.append(app_main.feed_interval(quiet, T0 + timedelta(minutes=11)))  # stale feed
+    cases.append(tasks.feed_interval(quiet, T0 + timedelta(minutes=11)))  # stale feed
     quiet.calendar = None
-    cases.append(app_main.feed_interval(quiet, T0))
+    cases.append(tasks.feed_interval(quiet, T0))
     quiet.calendar = Calendar([Match("LaLiga", "Home", "Away", T0 + lead_max - timedelta(minutes=1), "STATUS_SCHEDULED")],
                               fetched_at=T0)
-    cases.append(app_main.feed_interval(quiet, T0))  # match window (longest lead)
+    cases.append(tasks.feed_interval(quiet, T0))  # match window (longest lead)
     quiet.calendar = Calendar([], fetched_at=T0 - timedelta(days=2))
-    cases.append(app_main.feed_interval(quiet, T0))  # expired calendar
+    cases.append(tasks.feed_interval(quiet, T0))  # expired calendar
     quiet.calendar = Calendar([], fetched_at=T0)
-    assert app_main.feed_interval(quiet, T0) == 300
+    assert tasks.feed_interval(quiet, T0) == 300
     quiet.resolutions = {"example.com": Resolution("example.com", ("198.51.100.200",), "cl-x.gcorecdn.com.", "gcore")}
-    cases.append(app_main.feed_interval(quiet, T0))
+    cases.append(tasks.feed_interval(quiet, T0))
     quiet.resolutions = {}
     es = quiet.engine.get("example.com")
     es.sim_backup = True
     quiet.engine.save(es)
-    cases.append(app_main.feed_interval(quiet, T0))
+    cases.append(tasks.feed_interval(quiet, T0))
     es.sim_backup = None
     quiet.engine.save(es)
     quiet.blocked_domains.add("example.com")
-    cases.append(app_main.feed_interval(quiet, T0))
+    cases.append(tasks.feed_interval(quiet, T0))
     quiet.blocked_domains.clear()
-    assert app_main.feed_interval(quiet, T0) == 300
-    quiet.feed = hayahora.parse_feed(payload(T0, extra_blocked=app_main.FEED_FAST_MASS), fetched_at=T0)
-    cases.append(app_main.feed_interval(quiet, T0))
+    assert tasks.feed_interval(quiet, T0) == 300
+    quiet.feed = hayahora.parse_feed(payload(T0, extra_blocked=tasks.FEED_FAST_MASS), fetched_at=T0)
+    cases.append(tasks.feed_interval(quiet, T0))
     assert cases == [90] * len(cases)
 
 
 def test_feed_interval_logs_only_mode_changes(quiet, caplog):
     caplog.set_level("INFO", logger="multicdn")
     for _ in range(3):
-        app_main.feed_interval(quiet, T0)
+        tasks.feed_interval(quiet, T0)
     quiet.calendar = None
-    app_main.feed_interval(quiet, T0)
-    app_main.feed_interval(quiet, T0, quiet=True)
+    tasks.feed_interval(quiet, T0)
+    tasks.feed_interval(quiet, T0, quiet=True)
     lines = [r.getMessage() for r in caplog.records if "feed polling" in r.getMessage()]
     assert lines == ["feed polling: every 300 s (idle)", "feed polling: every 90 s (no match calendar)"]
 
@@ -150,10 +151,10 @@ def test_loop_accepts_a_callable_interval(monkeypatch):
 
     async def task():
         runs.append(1)
-    monkeypatch.setattr(app_main.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(tasks.asyncio, "sleep", fake_sleep)
     values = iter([300, 90])
     with pytest.raises(asyncio.CancelledError):
-        asyncio.run(app_main._loop(lambda: next(values), task))
+        asyncio.run(tasks._loop(lambda: next(values), task))
     assert waits == [300, 90] and len(runs) == 2
 
 
@@ -163,14 +164,14 @@ def test_feed_down_alerts_once_after_second_failure_and_recovers(client, tmp_pat
     state = client.app.state.mc
     down = httpx.ConnectError("refused")
     state.client, _ = feed_server([down, down, down, payload(datetime.now(UTC))])
-    asyncio.run(app_main.refresh_feed(state, now=T0))
+    asyncio.run(tasks.refresh_feed(state, now=T0))
     assert state.feed_error and not summaries(state)  # an isolated failure is silent
     # The open problem lives in the database: a restart in between keeps it.
     state.events = EventStore(os.environ["MULTICDN_DB"])
-    asyncio.run(app_main.refresh_feed(state, now=T0 + timedelta(seconds=95)))
-    asyncio.run(app_main.refresh_feed(state, now=T0 + timedelta(seconds=190)))
+    asyncio.run(tasks.refresh_feed(state, now=T0 + timedelta(seconds=95)))
+    asyncio.run(tasks.refresh_feed(state, now=T0 + timedelta(seconds=190)))
     assert summaries(state) == ["Feed de bloqueos no disponible (ConnectError)"]
-    asyncio.run(app_main.refresh_feed(state, now=T0 + timedelta(minutes=7)))
+    asyncio.run(tasks.refresh_feed(state, now=T0 + timedelta(minutes=7)))
     assert state.feed_error is None
     assert summaries(state)[0] == "El feed de bloqueos vuelve a estar disponible (caído 7 min)"
     assert not alerts.active(state, "feed_down")
@@ -191,34 +192,34 @@ def cf_state(make_client, monkeypatch):
         if result["fail"]:
             raise RuntimeError("HTTP 403: origin 192.0.2.10 rejected")
         return []
-    monkeypatch.setattr(app_main.cf, "list_web_records", records)
+    monkeypatch.setattr(tasks.cf, "list_web_records", records)
     state.result = result
     return state
 
 
 def test_cloudflare_read_failure_alerts_once_and_recovers(cf_state):
-    asyncio.run(app_main.refresh_cloudflare(cf_state, alert=False))
+    asyncio.run(tasks.refresh_cloudflare(cf_state, alert=False))
     assert cf_state.cf_sync_errors["example.com"] == "HTTP 403: origin [origin IP] rejected"
-    app_main.check_cloudflare_read(cf_state, T0)
-    app_main.check_cloudflare_read(cf_state, T0 + timedelta(minutes=5))
+    tasks.check_cloudflare_read(cf_state, T0)
+    tasks.check_cloudflare_read(cf_state, T0 + timedelta(minutes=5))
     assert not summaries(cf_state)
-    app_main.check_cloudflare_read(cf_state, T0 + timedelta(minutes=9))
-    app_main.check_cloudflare_read(cf_state, T0 + timedelta(minutes=14))
+    tasks.check_cloudflare_read(cf_state, T0 + timedelta(minutes=9))
+    tasks.check_cloudflare_read(cf_state, T0 + timedelta(minutes=14))
     alerts_ = summaries(cf_state)
     assert len(alerts_) == 1 and "«Main»" in alerts_[0] and "1 dominio(s)" in alerts_[0]
     assert "192.0.2.10" not in alerts_[0]
     cf_state.result["fail"] = False
-    asyncio.run(app_main.refresh_cloudflare(cf_state, alert=False))
+    asyncio.run(tasks.refresh_cloudflare(cf_state, alert=False))
     assert "example.com" in cf_state.cf_ok_at and "example.com" not in cf_state.cf_sync_errors
-    app_main.check_cloudflare_read(cf_state, T0 + timedelta(minutes=20))
+    tasks.check_cloudflare_read(cf_state, T0 + timedelta(minutes=20))
     assert summaries(cf_state)[0] == "Cloudflare vuelve a poder leerse con la credencial «Main» (falló durante 20 min)"
 
 
 def test_cloudflare_read_without_alerts_from_the_cli(cf_state):
     for _ in range(2):
-        asyncio.run(app_main.refresh_cloudflare(cf_state, alert=False))
+        asyncio.run(tasks.refresh_cloudflare(cf_state, alert=False))
     assert not alerts.active(cf_state, "cf_read:") and not summaries(cf_state)
-    asyncio.run(app_main.refresh_cloudflare(cf_state))  # the panel's loop does alert (from 8 min)
+    asyncio.run(tasks.refresh_cloudflare(cf_state))  # the panel's loop does alert (from 8 min)
     assert alerts.active(cf_state, "cf_read:")
 
 

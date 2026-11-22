@@ -141,7 +141,7 @@ def test_manual_change_holds_automation(st, client):
 
 def test_remembered_ips_track_the_block_while_on_gcore(st):
     """Estando en Gcore el DNS no muestra las IPs de Cloudflare: se usan las recordadas."""
-    from app.main import check_block_transitions
+    from app.tasks import check_block_transitions
     st.engine.remember_ips("example.com", [CF_IP])
     st.resolutions = {h: Resolution(h, ("5.188.126.61",), "cl-test.gcorecdn.com.", "gcore")
                       for h in ("example.com", "www.example.com")}
@@ -515,7 +515,7 @@ def test_delete_refuses_removing_gcore_resource_while_served_by_gcore(st, client
 
 
 def test_stale_feed_alerts_once_and_on_recovery(st):
-    from app.main import check_stale_feed
+    from app.tasks import check_stale_feed
     st.feed = feed(False, datetime.now(UTC) - timedelta(hours=1))
     check_stale_feed(st)
     check_stale_feed(st)
