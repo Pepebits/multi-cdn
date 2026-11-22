@@ -15,7 +15,10 @@ def _code(client, offset=1):
 def test_every_route_requires_session(anon):
     public = ("/login", "/static", "/healthz", "/lang/")  # /lang/ only sets a preference cookie
     checked = 0
-    for route in anon.app.routes:
+    # Routers included with include_router appear as one entry (`original_router` holds their routes).
+    routes = [r for top in anon.app.routes
+              for r in (top.original_router.routes if hasattr(top, "original_router") else [top])]
+    for route in routes:
         if not isinstance(route, APIRoute) or route.path.startswith(public):
             continue
         path = re.sub(r"\{[^}]+\}", "x", route.path)

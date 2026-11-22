@@ -166,7 +166,7 @@ def test_account_page_details(client):
     page = client.get("/ajustes/cuenta", headers={"User-Agent": "x"}).text
     order = [page.index(f'id="{i}"') for i in ("current", "new", "new2", "code-pw")]
     assert order == sorted(order)
-    from app.main import ua_summary
+    from app.routes.common import ua_summary
     assert ua_summary("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
                       "Chrome/130.0 Safari/537.36") == "Chrome · macOS"
     assert ua_summary("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Version/18.0 Mobile Safari/604.1") == "Safari · iOS"
@@ -186,7 +186,7 @@ def test_notifications_page_details(client, monkeypatch):
 def test_feed_reason(client):
     from datetime import timedelta
 
-    from app.main import feed_reason_text
+    from app.routes.settings import feed_reason_text
     from app.signals.calendar import Calendar, Match
     from app.signals.hayahora import parse_feed
     state = client.app.state.mc

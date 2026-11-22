@@ -128,7 +128,7 @@ def open_problems(state, now: datetime | None = None) -> list[Problem]:
                                                      result=beat.result),
                              beat.at, "/ajustes/notificaciones", _settings("Notifications")))
 
-    from .main import RECOVERY_LOW, env_mismatches
+    from .routes.common import RECOVERY_LOW, env_mismatches
     for user in state.auth.list_users():
         left = state.auth.recovery_left(user.id)
         if user.totp_enabled and left <= RECOVERY_LOW:

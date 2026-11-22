@@ -385,7 +385,7 @@ def test_change_indicator_pending_return_and_preventive_match(st):
     st.calendar = calendar_at(now + timedelta(hours=2))
     c = failover.change_indicator(st, "example.com", now)
     assert c["target"] == "gcore" and "Cambio a Gcore previsto:" in c["text"] and "Celta Vigo – Levante" in c["text"]
-    assert "Cambio a Gcore" in __import__("app.main", fromlist=["x"]).templates.env.get_template("_macros.html").module.change_badge(c)
+    assert "Cambio a Gcore" in __import__("app.routes.common", fromlist=["x"]).templates.env.get_template("_macros.html").module.change_badge(c)
 
 
 def test_cli_english_command_names(tmp_path, monkeypatch, capsys):

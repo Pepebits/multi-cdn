@@ -52,7 +52,7 @@ def test_events_add_scrubs_before_storing_and_alerting(origins, tmp_path):
 
 
 def test_redirect_location_has_no_origin_ip(origins):
-    from app.main import _back
+    from app.routes.common import _back
     r = _back("/ajustes/servidores", error=f"Server: cannot reach {ORIGIN}", anchor="x")
     assert ORIGIN not in r.headers["location"] and "origin+IP" in r.headers["location"]
 
