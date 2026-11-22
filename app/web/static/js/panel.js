@@ -1,10 +1,7 @@
 // Diálogos, confirmaciones escritas, tema y refresco del registro de tareas.
+// El foco inicial lo decide `autofocus` en cada diálogo (Cancelar o el campo de confirmación).
 document.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => {
-  const dialog = document.getElementById(b.dataset.open);
-  dialog.showModal();
-  // En el móvil, directo al campo de confirmación (no al botón de cerrar).
-  const field = dialog.querySelector('input[data-expected]');
-  if (field) field.focus();
+  document.getElementById(b.dataset.open).showModal();
 }));
 document.querySelectorAll('dialog [data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
 document.querySelectorAll('input[data-expected]').forEach(i => i.addEventListener('input', () => {
@@ -22,7 +19,26 @@ document.querySelectorAll('input[data-expected]').forEach(i => i.addEventListene
     render(choice);
   }));
   render(document.documentElement.dataset.theme || 'auto');
+  // Otra pestaña cambió el tema: aplicarlo también aquí.
+  window.addEventListener('storage', (e) => {
+    if (e.key !== 'multicdn-theme') return;
+    const t = e.newValue === 'light' || e.newValue === 'dark' ? e.newValue : null;
+    if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+    render(t || 'auto');
+  });
 })();
+// Ver la contraseña: el botón solo aparece si hay JavaScript para hacerlo funcionar.
+document.querySelectorAll('[data-reveal]').forEach(b => {
+  const input = document.getElementById(b.dataset.reveal);
+  b.hidden = false;
+  b.addEventListener('click', () => {
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    b.setAttribute('aria-pressed', String(show));
+  });
+  // Al enviar vuelve a ocultarse: el navegador no guarda la contraseña como texto en el historial.
+  input.form && input.form.addEventListener('submit', () => { input.type = 'password'; });
+});
 if (document.querySelector('.joblog[data-running]')) setTimeout(() => location.reload(), 3000);
 
 // Actualización automática: consulta /api/estado cada 5 s y recarga solo si hay cambios.
@@ -126,7 +142,14 @@ document.querySelectorAll('.viz__frame').forEach(f => { f.scrollLeft = f.scrollW
     const clock = Math.abs(mins) >= 1200
       ? when.toLocaleString(lang, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
       : when.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' });
-    if (t.hasAttribute('data-abs')) { t.title = `${span} (${clock} ${local})`; return; }
+    if (t.hasAttribute('data-abs')) {
+      // El title solo se ve con el ratón: el mismo texto va oculto dentro, para lectores de pantalla.
+      t.title = `${span} (${clock} ${local})`;
+      let extra = t.querySelector('.visually-hidden');
+      if (!extra) { extra = document.createElement('span'); extra.className = 'visually-hidden'; t.append(extra); }
+      extra.textContent = ` (${span}, ${clock} ${local})`;
+      return;
+    }
     t.textContent = `· ${span} (${clock} ${local})`;
     t.hidden = false;
   });

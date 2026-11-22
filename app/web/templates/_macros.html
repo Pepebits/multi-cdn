@@ -134,7 +134,8 @@
       {% if caller %}{{ caller() }}{% endif %}
     </div>
     <div class="dialog__foot">
-      <button class="btn" type="button" data-close>{{ _('Cancel') }}</button>
+      {# autofocus: al abrir, el foco va a la opción segura (o al primer campo del bloque, si lo hay) #}
+      <button class="btn" type="button" data-close autofocus>{{ _('Cancel') }}</button>
       <button class="btn {{ 'btn--danger' if danger else 'btn--primary' }}" type="submit">{{ icon(icon_name) }} {{ label }}</button>
     </div>
   </form>
@@ -201,7 +202,7 @@
       {% if dry_run %}<p class="notice notice--warn" style="margin:0">{{ icon('alert') }} {{ _('Dry run: DNS changes are recorded but not applied.') }}</p>{% endif %}
       <div>
         <label for="del-{{ idx }}-c">{{ _m('Type <span class="mono">{domain}</span> to confirm', domain=d.name) }}</label>
-        <input id="del-{{ idx }}-c" type="text" name="confirm" autocomplete="off" autocapitalize="none" autocorrect="off" inputmode="url" spellcheck="false" required data-expected="{{ d.name }}">
+        <input id="del-{{ idx }}-c" type="text" name="confirm" autocomplete="off" autocapitalize="none" autocorrect="off" inputmode="url" spellcheck="false" required autofocus data-expected="{{ d.name }}">
       </div>
     </div>
     <div class="dialog__foot">
@@ -245,3 +246,10 @@
 {% macro more(id, text) -%}
 <details class="more"><summary>{{ icon('info') }} {{ _("More info") }}</summary><p id="{{ id }}" class="help">{{ text }}</p></details>
 {%- endmacro %}
+
+{# Password input with a "Show" toggle (panel.js switches the type). Without JavaScript the button
+   stays hidden and the field works as usual. `attrs`: the input's other attributes, already escaped. #}
+{% macro password_field(id, name, autocomplete, attrs='') -%}
+<div class="with-reveal"><input id="{{ id }}" type="password" name="{{ name }}" autocomplete="{{ autocomplete }}" {{ attrs }}><button class="btn" type="button" data-reveal="{{ id }}" aria-controls="{{ id }}" aria-pressed="false" hidden>{{ _("Show") }}</button></div>
+{%- endmacro %}
+

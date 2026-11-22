@@ -151,5 +151,6 @@
   "{used} of {quota} GB this month": "{used} de {quota} GB este mes",
   "{used}/{max} resources": "{used}/{max} recursos",
   "No phone? Use a recovery code": "¿Sin el móvil? Usa un código de recuperación",
-  "Recovery code": "Código de recuperación"
+  "Recovery code": "Código de recuperación",
+  "Show": "Mostrar"
 }

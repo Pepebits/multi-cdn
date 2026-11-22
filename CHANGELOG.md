@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Show password** button next to the password fields (sign-in and change password). It only
+  appears when JavaScript is available, and the field is hidden again on submit.
+
+### Changed
+- Confirmation dialogs open with the focus on Cancel (or on the confirmation field), not on ✕.
+- Changing the colour theme in one tab applies it in the other open tabs.
+- Screen readers get the relative and local time of each date, which was only in the tooltip.
+- Fields show an error style once you have typed in them or tried to submit (`:user-invalid`).
+- Stacked tables on phones hide their header from screen readers too; each cell is labelled.
+
 ## [0.3.4] - 2026-11-22
 
 ### Changed

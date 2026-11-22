@@ -289,7 +289,7 @@
       {% if dry_run %}<p class="notice notice--warn" style="margin:0">{{ m.icon('alert') }} {{ _('Dry run: the switch will be recorded but not applied on Cloudflare.') }}</p>{% endif %}
       <div>
         <label for="confirm">{{ _m('Type <span class="mono">{domain}</span> to confirm', domain=d.name) }}</label>
-        <input id="confirm" name="confirm" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" inputmode="url" spellcheck="false" required data-expected="{{ d.name }}">
+        <input id="confirm" name="confirm" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" inputmode="url" spellcheck="false" required autofocus data-expected="{{ d.name }}">
       </div>
     </div>
     <div class="dialog__foot">
@@ -314,7 +314,7 @@
       {% if dry_run %}<p class="notice notice--warn" style="margin:0">{{ m.icon('alert') }} {{ _('Dry run: the switch will be recorded but not applied on Cloudflare.') }}</p>{% endif %}
       <div>
         <label for="volver-confirm">{{ _m('Type <span class="mono">{domain}</span> to confirm', domain=d.name) }}</label>
-        <input id="volver-confirm" name="confirm" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" inputmode="url" spellcheck="false" required data-expected="{{ d.name }}">
+        <input id="volver-confirm" name="confirm" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" inputmode="url" spellcheck="false" required autofocus data-expected="{{ d.name }}">
       </div>
     </div>
     <div class="dialog__foot">

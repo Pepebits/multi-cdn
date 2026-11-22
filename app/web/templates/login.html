@@ -15,7 +15,7 @@
   </div>
   <div>
     <label for="password">{{ _("Password") }}</label>
-    <input id="password" type="password" name="password" autocomplete="current-password" required>
+    {{ m.password_field("password", "password", "current-password", "required") }}
   </div>
   <div class="actions-end"><button class="btn btn--primary" type="submit">{{ _("Continue") }}</button></div>
 </form>

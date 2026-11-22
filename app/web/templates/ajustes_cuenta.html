@@ -29,9 +29,9 @@
   {{ m.card_flash(flash, 'password') }}
   <form method="post" action="/ajustes/cuenta/password">{{ csrf_field() }}
     <div class="card__body form-grid">
-      <div><label for="current">{{ _("Current password") }}</label><input id="current" type="password" name="current" autocomplete="current-password" required></div>
-      <div><label for="new">{{ _("New password") }}</label><input id="new" type="password" name="new" autocomplete="new-password" minlength="12" required aria-describedby="new-help"><p id="new-help" class="help">{{ _("At least 12 characters. Your other sessions will be closed.") }}</p></div>
-      <div><label for="new2">{{ _("Repeat the new one") }}</label><input id="new2" type="password" name="new2" autocomplete="new-password" minlength="12" required></div>
+      <div><label for="current">{{ _("Current password") }}</label>{{ m.password_field("current", "current", "current-password", "required") }}</div>
+      <div><label for="new">{{ _("New password") }}</label>{{ m.password_field("new", "new", "new-password", 'minlength="12" required aria-describedby="new-help"'|safe) }}<p id="new-help" class="help">{{ _("At least 12 characters. Your other sessions will be closed.") }}</p></div>
+      <div><label for="new2">{{ _("Repeat the new one") }}</label>{{ m.password_field("new2", "new2", "new-password", 'minlength="12" required'|safe) }}</div>
       <div><label for="code-pw">{{ _("TOTP code") }}</label><input id="code-pw" class="otp" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" autocapitalize="none" autocorrect="off" spellcheck="false" required aria-describedby="code-pw-help"><p id="code-pw-help" class="help">{{ _("From your authenticator app.") }}</p></div>
     </div>
     <div class="card__foot actions-end"><button class="btn btn--primary" type="submit">{{ _("Change password") }}</button></div>
