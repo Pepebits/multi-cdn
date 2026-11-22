@@ -448,7 +448,7 @@ def decide(view, cfg, st: DomainState, *, dry_run: bool, mass: int, now: datetim
         on_backup, on_cf = st.sim_backup, not st.sim_backup
     if reasons and on_cf:
         return Decision("switch", reasons)
-    if not reasons and feed_ok and on_backup and now - st.clear_since >= wait:
+    if not reasons and feed_ok and on_backup and st.clear_since is not None and now - st.clear_since >= wait:
         return Decision("return", [tn("no blocks since {time}", time=_fmt(st.clear_since, now, notify_lang()))])
     return Decision("none", reasons)
 
@@ -471,7 +471,7 @@ async def evaluate(state, now: datetime | None = None, on_switched=None) -> None
     calendar = getattr(state, "calendar", None)
     if calendar is not None and calendar.is_stale(now):
         calendar = None
-    mass = state.feed.blocked_ips() if feed_ok else 0
+    mass = state.feed.blocked_ips() if feed_ok and state.feed is not None else 0
     state.engine.reload()
     healthy = True
     for view in state.views():

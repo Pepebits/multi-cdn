@@ -550,7 +550,7 @@ async def football_data_guardar(request: Request, token: str = Form("")):
     s.events.add(actor=_actor(request), kind="config", summary=tn("football-data.org key saved"))
     await refresh_calendar(s)
     result = s.calendar.sources.get("football-data.org") if s.calendar else s.calendar_error
-    if result == "ok":
+    if result == "ok" and s.calendar is not None:
         msg = tr("Key saved and verified · {n} matches in the calendar", n=len(s.calendar.matches))
         return _card(url, "calendario", ok=_with_env_warning(msg, reason, "FOOTBALL_DATA_TOKEN"))
     msg = tr("Key saved, but football-data.org is not responding properly: {result}", result=result)

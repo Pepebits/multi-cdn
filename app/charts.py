@@ -7,6 +7,7 @@ base recta, 2 px de hueco entre marcas que se tocan, rejilla de 1 px recesiva.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from datetime import datetime, timedelta
 
 from .i18n import N_, format_when, tr
@@ -126,7 +127,7 @@ def _rounded_top(x: float, y: float, w: float, h: float, r: float = 4) -> str:
 
 
 def columns(days: list[datetime], series: list[dict], start: datetime, end: datetime, height: int = 220,
-            fmt=str) -> dict:
+            fmt: Callable[[int], str] = str) -> dict:
     """Columnas apiladas por día. series: {name, slot, values [bytes por día]} en orden fijo."""
     sc = Scale(start, end, height)
     totals = [sum(s["values"][i] for s in series) for i in range(len(days))]

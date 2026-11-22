@@ -61,7 +61,7 @@ async def _stats_matches(s: State, start: datetime, end: datetime) -> tuple[list
     token = s.secrets.get("football_data_token")
     if token and os.environ.get("MULTICDN_OFFLINE") != "1":
         try:
-            past = await _cached(s, ("fd", start.date()), lambda: match_calendar.fetch_past_laliga(s.client, token, start, end))
+            past = await _cached(s, ("fd", start.date()), lambda: match_calendar.fetch_past_laliga(s.http, token, start, end))
             matches = match_calendar.merge(matches, past)
         except (httpx.HTTPError, ValueError, KeyError) as exc:
             note = tr("no past matches ({error})", error=type(exc).__name__)
@@ -78,8 +78,12 @@ async def _stats_traffic(s: State, start: datetime, end: datetime) -> tuple[dict
     errors = []
     for cred in s.creds.list("gcore"):
         token = s.creds.secret(cred.id)
+        if not token:
+            errors.append(f"{cred.label}: {tr('the credential cannot be decrypted')}")
+            continue
+        secret: str = token  # narrowed for the lambda below
         try:
-            by_resource |= await _cached(s, ("gc", cred.id, start.date()), lambda: gcore.traffic_series(token, start, end))
+            by_resource |= await _cached(s, ("gc", cred.id, start.date()), lambda: gcore.traffic_series(secret, start, end))
         except (RuntimeError, httpx.HTTPError) as exc:
             errors.append(f"{cred.label}: {exc}")
     names = {d.gcore_resource_id: n for n, d in s.inventory.domains.items() if d.gcore_resource_id}
@@ -123,7 +127,7 @@ async def estadisticas(request: Request, dias: int = 7):
             on_gcore = sum((stats.overlap(iv.start, iv_end, g.start, g.end) for g in segs if g.kind == "gcore"), timedelta(0))
             match = next((label for b0, b1, label in bands if b0 < iv_end and b1 > iv.start), None)
             episodes.append({"domain": name, "start": iv.start, "end": iv.end, "duration": stats.fmt_duration(iv.duration(now)),
-                             "isps": iv.max_isps, "isp_names": ", ".join(sorted(hayahora.ISPS.get(i, i) for i in iv.isps)),
+                             "isps": iv.max_isps, "isp_names": ", ".join(sorted(hayahora.ISPS.get(i) or i for i in iv.isps)),
                              "gcore_pct": round(100 * on_gcore / iv.duration(now)) if iv.duration(now) else 0,
                              "match": match})
         rows.append({

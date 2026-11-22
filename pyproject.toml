@@ -25,3 +25,9 @@ dev = ["pytest>=8.3"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.pyright]
+# Basic mode over the app code; CI runs it (a pinned pyright, see .github/workflows/ci.yml).
+include = ["app"]
+typeCheckingMode = "basic"
+pythonVersion = "3.15"

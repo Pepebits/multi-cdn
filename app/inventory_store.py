@@ -81,7 +81,7 @@ class InventoryStore:
     def load(self) -> Inventory:
         servers = {}
         for sid, private in self.conn.execute("SELECT id, private_address FROM servers ORDER BY id"):
-            servers[sid] = Server(origin_ipv4=self.secrets.get(origin_key(sid)), private_address=private)
+            servers[sid] = Server.model_validate({"origin_ipv4": self.secrets.get(origin_key(sid)), "private_address": private})
         domains = {}
         for name, zone_id, policy, priority, cf_cred, gc_cred, gres, gssl, cert_na in self.conn.execute(
                 "SELECT name, zone_id, policy, priority, cloudflare_credential, gcore_credential,"
@@ -149,7 +149,7 @@ class InventoryStore:
     # ---------- dominios ----------
     def upsert_domain(self, name: str, *, policy: str, priority: str, zone_id: str | None = None) -> str:
         name = normalize_hostname(name)
-        Domain(policy=policy, priority=priority, hostnames=[])  # valida valores
+        Domain.model_validate({"policy": policy, "priority": priority, "hostnames": []})  # valida valores
         self.conn.execute(
             "INSERT INTO domains (name, zone_id, policy, priority) VALUES (?, ?, ?, ?)"
             " ON CONFLICT(name) DO UPDATE SET zone_id=COALESCE(excluded.zone_id, domains.zone_id),"

@@ -191,12 +191,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.user and user is None:
         print(tn("User {user} does not exist", user=args.user), file=sys.stderr)
         return 1
-    if args.cmd == "change-password":
+    assert user is not None or args.cmd not in ("change-password", "reset-totp")  # both require --user
+    if args.cmd == "change-password" and user is not None:
         auth.set_password(user.id, _ask_password())
         auth.close_sessions(user.id)
         events.add(actor="cli", kind="auth", summary=tn("Password of {user} changed from the terminal", user=user.username))
         print(tn("Password changed and sessions closed."))
-    elif args.cmd == "reset-totp":
+    elif args.cmd == "reset-totp" and user is not None:
         auth.reset_totp(user.id)
         events.add(actor="cli", kind="auth", summary=tn("TOTP of {user} reset from the terminal", user=user.username))
         print(tn("TOTP reset: it will be set up again at the next sign-in."))

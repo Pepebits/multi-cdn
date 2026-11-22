@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -125,8 +126,8 @@ def _double(body: str) -> str:
     return "".join(out)
 
 
-def parse(text: str, environ: dict[str, str] | None = None) -> Parsed:
-    environ = os.environ if environ is None else environ
+def parse(text: str, environ: Mapping[str, str] | None = None) -> Parsed:
+    env: Mapping[str, str] = os.environ if environ is None else environ
     text = text.removeprefix("﻿")
     lines = text.split("\n")
     out = Parsed()
@@ -134,7 +135,7 @@ def parse(text: str, environ: dict[str, str] | None = None) -> Parsed:
     def lookup(name: str) -> str | None:
         if name in out.values:
             return out.values[name]
-        return environ.get(name)
+        return env.get(name)
 
     i = 0
     while i < len(lines):
@@ -178,7 +179,7 @@ def parse(text: str, environ: dict[str, str] | None = None) -> Parsed:
     return out
 
 
-def read(path: str | Path, environ: dict[str, str] | None = None) -> Parsed:
+def read(path: str | Path, environ: Mapping[str, str] | None = None) -> Parsed:
     """Parses a file (UTF-8). Raises OSError / UnicodeDecodeError."""
     return parse(Path(path).read_bytes().decode("utf-8"), environ)
 
@@ -224,7 +225,8 @@ def render(content: str, key: str, value: str | None) -> str:
         export = "export " if re.match(r"[ \t]*export[ \t]", original) else ""
         cr = "\r" if lines[last.last].endswith("\r") else ""
         replace_at, line = last.first, indent + export + line + cr
-    out = [line if i == replace_at else text for i, text in enumerate(lines) if i == replace_at or i not in drop]
+    out = [line if i == replace_at and line is not None else text
+           for i, text in enumerate(lines) if i == replace_at or i not in drop]
     text = "\n".join(out)
     if line is not None and replace_at is None:
         if text and not text.endswith("\n"):

@@ -5,11 +5,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections import Counter
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-import os
 
 import httpx
 
@@ -40,10 +41,10 @@ ORIGIN_HEALTH_INTERVAL = 120
 
 async def refresh_feed(state: State, now: datetime | None = None) -> None:
     try:
-        snapshot, etag = await hayahora.fetch_feed(state.client, state.feed_etag if state.feed else None)
+        snapshot, etag = await hayahora.fetch_feed(state.http, state.feed_etag if state.feed else None)
         if snapshot is not None:
             state.feed = snapshot
-        else:  # 304: same data, read just now
+        elif state.feed is not None:  # 304: same data, read just now
             state.feed.fetched_at = datetime.now(UTC)
         state.feed_etag = etag
         state.feed_error = None
@@ -93,7 +94,7 @@ def feed_interval(state: State, now: datetime | None = None, *, quiet: bool = Fa
     seconds, reason = feed_mode(state, now)
     mode = "fast" if reason else "idle"
     if not quiet and mode != state.feed_mode:
-        log.info("feed polling: every %s s (%s)", seconds, FEED_LOG_REASON.get(reason, "idle"))
+        log.info("feed polling: every %s s (%s)", seconds, FEED_LOG_REASON.get(reason or "", "idle"))
         state.feed_mode = mode
     return seconds
 
@@ -101,6 +102,8 @@ def feed_interval(state: State, now: datetime | None = None, *, quiet: bool = Fa
 def check_stale_feed(state: State) -> None:
     """El feed puede responder bien con datos viejos: entonces el motor no decide (ni va ni vuelve).
     Avisar al empezar y al terminar."""
+    if state.feed is None:
+        return
     stale = state.feed.is_stale()
     if stale and not state.feed_stale_alerted:
         state.feed_stale_alerted = True
@@ -117,7 +120,7 @@ async def refresh_calendar(state: State) -> None:
     try:
         previous = state.calendar.sources if state.calendar else {}
         state.calendar = await match_calendar.fetch_calendar(
-            state.client, football_data_token=state.secrets.get("football_data_token"))
+            state.http, football_data_token=state.secrets.get("football_data_token"))
         state.calendar_error = None
         for source, result in state.calendar.sources.items():
             if result != "ok" and previous.get(source, "ok") == "ok":
@@ -216,7 +219,7 @@ def check_block_transitions(state: State, now: datetime | None = None) -> None:
 async def refresh_dns(state: State) -> None:
     if not state.cf_ranges:
         with suppress(Exception):
-            state.cf_ranges = await dnscheck.fetch_cloudflare_ranges(state.client)
+            state.cf_ranges = await dnscheck.fetch_cloudflare_ranges(state.http)
     hostnames = [h.name for d in state.inventory.domains.values() for h in d.hostnames]
     state.resolutions = await dnscheck.resolve_all(hostnames, state.cf_ranges, state.inventory.origin_ips)
     apply_cf_live(state)
@@ -336,7 +339,7 @@ async def _delayed_loop(delay: int, interval: int, fn, *args) -> None:
     await _loop(interval, fn, *args)
 
 
-async def _loop(interval, fn, *args) -> None:
+async def _loop(interval: float | Callable[[], float], fn: Callable[..., Awaitable[object]], *args: object) -> None:
     """interval: seconds, or a callable that returns them after each run (adaptive interval)."""
     while True:
         try:

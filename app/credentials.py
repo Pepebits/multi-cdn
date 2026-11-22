@@ -82,6 +82,7 @@ class CredentialStore:
             (provider, label, _hint(secret), datetime.now(UTC).isoformat(timespec="seconds")),
         )
         cred_id = cur.lastrowid
+        assert cred_id is not None  # always set after an INSERT
         self.secrets.set(_key(cred_id), secret, source=source)
         return cred_id
 
@@ -180,7 +181,7 @@ class CredentialStore:
         env = ENV_TOKENS[cred.provider] if linked and linked.id == cred.id else None
         state = env_state(env, self.secret(cred.id)) if env else None
         return {"source": src[0] if src else "panel", "at": src[1] if src else cred.created_at, "env": env,
-                "state": state, "error": self.secrets.env_error(env) if state == "differs" else None}
+                "state": state, "error": self.secrets.env_error(env) if env and state == "differs" else None}
 
     def env_removed(self) -> list[str]:
         """Secrets-file variables still set whose credential was deleted in the panel (the panel
@@ -192,5 +193,5 @@ class CredentialStore:
 
     @staticmethod
     def _row(r) -> Credential:
-        return Credential(id=r[0], provider=r[1], label=r[2], hint=r[3], created_at=_ts(r[4]), checked_at=_ts(r[5]),
+        return Credential(id=r[0], provider=r[1], label=r[2], hint=r[3], created_at=datetime.fromisoformat(r[4]), checked_at=_ts(r[5]),
                           check_ok=None if r[6] is None else bool(r[6]), check_msg=r[7], scope=r[8])

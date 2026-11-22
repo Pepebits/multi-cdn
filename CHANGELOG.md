@@ -11,6 +11,8 @@ All notable changes to this project are documented here. The format follows
   appears when JavaScript is available, and the field is hidden again on submit.
 
 ### Changed
+- Internal: the panel routes live in `app/routes/` (one module per section), the code passes
+  pyright in basic mode and CI checks it.
 - Confirmation dialogs open with the focus on Cancel (or on the confirmation field), not on ✕.
 - Changing the colour theme in one tab applies it in the other open tabs.
 - Screen readers get the relative and local time of each date, which was only in the tooltip.

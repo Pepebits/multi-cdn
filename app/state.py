@@ -78,6 +78,17 @@ class State:
         # Los textos de error de los proveedores pierden la IP de origen antes de guardarse o avisarse.
         error_reporting.set_origin_ips(lambda: self.inventory.origin_ips)
 
+    @property
+    def http(self) -> httpx.AsyncClient:
+        """The shared HTTP client; it exists only once the panel (or the CLI runbook) has started."""
+        if self.client is None:
+            raise RuntimeError("HTTP client not started")
+        return self.client
+
+    async def close_http(self) -> None:
+        if self.client is not None:
+            await self.client.aclose()
+
     def views(self) -> list[DomainView]:
         return build_all(self.inventory, self.resolutions, self.feed, self.engine.known_ips())
 

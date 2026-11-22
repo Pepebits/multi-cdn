@@ -209,7 +209,7 @@ def _new_file_mode(folder: Path) -> int:
     """0600, or 0660 when the folder has a default ACL: then the ACL decides who may read it
     (install.sh grants the deploying user and uid 10001) and the mask must not hide them."""
     try:
-        os.getxattr(folder, "system.posix_acl_default")
+        os.getxattr(folder, "system.posix_acl_default")  # pyright: ignore[reportAttributeAccessIssue]  (Linux only: AttributeError below)
         return 0o660
     except (AttributeError, OSError):
         return 0o600

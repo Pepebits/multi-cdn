@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -64,7 +65,7 @@ class EventStore:
             self.conn.execute("ALTER TABLE events ADD COLUMN code TEXT")  # bases anteriores a 0.3.4
         self.listeners: list = []  # p. ej. el Notifier
         # Provider texts lose the origin IP before being stored or sent as alerts (ADR-003).
-        self.scrubber = scrub_origin
+        self.scrubber: Callable[[str], str] | None = scrub_origin
 
     def add(
         self,
@@ -107,7 +108,7 @@ class EventStore:
             except Exception:  # un aviso fallido nunca debe impedir registrar el evento
                 pass
 
-    def _scrub(self, text):
+    def _scrub(self, text: str) -> str:
         return self.scrubber(text) if self.scrubber and text else text
 
     def scrub_history(self) -> int:

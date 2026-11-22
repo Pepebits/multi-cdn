@@ -117,7 +117,7 @@ async def lifespan(app: FastAPI):
     yield
     for t in tasks:
         t.cancel()
-    await state.client.aclose()
+    await state.close_http()
 
 
 # Optional Sentry/GlitchTip: before the app exists, so its middleware is instrumented.

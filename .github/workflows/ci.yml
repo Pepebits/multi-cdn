@@ -38,6 +38,9 @@ jobs:
       - name: Test
         run: uv run pytest -q
 
+      - name: Type check
+        run: uvx pyright@1.1.414 --pythonpath .venv/bin/python
+
   audit:
     runs-on: ubuntu-latest
     timeout-minutes: 10

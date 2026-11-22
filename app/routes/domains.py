@@ -81,7 +81,7 @@ async def importar(request: Request, cuenta: int | None = None, zone: str | None
         return _back(request.url_for("ajustes_cuentas"), error=tr("Add a Cloudflare credential first"))
     if cuenta is None or cuenta not in {c.id for c in cf_creds}:
         cuenta = cf_creds[0].id
-    token = s.creds.secret(cuenta)
+    token = s.creds.secret(cuenta) or ""  # undecryptable: Cloudflare rejects it and the page says so
     ctx = {"zones": [], "records": [], "zone": None, "servers": list(s.inventory.servers), "load_error": None,
            "cf_creds": cf_creds, "cuenta": cuenta}
     try:

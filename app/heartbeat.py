@@ -72,7 +72,7 @@ Resolver = Callable[[str], Awaitable[Iterable[str]]]
 
 async def _resolve(host: str) -> list[str]:
     infos = await asyncio.get_running_loop().getaddrinfo(host, 443, type=socket.SOCK_STREAM)
-    return [info[4][0] for info in infos]
+    return [str(info[4][0]) for info in infos]
 
 
 def is_public_address(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:

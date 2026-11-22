@@ -9,6 +9,7 @@ import asyncio
 import socket
 import ssl
 from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 
@@ -21,7 +22,8 @@ def _client(token: str) -> httpx.AsyncClient:
     return httpx.AsyncClient(base_url=API, timeout=30, headers={"Authorization": f"APIKey {token}"})
 
 
-def _check(r: httpx.Response, what: str):
+def _check(r: httpx.Response, what: str) -> Any:
+    """The JSON body (None when empty), or RuntimeError with Gcore's answer."""
     if r.status_code >= 400:
         detail = r.text[:300].replace("\n", " ")
         raise RuntimeError(tn("Gcore rejected {what} (HTTP {status}): {detail}", what=tn(what), status=r.status_code,
@@ -113,14 +115,16 @@ async def probe_edge(edge_host: str, hostname: str, timeout: float = 15) -> tupl
     loop = asyncio.get_running_loop()
     infos = await loop.getaddrinfo(edge_host, 443, type=socket.SOCK_STREAM)
     # IPv4 primero: muchas redes no tienen salida IPv6 y el borde publica ambas
-    ips = sorted({i[4][0] for i in infos}, key=lambda a: ":" in a)
+    ips = sorted({str(i[4][0]) for i in infos}, key=lambda a: ":" in a)
     ctx = ssl.create_default_context()
     reader = writer = None
+    ip = "?"
     last_exc: Exception | None = None
-    for ip in ips:
+    for candidate in ips:
         try:
             reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(ip, 443, ssl=ctx, server_hostname=hostname), timeout)
+                asyncio.open_connection(candidate, 443, ssl=ctx, server_hostname=hostname), timeout)
+            ip = candidate
             break
         except (ssl.SSLError, OSError, asyncio.TimeoutError) as exc:
             last_exc = exc
@@ -134,6 +138,7 @@ async def probe_edge(edge_host: str, hostname: str, timeout: float = 15) -> tupl
                          "propagating", host=hostname, error=exc.reason or exc.strerror or exc)
     except (OSError, asyncio.TimeoutError) as exc:
         return False, tn("{host}: cannot connect to the Gcore edge ({error})", host=hostname, error=type(exc).__name__)
+    assert reader is not None  # opened together with writer
     cert = writer.get_extra_info("peercert") or {}
     writer.write(f"HEAD / HTTP/1.1\r\nHost: {hostname}\r\nUser-Agent: multicdn-probe\r\nConnection: close\r\n\r\n".encode())
     await writer.drain()
@@ -157,7 +162,7 @@ async def edge_ipv4s(edge_host: str) -> list[str]:
     loop = asyncio.get_running_loop()
     ips: set[str] = set()
     try:
-        ips |= {i[4][0] for i in await loop.getaddrinfo(edge_host, 443, family=socket.AF_INET, type=socket.SOCK_STREAM)}
+        ips |= {str(i[4][0]) for i in await loop.getaddrinfo(edge_host, 443, family=socket.AF_INET, type=socket.SOCK_STREAM)}
     except OSError:
         pass
     for ns in EDGE_RESOLVERS:

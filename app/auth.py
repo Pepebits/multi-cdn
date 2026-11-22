@@ -173,6 +173,7 @@ class AuthStore:
         cur = self.conn.execute("INSERT INTO users (username, pw_hash, created_at) VALUES (?, ?, ?)",
                                 (username, hash_password(password), _iso(_now())))
         self.conn.commit()
+        assert cur.lastrowid is not None  # always set after an INSERT
         return cur.lastrowid
 
     def list_users(self) -> list[User]:

@@ -22,7 +22,7 @@ import re
 import tomllib
 from pathlib import Path
 from collections.abc import Callable, Iterable
-from typing import Any
+from typing import Any, overload
 from urllib.parse import urlsplit
 
 log = logging.getLogger("multicdn")
@@ -75,6 +75,10 @@ def _origins() -> set:
     return out
 
 
+@overload
+def scrub_origin(text: str) -> str: ...
+@overload
+def scrub_origin(text: None) -> None: ...
 def scrub_origin(text: str | None) -> str | None:
     """Narrow scrub for texts kept in the history, sent as alerts or shown in the panel: only
     the origin IPs (any notation) become "[origin IP]", plus Telegram tokens and credentials in

@@ -56,7 +56,7 @@ async def _observe(state) -> None:
 
     await refresh_cloudflare(state, alert=False)  # alerts come only from the panel
     if not state.cf_ranges:
-        state.cf_ranges = await dnscheck.fetch_cloudflare_ranges(state.client)
+        state.cf_ranges = await dnscheck.fetch_cloudflare_ranges(state.http)
     hosts = [h.name for d in state.inventory.domains.values() for h in d.hostnames]
     state.resolutions = await dnscheck.resolve_all(hosts, state.cf_ranges, state.inventory.origin_ips)
     apply_cf_live(state)
@@ -92,7 +92,7 @@ async def status(out=print) -> int:
                 out(f"  {h.name:34} {h.provider_label:18} {h.dns_text}{'' if h.failover else _no_switch()}")
         return 0
     finally:
-        await state.client.aclose()
+        await state.close_http()
 
 
 async def switch(name: str, target: str, *, assume_yes: bool = False, force: bool = False,
@@ -154,7 +154,7 @@ async def switch(name: str, target: str, *, assume_yes: bool = False, force: boo
         return 0
     finally:
         await _drain()
-        await state.client.aclose()
+        await state.close_http()
 
 
 def run(coro) -> int:
