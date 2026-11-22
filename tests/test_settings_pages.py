@@ -1,4 +1,4 @@
-"""0.3.1 Settings overhaul: error reporting DSN, six tabs, card messages and confirmations (the secrets
+"""Settings pages: error reporting DSN, the six tabs, card messages and confirmations (the secrets
 file: test_secrets_file.py)."""
 
 import re

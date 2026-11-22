@@ -1,4 +1,4 @@
-"""0.3.0 panel additions: open problems, error reporting status and the domain timeline."""
+"""Domain timeline (when it was on Cloudflare or Gcore), open problems and the error reporting status."""
 
 from datetime import UTC, datetime, timedelta
 

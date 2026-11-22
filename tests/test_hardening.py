@@ -1,4 +1,4 @@
-"""Login and panel hardening of 0.3.0: client IP behind proxies (ADR-004), code attempts inside
+"""Login and panel hardening: client IP behind proxies (ADR-004), code attempts inside
 a session, `next` with control characters, the external heartbeat URL and the Gcore certificate name."""
 
 import asyncio

@@ -1,5 +1,5 @@
-"""0.3.1 pre-deploy fixes: messages that are not lost, Enter that saves, the Remove IP guard, the
-runbook order and deploy/install.sh (error reporting: test_error_reporting.py)."""
+"""Guards in the settings forms (messages that are not lost, Enter that saves, the Remove IP guard),
+the runbook order and deploy/install.sh (error reporting: test_error_reporting.py)."""
 
 import os
 import shutil
