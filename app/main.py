@@ -237,6 +237,12 @@ templates.env.globals["current_year"] = lambda: datetime.now(UTC).year
 templates.env.globals["csrf_field"] = lambda: Markup('<input type="hidden" name="csrf" value="{}">').format(current_csrf.get())
 
 
+def _require_domain(s: State, name: str) -> None:
+    """404 if the domain is not in the inventory (every /dominios/{name}/… route checks it)."""
+    if name not in s.inventory.domains:
+        raise HTTPException(404, tr("Domain not in the inventory"))
+
+
 def _state(request: Request) -> State:
     return request.app.state.mc
 
@@ -440,8 +446,7 @@ async def importar_guardar(request: Request):
 @app.get("/dominios/{name}", response_class=HTMLResponse)
 async def dominio(request: Request, name: str):
     s = _state(request)
-    if name not in s.inventory.domains:
-        raise HTTPException(404, tr("Domain not in the inventory"))
+    _require_domain(s, name)
     view = build_domain(name, s.inventory.domains[name], s.resolutions, s.feed, s.engine.get(name).cf_ips)
     if name in s.cf_sync_errors:
         view.alerts.append(tr("Could not read its records on Cloudflare: {error}", error=s.cf_sync_errors[name]))
@@ -509,8 +514,7 @@ async def dominio_config(
 ):
     s = _state(request)
     url = request.url_for("dominio", name=name)
-    if name not in s.inventory.domains:
-        raise HTTPException(404)
+    _require_domain(s, name)
     try:
         ids = {}
         for provider, raw in (("cloudflare", cloudflare_credential), ("gcore", gcore_credential)):
@@ -531,8 +535,7 @@ async def hostnames_guardar(request: Request, name: str):
     """Guarda la tabla de hostnames (servidor y destino Gcore) y añade los nuevos."""
     s = _state(request)
     url = request.url_for("dominio", name=name)
-    if name not in s.inventory.domains:
-        raise HTTPException(404)
+    _require_domain(s, name)
     form = await request.form()
     try:
         for h in s.inventory.domains[name].hostnames:
@@ -609,8 +612,7 @@ ORIGIN_RULE_FLASH = {
 @app.post("/dominios/{name}/gcore/preparar")
 async def gcore_preparar(request: Request, name: str):
     s = _state(request)
-    if name not in s.inventory.domains:
-        raise HTTPException(404)
+    _require_domain(s, name)
     job = s.jobs.get(name)
     if job and not job.done:
         return _back(request.url_for("dominio", name=name), error=tr("A preparation is already in progress"))
@@ -699,8 +701,7 @@ DELETE_WHERE = {"cloudflare": N_("it stays on Cloudflare"), "gcore": N_("it stay
 async def volver_cloudflare(request: Request, name: str, confirm: str = Form("")):
     """Restaura en Cloudflare (con proxy) los hostnames que no estén ya en Cloudflare."""
     s = _state(request)
-    if name not in s.inventory.domains:
-        raise HTTPException(404, tr("Domain not in the inventory"))
+    _require_domain(s, name)
     url = request.url_for("dominio", name=name)
     if confirm.strip().lower() != name.lower():
         return _back(url, error=tr("Type the domain name to confirm"))
@@ -729,8 +730,7 @@ async def volver_cloudflare(request: Request, name: str, confirm: str = Form("")
 @app.post("/dominios/{name}/cambiar")
 async def cambiar(request: Request, name: str, target: str = Form(...), confirm: str = Form("")):
     s = _state(request)
-    if name not in s.inventory.domains:
-        raise HTTPException(404, tr("Domain not in the inventory"))
+    _require_domain(s, name)
     url = request.url_for("dominio", name=name)
     if confirm.strip().lower() != name.lower():
         return _back(url, error=tr("Type the domain name to confirm"))
@@ -763,8 +763,7 @@ MAINTENANCE_OPTIONS = {1: "1 h", 6: "6 h", 24: "24 h", 168: N_("7 days"), 0: N_(
 @app.post("/dominios/{name}/automatico/mantenimiento")
 async def automatico_mantenimiento(request: Request, name: str, horas: int = Form(...)):
     s = _state(request)
-    if name not in s.inventory.domains:
-        raise HTTPException(404)
+    _require_domain(s, name)
     url = request.url_for("dominio", name=name)
     if horas not in MAINTENANCE_OPTIONS:
         return _back(url, error=tr("Invalid duration"))
@@ -780,8 +779,7 @@ async def automatico_mantenimiento(request: Request, name: str, horas: int = For
 @app.post("/dominios/{name}/automatico/reanudar")
 async def automatico_reanudar(request: Request, name: str):
     s = _state(request)
-    if name not in s.inventory.domains:
-        raise HTTPException(404)
+    _require_domain(s, name)
     s.engine.resume(name)
     s.events.add(actor=_actor(request), kind="config", domain=name, summary=tn("Automatic switching resumed"))
     asyncio.create_task(run_engine(s))
@@ -791,8 +789,7 @@ async def automatico_reanudar(request: Request, name: str):
 @app.post("/dominios/{name}/automatico/descartar")
 async def automatico_descartar(request: Request, name: str):
     s = _state(request)
-    if name not in s.inventory.domains:
-        raise HTTPException(404)
+    _require_domain(s, name)
     s.engine.clear_error(name)
     return _back(request.url_for("dominio", name=name), ok=tr("Last failure dismissed"))
 
