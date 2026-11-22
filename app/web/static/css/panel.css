@@ -455,10 +455,18 @@ dialog {
   box-shadow: 6px 6px 0 var(--shadow-color); background: var(--bg); color: var(--text);
 }
 dialog::backdrop { background: var(--backdrop); }
+/* Que la página no se desplace por detrás del diálogo (las dos reglas hacen falta: ::backdrop no es
+   un contenedor con scroll si no se le pone overflow). Donde no se aplica, el diálogo sigue bien. */
+dialog:modal { overscroll-behavior: contain; }
+dialog::backdrop { overflow: hidden; overscroll-behavior: contain; }
 .dialog__head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 2px solid var(--border); }
 .dialog__body { padding: 16px 20px; display: grid; gap: 14px; }
 .dialog__foot { padding: 14px 20px; border-top: 2px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap;
   position: sticky; bottom: 0; background: var(--bg); }
+
+/* Las barras fijas (navegación abajo en el móvil, pie de estado en escritorio) no deben tapar el
+   campo o botón con el foco: el navegador desplaza lo justo para dejarlo por encima. */
+html { scroll-padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
 
 /* ---------- Responsive: móvil ---------- */
 @media (max-width: 900px) {

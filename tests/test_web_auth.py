@@ -93,6 +93,12 @@ def test_enrollment_flow_with_qr_and_recovery(anon):
     anon.post("/logout", data={"csrf": sess.csrf})
     assert "Iniciar sesión" in anon.get("/").text
     anon.post("/login", data={"username": "nuevo", "password": "contraseña-de-pruebas"})
+    # el código TOTP abre teclado numérico; el de recuperación lleva letras: campo propio sin él
+    page = anon.get("/login/codigo").text
+    totp_input = re.search(r'<input id="code"[^>]*>', page).group(0)
+    recovery_input = re.search(r'<input id="recovery"[^>]*>', page).group(0)
+    assert 'inputmode="numeric"' in totp_input and "a-z" not in totp_input
+    assert "inputmode" not in recovery_input and 'name="code"' in recovery_input
     r = anon.post("/login/codigo", data={"code": codes[0], "next": "/"}, follow_redirects=False)
     assert r.headers["location"] == "/"
     sess = auth.get_session(anon.cookies.get("mcdn_session"))

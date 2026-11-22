@@ -149,5 +149,7 @@
   "{percent} % of the monthly quota": "{percent} % de la cuota mensual",
   "{total} live switches: {auto} automatic, {manual} manual": "{total} cambios reales: {auto} automáticos, {manual} manuales",
   "{used} of {quota} GB this month": "{used} de {quota} GB este mes",
-  "{used}/{max} resources": "{used}/{max} recursos"
+  "{used}/{max} resources": "{used}/{max} recursos",
+  "No phone? Use a recovery code": "¿Sin el móvil? Usa un código de recuperación",
+  "Recovery code": "Código de recuperación"
 }

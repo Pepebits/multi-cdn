@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Recovery codes can be typed on a phone.** The sign-in code field opened the numeric keypad, so
+  the letters of a recovery code could not be entered. Recovery codes now have their own field
+  (under "No phone? Use a recovery code") with the normal keyboard.
+- The origin IP fields in Settings → Servers no longer open the decimal keypad, which offers a comma
+  instead of a dot in some languages.
+- The page no longer scrolls behind an open dialog.
+- The mobile navigation bar and the desktop status bar no longer cover the focused field or button.
+
 ## [0.3.3] - 2026-11-22
 
 ### Fixed

@@ -26,7 +26,7 @@
       </div>
       <div>
         <label for="ip-{{ loop.index }}">{{ _("Origin IP (IPv4)") }}</label>
-        <input id="ip-{{ loop.index }}" type="password" name="origin_ipv4" autocomplete="off" spellcheck="false" inputmode="decimal"
+        <input id="ip-{{ loop.index }}" type="password" name="origin_ipv4" autocomplete="off" spellcheck="false"
                placeholder="{{ _('Set · {hint}', hint=srv.ip_hint) if srv.ip_hint else '' }}" aria-describedby="ip-help-{{ loop.index }}">
         <p id="ip-help-{{ loop.index }}" class="help">{{ _("Type it only to replace it; empty keeps the current one.") if srv.ip_hint else _("The IPv4 address of this server.") }}</p>
       </div>
@@ -63,7 +63,7 @@
       </div>
       <div>
         <label for="origin_ipv4">{{ _("Origin IP (IPv4)") }}</label>
-        <input id="origin_ipv4" type="password" name="origin_ipv4" autocomplete="off" spellcheck="false" inputmode="decimal">
+        <input id="origin_ipv4" type="password" name="origin_ipv4" autocomplete="off" spellcheck="false">
       </div>
       <div>
         <label for="private_address">{{ _("Private address (optional)") }}</label>
