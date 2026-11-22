@@ -159,7 +159,7 @@ def _segment_kind(kind: str | None) -> str:
 def cdn_segments(events, failover_hosts: list[str], current: dict[str, str], start: datetime,
                  end: datetime) -> list[Segment]:
     """events: cambios reales del dominio (cualquier orden). current: proveedor actual por hostname."""
-    changes = sorted((e for e in events if e.kind == "switch" and not e.simulated), key=lambda e: e.ts)
+    changes = sorted((e for e in events if e.is_real_switch), key=lambda e: e.ts)
     hosts = set(failover_hosts)
     state: dict[str, str] = {}
     # Estado inicial de cada hostname: el «antes» de su primer cambio o, si nunca cambió, el actual.
@@ -238,7 +238,7 @@ def domain_timeline(events, failover_hosts: list[str], current: dict[str, str], 
     (feed history, block_intervals) and the matches of the calendar."""
     upto = min(end, now)
     segments = cdn_segments(events, failover_hosts, current, start, upto) if upto > start else []
-    changes = sorted((e for e in events if e.kind == "switch" and not e.simulated), key=lambda e: e.ts)
+    changes = sorted((e for e in events if e.is_real_switch), key=lambda e: e.ts)
 
     def who(e) -> str:
         return "auto" if e.actor == "auto" else e.actor

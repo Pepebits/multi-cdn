@@ -884,7 +884,7 @@ async def estadisticas(request: Request, dias: int = 7):
         current = {h: r.provider for h in hosts if (r := s.resolutions.get(h))}
         events = s.events.list(domain=name, limit=5000)
         for e in events:  # solo cuentan los cambios que movieron algún hostname que conmuta
-            if e.kind == "switch" and not e.simulated and start <= e.ts < end and any(d[0] in hosts for d in e.dns_diff):
+            if e.is_real_switch and start <= e.ts < end and any(d[0] in hosts for d in e.dns_diff):
                 switches["auto" if e.actor == "auto" else "manual"] += 1
         segs = stats.cdn_segments(events, hosts, current, start, min(end, now))
         gcore_time += sum((g.end - g.start for g in segs if g.kind == "gcore"), timedelta(0))

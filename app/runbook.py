@@ -78,13 +78,12 @@ def _no_switch() -> str:
 
 async def status(out=print) -> int:
     from .engine import failover
-    from .views import build_all
 
     state = _state()
     try:
         await _observe(state)
         out(_mode(state))
-        for d in build_all(state.inventory, state.resolutions, state.feed, state.engine.known_ips()):
+        for d in state.views():
             out(f"\n{d.name}  ·  {d.status_label}")
             cfg = state.inventory.domains[d.name]
             if failover.auto_enabled(state) and cfg.policy != "manual" and (codes := failover.readiness(state, cfg)):

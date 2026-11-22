@@ -1,9 +1,9 @@
 """0.3.0 panel additions: open problems, error reporting status and the domain timeline."""
 
 from datetime import UTC, datetime, timedelta
-from types import SimpleNamespace
 
 from app import alerts, charts, error_reporting, stats
+from app.db import Event
 from app.origin_health import OriginHealth
 from app.problems import open_problems
 from app.signals.calendar import Match
@@ -16,7 +16,8 @@ TO_CF = [["example.com", "CNAME → Gcore", "Cloudflare proxied"]]
 
 
 def ev(at, diff, actor="auto", simulated=False):
-    return SimpleNamespace(ts=at, kind="switch", dns_diff=diff, actor=actor, simulated=simulated)
+    return Event(id=0, ts=at, domain="x.com", actor=actor, kind="switch", summary="", transition=None,
+                 dns_diff=diff, signals=[], simulated=simulated)
 
 
 def feed(changes, ip="192.0.2.10"):

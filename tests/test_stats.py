@@ -3,6 +3,7 @@
 from datetime import UTC, datetime, timedelta
 
 from app import stats
+from app.db import Event
 from app.signals.hayahora import parse_feed
 
 T = datetime(2026, 11, 1, tzinfo=UTC)
@@ -35,9 +36,9 @@ def test_block_intervals_merge_isps_and_keep_open_ones():
     assert ivs[0].isps == {"Movistar", "Orange"}
 
 
-class E:
-    def __init__(self, hours, diff, simulated=False):
-        self.ts, self.kind, self.dns_diff, self.simulated = T + timedelta(hours=hours), "switch", diff, simulated
+def E(hours, diff, simulated=False):
+    return Event(id=0, ts=T + timedelta(hours=hours), domain="x.com", actor="auto", kind="switch", summary="",
+                 transition=None, dns_diff=diff, signals=[], simulated=simulated)
 
 
 def test_cdn_segments_follow_each_failover_host():

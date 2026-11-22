@@ -455,7 +455,6 @@ def decide(view, cfg, st: DomainState, *, dry_run: bool, mass: int, now: datetim
 
 async def evaluate(state, now: datetime | None = None, on_switched=None) -> None:
     """Un ciclo del motor. on_switched(): se llama tras un cambio real (p. ej. recomprobar el DNS)."""
-    from ..views import build_all  # evita import circular
 
     now = now or datetime.now(UTC)
     if not auto_enabled(state):
@@ -475,7 +474,7 @@ async def evaluate(state, now: datetime | None = None, on_switched=None) -> None
     mass = state.feed.blocked_ips() if feed_ok else 0
     state.engine.reload()
     healthy = True
-    for view in build_all(state.inventory, state.resolutions, state.feed, state.engine.known_ips()):
+    for view in state.views():
         cfg = state.inventory.domains.get(view.name)
         if cfg is None or not eligible(cfg) or not any(h.failover for h in view.hosts):
             continue
@@ -629,7 +628,7 @@ def change_indicator(state, name: str, now: datetime | None = None) -> dict | No
     now = now or datetime.now(UTC)
     cfg = state.inventory.domains[name]
     hosts = [h for h in cfg.hostnames if h.failover]
-    last = next((e for e in state.events.list(domain=name, limit=30) if e.kind == "switch" and not e.simulated), None)
+    last = next((e for e in state.events.list(domain=name, limit=30) if e.is_real_switch), None)
     if last and now - last.ts < PROPAGATION_WINDOW and last.transition in ("CF → GCORE", "GCORE → CF"):
         target = "gcore" if last.transition.endswith("GCORE") else "cloudflare"
         waiting = [h.name for h in hosts if (r := state.resolutions.get(h.name)) is None or r.provider != target]

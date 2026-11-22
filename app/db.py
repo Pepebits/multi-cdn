@@ -47,6 +47,11 @@ class Event:
     simulated: bool
     code: str | None = None
 
+    @property
+    def is_real_switch(self) -> bool:
+        """Un cambio de CDN aplicado de verdad (no uno simulado ni un fallo)."""
+        return self.kind == "switch" and not self.simulated
+
 
 class EventStore:
     def __init__(self, path: str | Path):

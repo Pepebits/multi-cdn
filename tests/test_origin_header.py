@@ -51,8 +51,6 @@ def test_adds_its_rule_without_touching_others_and_is_idempotent(monkeypatch):
     assert run(cf.ensure_origin_header("t", "z1", "s3cret")) == "sin cambios" and len(calls) == 1
     assert run(cf.ensure_origin_header("t", "z1", "nuevo")) == "actualizada"
     assert calls[-1][0] == "PATCH" and calls[-1][1].endswith("/rulesets/rs1/rules/r1")
-    assert run(cf.origin_header_status("t", "z1", "s3cret")) == "aplicada"
-    assert run(cf.origin_header_status("t", "z1", "nuevo")) == "distinta"
 
 
 def test_permission_error_explains_what_the_token_needs(monkeypatch):

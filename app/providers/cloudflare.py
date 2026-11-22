@@ -243,19 +243,3 @@ async def ensure_origin_header(token: str, zone_id: str, secret: str) -> str:
         if not r.json().get("success"):
             raise RuntimeError(tn("Cloudflare rejected the rule: {error}", error=_cf_error(r.json(), r.status_code)))
         return outcome
-
-
-async def origin_header_status(token: str, zone_id: str, secret: str) -> str:
-    """«aplicada», «distinta» (otro valor: hay que volver a aplicar) o «sin aplicar»."""
-    async with httpx.AsyncClient(timeout=20, headers=_headers(token)) as c:
-        r = await c.get(f"{API}/zones/{zone_id}/rulesets/phases/{_PHASE}/entrypoint")
-    if r.status_code == 404:
-        return "sin aplicar"
-    body = r.json()
-    if not body.get("success"):
-        raise RuntimeError(f"Cloudflare: {_cf_error(body, r.status_code)}")
-    current = next((x for x in body["result"].get("rules", []) if x.get("ref") == ORIGIN_RULE_REF), None)
-    if current is None:
-        return "sin aplicar"
-    value = current.get("action_parameters", {}).get("headers", {}).get(ORIGIN_HEADER, {}).get("value")
-    return "aplicada" if value == secret and current.get("enabled", True) else "distinta"
