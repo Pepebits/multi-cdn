@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS events (
     transition TEXT,              -- p. ej. "CF → GCORE"
     dns_diff TEXT,                -- JSON [[hostname, antes, después], ...]
     signals TEXT,                 -- JSON [str, ...]
-    simulated INTEGER NOT NULL DEFAULT 0
+    simulated INTEGER NOT NULL DEFAULT 0,
+    code TEXT                     -- código estable para la lógica (ver event_codes); NULL si no hace falta
 );
 CREATE INDEX IF NOT EXISTS events_ts ON events(ts DESC);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -44,6 +45,7 @@ class Event:
     dns_diff: list[list[str]]
     signals: list[str]
     simulated: bool
+    code: str | None = None
 
 
 class EventStore:
@@ -53,6 +55,8 @@ class EventStore:
         self.conn.execute("PRAGMA auto_vacuum=INCREMENTAL")  # solo afecta a bases nuevas
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(SCHEMA)
+        if "code" not in {r[1] for r in self.conn.execute("PRAGMA table_info(events)")}:
+            self.conn.execute("ALTER TABLE events ADD COLUMN code TEXT")  # bases anteriores a 0.3.4
         self.listeners: list = []  # p. ej. el Notifier
         # Provider texts lose the origin IP before being stored or sent as alerts (ADR-003).
         self.scrubber = scrub_origin
@@ -68,13 +72,14 @@ class EventStore:
         dns_diff: list[list[str]] | None = None,
         signals: list[str] | None = None,
         simulated: bool = False,
+        code: str | None = None,
     ) -> None:
         summary = self._scrub(summary)
         dns_diff = [[self._scrub(c) if isinstance(c, str) else c for c in row] for row in dns_diff or []]
         signals = [self._scrub(x) if isinstance(x, str) else x for x in signals or []]
         self.conn.execute(
-            "INSERT INTO events (ts, domain, actor, kind, summary, transition, dns_diff, signals, simulated)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO events (ts, domain, actor, kind, summary, transition, dns_diff, signals, simulated, code)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 datetime.now(UTC).isoformat(timespec="seconds"),
                 domain,
@@ -85,11 +90,12 @@ class EventStore:
                 json.dumps(dns_diff),
                 json.dumps(signals),
                 int(simulated),
+                code,
             ),
         )
         self.conn.commit()
         event = {"actor": actor, "kind": kind, "summary": summary, "domain": domain, "transition": transition,
-                 "dns_diff": dns_diff, "signals": signals, "simulated": simulated}
+                 "dns_diff": dns_diff, "signals": signals, "simulated": simulated, "code": code}
         for listener in self.listeners:
             try:
                 listener(event)
@@ -178,8 +184,23 @@ class EventStore:
             self.conn.execute("PRAGMA incremental_vacuum")
         return deleted
 
+    def last_with_code(self, domain: str, codes: tuple[str, ...]) -> Event | None:
+        """El evento más reciente del dominio con alguno de esos códigos (sin límite de antigüedad)."""
+        marks = ", ".join("?" * len(codes))
+        row = self.conn.execute(f"SELECT {self._COLUMNS} FROM events WHERE domain = ? AND code IN ({marks})"
+                                " ORDER BY ts DESC, id DESC LIMIT 1", (domain, *codes)).fetchone()
+        return self._event(row) if row else None
+
+    _COLUMNS = "id, ts, domain, actor, kind, summary, transition, dns_diff, signals, simulated, code"
+
+    @staticmethod
+    def _event(r) -> Event:
+        return Event(id=r[0], ts=datetime.fromisoformat(r[1]), domain=r[2], actor=r[3], kind=r[4], summary=r[5],
+                     transition=r[6], dns_diff=json.loads(r[7] or "[]"), signals=json.loads(r[8] or "[]"),
+                     simulated=bool(r[9]), code=r[10])
+
     def list(self, domain: str | None = None, actor: str | None = None, limit: int = 100) -> list[Event]:
-        sql = "SELECT * FROM events WHERE 1=1"
+        sql = f"SELECT {self._COLUMNS} FROM events WHERE 1=1"
         args: list = []
         if domain:
             sql += " AND domain = ?"
@@ -190,19 +211,4 @@ class EventStore:
             sql += " AND actor != 'auto'"
         sql += " ORDER BY ts DESC, id DESC LIMIT ?"
         args.append(limit)
-        rows = self.conn.execute(sql, args).fetchall()
-        return [
-            Event(
-                id=r[0],
-                ts=datetime.fromisoformat(r[1]),
-                domain=r[2],
-                actor=r[3],
-                kind=r[4],
-                summary=r[5],
-                transition=r[6],
-                dns_diff=json.loads(r[7] or "[]"),
-                signals=json.loads(r[8] or "[]"),
-                simulated=bool(r[9]),
-            )
-            for r in rows
-        ]
+        return [self._event(r) for r in self.conn.execute(sql, args).fetchall()]

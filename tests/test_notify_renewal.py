@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 
-from app import certs, gcore_setup
+from app import certs, event_codes, gcore_setup
 from app.notifier import Notifier, format_text, should_notify
 from app.providers import gcore
 
@@ -18,10 +18,17 @@ def test_rules_for_what_gets_notified():
     assert should_notify(ev("switch"))
     assert not should_notify(ev("switch", simulated=True))
     assert should_notify(ev("alert")) and should_notify(ev("error"))
-    assert should_notify(ev("auth", "Acceso bloqueado por intentos fallidos"))
+    assert should_notify(ev("auth", "Acceso bloqueado por intentos fallidos", code=event_codes.LOGIN_LOCKED))
     assert not should_notify(ev("auth", "Inicio de sesión desde 1.2.3.4"))
-    assert should_notify(ev("config", "Certificado renovado en Gcore, válido hasta 01/01/2027"))
+    assert should_notify(ev("config", "Certificado renovado en Gcore, válido hasta 01/01/2027", code=event_codes.CERT_RENEWED))
     assert not should_notify(ev("config", "Hostnames actualizados"))
+
+
+def test_rules_use_the_event_code_not_its_text():
+    """Reescribir un texto del catálogo no puede cambiar qué se avisa."""
+    assert should_notify(ev("auth", "cualquier texto", code=event_codes.LOGIN_LOCKED))
+    assert not should_notify(ev("auth", "Acceso bloqueado (texto antiguo, sin código)"))
+    assert should_notify(ev("config", "otro texto", code=event_codes.GCORE_PREPARED))
 
 
 def test_format_includes_dns_diff():
@@ -127,13 +134,14 @@ def test_flapping_block_alerts_are_capped_per_domain():
     async def flap():
         for i in range(10):
             # textos distintos cada vez para que no los agrupe la deduplicación por texto
-            summary = f"IPs de Cloudflare bloqueadas en {i} operadoras" if i % 2 else f"Fin del bloqueo {i}"
-            n(ev("alert", summary))
-        n(ev("alert", "Fin del bloqueo", domain="otro.example"))  # otro dominio: su propio tope
+            code = event_codes.BLOCK_START if i % 2 else event_codes.BLOCK_END
+            n(ev("alert", f"aviso {i}", code=code))
+        n(ev("alert", "fin", domain="otro.example", code=event_codes.BLOCK_END))  # otro dominio: su propio tope
+        n(ev("alert", "origen expuesto"))  # otros avisos no cuentan para el tope
         await asyncio.sleep(0.05)
 
     asyncio.run(flap())
-    assert len(sent) == notifier.BLOCK_BURST + 2
+    assert len(sent) == notifier.BLOCK_BURST + 3
     assert "silencian 1 h" in sent[notifier.BLOCK_BURST]
 
 
@@ -174,6 +182,7 @@ def test_renewal_uploads_new_cert_and_deletes_old(make_client, monkeypatch):
     assert calls["ssl"] == 99 and calls["deleted"] == [22]
     assert state.inventory.domains["example.com"].gcore_ssl_id == 99
     assert any(e.summary.startswith("Certificado renovado") for e in state.events.list(limit=5))
+    assert any(e.code == event_codes.CERT_RENEWED for e in state.events.list(limit=5))
     assert asyncio.run(gcore_setup.renew_due_certificates(state)) == []  # ya no toca
 
 
@@ -200,4 +209,49 @@ def test_cert_expiry_alerts_once_per_level(client):
 
 def test_updating_an_existing_gcore_resource_is_not_announced():
     assert not should_notify(ev("config", "Actualizado en Gcore: recurso 1, certificado hasta 01/01/2027"))
-    assert should_notify(ev("config", "Preparado en Gcore: recurso 1, certificado hasta 01/01/2027"))
+    assert should_notify(ev("config", "Preparado en Gcore: recurso 1, certificado hasta 01/01/2027",
+                            code=event_codes.GCORE_PREPARED))
+
+
+def test_restart_recovers_block_state_by_code(client):
+    """El estado de bloqueo se recupera por el código, aunque el texto cambie o el aviso sea antiguo."""
+    from app.main import restore_block_state
+    state = client.app.state.mc
+    ev_add = state.events.add
+    ev_add(actor="auto", kind="alert", domain="example.com", summary="texto reescrito", code=event_codes.BLOCK_START)
+    for i in range(250):  # más de 200 eventos después: antes se perdía
+        ev_add(actor="auto", kind="verify", domain="example.com", summary=f"comprobación {i}")
+    state.blocked_domains.clear()
+    restore_block_state(state)
+    assert "example.com" in state.blocked_domains
+    ev_add(actor="auto", kind="alert", domain="example.com", summary="otro texto", code=event_codes.BLOCK_END)
+    state.blocked_domains.clear()
+    restore_block_state(state)
+    assert "example.com" not in state.blocked_domains
+
+
+def test_restart_recovers_legacy_block_alerts_without_code(client):
+    from app.main import restore_block_state
+    state = client.app.state.mc
+    state.events.add(actor="auto", kind="alert", domain="example.com",
+                     summary="IPs de Cloudflare bloqueadas en 1 operadora; ya se sirve por Gcore")
+    state.blocked_domains.clear()
+    restore_block_state(state)
+    assert "example.com" in state.blocked_domains
+
+
+def test_old_events_table_gets_the_code_column(tmp_path):
+    import sqlite3
+    from app.db import EventStore
+    path = tmp_path / "old.db"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE events (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, domain TEXT,"
+                 " actor TEXT NOT NULL, kind TEXT NOT NULL, summary TEXT NOT NULL, transition TEXT, dns_diff TEXT,"
+                 " signals TEXT, simulated INTEGER NOT NULL DEFAULT 0)")
+    conn.execute("INSERT INTO events (ts, actor, kind, summary) VALUES ('2026-11-01T00:00:00+00:00', 'auto', 'alert', 'viejo')")
+    conn.commit()
+    conn.close()
+    store = EventStore(path)
+    assert store.list()[0].code is None
+    store.add(actor="auto", kind="alert", summary="nuevo", code=event_codes.BLOCK_END)
+    assert store.list()[0].code == event_codes.BLOCK_END

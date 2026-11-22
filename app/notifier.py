@@ -24,22 +24,17 @@ from urllib.parse import unquote, urlparse
 
 import httpx
 
-from .i18n import LANGS, N_, tn, translate
+from . import event_codes
+from .i18n import tn
 
 log = logging.getLogger("multicdn.notify")
 DEDUP_SECONDS = 600
 BLOCK_BURST, BLOCK_WINDOW = 4, 3600
-# Inicio de los avisos de bloqueo en cada idioma en que pueden estar guardados (ver main.restore_block_state).
-BLOCK_START, BLOCK_END = ("Cloudflare IPs blocked", "IPs de Cloudflare bloqueadas"), ("Block ended", "Fin del bloqueo")
+BLOCK_CODES = (event_codes.BLOCK_START, event_codes.BLOCK_END)
+# Configuración que se avisa: la primera preparación y las renovaciones automáticas (una
+# actualización la lanza el usuario, que ya lo ve en el panel).
+NOTIFIED_CONFIG = (event_codes.GCORE_PREPARED, event_codes.CERT_RENEWED)
 ICON = {"switch": "🔀", "alert": "⚠️", "error": "❌", "auth": "🔐", "config": "✅"}
-# Resúmenes de configuración que se avisan (mismas claves que en gcore_setup), en cualquier idioma:
-# el historial guarda el texto en el idioma en que se escribió.
-NOTIFIED_CONFIG = (N_("Prepared on Gcore: resource {id}, certificate until {date}"),
-                   N_("Certificate renewed on Gcore, valid until {date}"))
-
-
-def _config_prefixes() -> tuple[str, ...]:
-    return tuple(translate(key, lang).split("{")[0] for key in NOTIFIED_CONFIG for lang in LANGS)
 
 
 def should_notify(event: dict) -> bool:
@@ -49,11 +44,9 @@ def should_notify(event: dict) -> bool:
     if kind in ("alert", "error"):
         return True
     if kind == "auth":
-        summary = event["summary"].lower()
-        return "bloque" in summary or "blocked" in summary
+        return event.get("code") == event_codes.LOGIN_LOCKED
     if kind == "config":
-        # Primera preparación y renovaciones automáticas; una actualización la lanza el usuario.
-        return event["summary"].startswith(_config_prefixes())
+        return event.get("code") in NOTIFIED_CONFIG
     return False
 
 
@@ -87,7 +80,7 @@ class Notifier:
         if now - self._recent.get(key, -DEDUP_SECONDS) < DEDUP_SECONDS:
             return
         self._recent[key] = now
-        if event["kind"] == "alert" and event["summary"].startswith(BLOCK_START + BLOCK_END):
+        if event.get("code") in BLOCK_CODES:
             domain = event.get("domain") or ""
             sent = [t for t in self._block_sent.get(domain, []) if now - t < BLOCK_WINDOW]
             self._block_sent[domain] = sent + [now]

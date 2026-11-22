@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- **History events that the panel reacts to carry a stable code** (new `events.code` column, added
+  automatically on start). The notifier and the restart logic match on it instead of on the
+  translated summary, so rewording a message no longer changes which alerts are sent, and the
+  block state survives a restart however much history came after it. Events stored before this
+  version are still recognised by their text.
+
 ### Fixed
 - **Recovery codes can be typed on a phone.** The sign-in code field opened the numeric keypad, so
   the letters of a recovery code could not be entered. Recovery codes now have their own field

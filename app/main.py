@@ -21,13 +21,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
-from . import alerts, env_sync, envfile, envparse, error_reporting, heartbeat, i18n, notify, origin_health, proxy
+from . import alerts, env_sync, event_codes, envfile, envparse, error_reporting, heartbeat, i18n, notify, origin_health, proxy
 from .auth import AuthStore, totp_uri
 from .gcore_setup import RENEW_BEFORE, Job, prepare_domain, renew_and_check
 from .gcore_usage import refresh_usage
 from .gcore_usage import human as human_bytes
 from .i18n import N_, tn, tnn, tr, trn
-from .notifier import BLOCK_END, BLOCK_START, Notifier
+from .notifier import Notifier
 from .config import Domain, Inventory, load_dotenv, load_inventory
 from .credentials import ENV_TOKENS, PROVIDERS, CredentialStore
 from .db import EventStore
@@ -229,12 +229,22 @@ async def run_engine(state: State) -> None:
 BLOCK_END_GRACE = timedelta(minutes=10)
 
 
+# Avisos de bloqueo guardados antes de 0.3.4, sin código: se reconocen por el texto en cada idioma.
+LEGACY_BLOCK_START = ("Cloudflare IPs blocked", "IPs de Cloudflare bloqueadas")
+LEGACY_BLOCK_END = ("Block ended", "Fin del bloqueo")
+
+
 def restore_block_state(state: State) -> None:
     """Tras un reinicio, recupera del historial qué dominios ya tienen el aviso de bloqueo enviado."""
+    codes = (event_codes.BLOCK_START, event_codes.BLOCK_END)
     for name in state.inventory.domains:
-        last = next((e for e in state.events.list(domain=name, limit=200)
-                     if e.kind == "alert" and e.summary.startswith(BLOCK_START + BLOCK_END)), None)
-        if last and last.summary.startswith(BLOCK_START):
+        last = state.events.last_with_code(name, codes)
+        if last is None:  # historial anterior a los códigos
+            legacy = next((e for e in state.events.list(domain=name, limit=200) if e.kind == "alert"
+                           and e.summary.startswith(LEGACY_BLOCK_START + LEGACY_BLOCK_END)), None)
+            if legacy and legacy.summary.startswith(LEGACY_BLOCK_START):
+                state.blocked_domains.add(name)
+        elif last.code == event_codes.BLOCK_START:
             state.blocked_domains.add(name)
 
 
@@ -264,7 +274,7 @@ def check_block_transitions(state: State, now: datetime | None = None) -> None:
             else:
                 from .views import STATUS
                 where = tn("current status: {status}", status=tn(STATUS[d.status][0]).lower())
-            state.events.add(actor="auto", kind="alert", domain=d.name,
+            state.events.add(actor="auto", kind="alert", domain=d.name, code=event_codes.BLOCK_START,
                              summary=tnn("Cloudflare IPs blocked at {n} ISP; {where}", "Cloudflare IPs blocked at {n} ISPs; {where}",
                                          d.blocked_count, where=where),
                              signals=[tn("{isp}: blocked", isp=r.name) for r in d.isp_rows if r.state == "blocked"])
@@ -282,7 +292,7 @@ def check_block_transitions(state: State, now: datetime | None = None) -> None:
                              mins=mins)
             else:
                 summary = tn("Block ended on its Cloudflare IPs; it can now return to Cloudflare")
-            state.events.add(actor="auto", kind="alert", domain=d.name, summary=summary)
+            state.events.add(actor="auto", kind="alert", domain=d.name, summary=summary, code=event_codes.BLOCK_END)
 
 
 async def refresh_dns(state: State) -> None:
@@ -2027,7 +2037,7 @@ def _totp_attempt(request: Request, session, passed, failure: str | None = None,
     s.auth.register_failure(*keys)
     s.events.add(actor=actor, kind="auth", summary=failure or tn("Wrong code for {user} from {ip}", user=user.username, ip=ip))
     if s.auth.locked(*keys):
-        s.events.add(actor="auto", kind="auth",
+        s.events.add(actor="auto", kind="auth", code=event_codes.LOGIN_LOCKED,
                      summary=tn("Access blocked after failed attempts ({user} from {ip})", user=user.username, ip=ip))
         return _locked_out(request, session)
     return False
@@ -2053,6 +2063,7 @@ async def login_post(request: Request, username: str = Form(""), password: str =
         s.events.add(actor="auto", kind="auth", summary=tn('Wrong password for "{user}" from {ip}', user=username.strip()[:40], ip=_client_ip(request)))
         if s.auth.locked(*keys):
             s.events.add(actor="auto", kind="auth",
+                         code=event_codes.LOGIN_LOCKED,
                          summary=tn('Access blocked after failed attempts ("{user}" from {ip})',
                                     user=username.strip()[:40], ip=_client_ip(request)))
         return _auth_page(request, "login.html", has_users=True, error=tr("Incorrect username or password."), username=username)
@@ -2102,6 +2113,7 @@ async def login_codigo_post(request: Request, code: str = Form(""), next: str = 
         s.events.add(actor="auto", kind="auth", summary=tn("Wrong code for {user} from {ip}", user=user.username, ip=_client_ip(request)))
         if s.auth.locked(*keys):
             s.events.add(actor="auto", kind="auth",
+                         code=event_codes.LOGIN_LOCKED,
                          summary=tn("Access blocked after failed attempts ({user} from {ip})",
                                     user=user.username, ip=_client_ip(request)))
         return _auth_page(request, "login_codigo.html", username=user.username, error=tr("Wrong or already used code."))

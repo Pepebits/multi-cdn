@@ -10,7 +10,7 @@ import secrets as pysecrets
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from . import certs
+from . import certs, event_codes
 from .error_reporting import scrub_origin
 from .i18n import format_when, notify_lang, tn, tnn, tr
 from .providers import gcore
@@ -168,13 +168,16 @@ async def _prepare(state, name: str, job: Job, renewal: bool = False) -> None:
             ok, msg = False, f"{n}: {type(exc).__name__}"
         job.log(msg, "ok" if ok else "warn")
 
+    code = None
     if renewal:
+        code = event_codes.CERT_RENEWED
         summary = tn("Certificate renewed on Gcore, valid until {date}", date=format_when(cert.not_after, notify_lang(), time=False))
     elif existed:  # recurso ya existente: configuración y cabecera secreta al día, mismo DNS
         summary = tn("Updated on Gcore: resource {id}, certificate until {date}", id=resource_id, date=format_when(cert.not_after, notify_lang(), time=False))
     else:
+        code = event_codes.GCORE_PREPARED
         summary = tn("Prepared on Gcore: resource {id}, certificate until {date}", id=resource_id, date=format_when(cert.not_after, notify_lang(), time=False))
-    state.events.add(actor="auto", kind="config", domain=name, summary=summary,
+    state.events.add(actor="auto", kind="config", domain=name, summary=summary, code=code,
                      signals=[tn("target {target}", target=target), tn("origin multicdn-{server}", server=server_id)])
     job.log(tr("Done. Public DNS was not touched: the domain is still served through Cloudflare."), "ok")
 
