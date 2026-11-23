@@ -226,6 +226,63 @@ def test_feed_format_alert_says_why(client):
     assert summaries(state) == ["Feed de bloqueos no disponible (solo 0 IPs en vez de miles)"]
 
 
+# ---------------------------------------------------------------- Gcore readiness (drill without DNS)
+
+@pytest.fixture
+def ready_state(client, monkeypatch):
+    """example.com prepared on Gcore and on Cloudflare; check_backup answers from `result`."""
+    from app.engine import failover
+    from app.signals.dnscheck import Resolution
+    state = client.app.state.mc
+    state.store.set_gcore("example.com", 33, 22, (T0 + timedelta(days=80)).isoformat(), "cl-test.gcorecdn.com",
+                          ["example.com", "www.example.com"])
+    state.reload()
+    state.resolutions = {h: Resolution(h, (CF_IP,), None, "cloudflare") for h in ("example.com", "www.example.com")}
+    result = {"problem": "example.com: HTTP 502 via Gcore", "calls": []}
+
+    async def check(state_, name):
+        result["calls"].append(name)
+        return result["problem"]
+    monkeypatch.setattr(failover, "check_backup", check)
+    state.result = result
+    return state
+
+
+def test_readiness_check_alerts_on_the_retry_and_recovers(ready_state):
+    state = ready_state
+    asyncio.run(tasks.check_gcore_readiness(state, now=T0))
+    assert state.result["calls"] == ["example.com"]  # example.net is not prepared: skipped
+    assert not summaries(state) and tasks.gcore_ready_interval(state) == tasks.GCORE_READY_RETRY
+    asyncio.run(tasks.check_gcore_readiness(state, now=T0 + timedelta(minutes=10)))
+    assert summaries(state) == ["Gcore no podría servir example.com si hubiera que cambiar ahora: "
+                                "example.com: HTTP 502 via Gcore"]
+    state.result["problem"] = None
+    asyncio.run(tasks.check_gcore_readiness(state, now=T0 + timedelta(minutes=20)))
+    assert summaries(state)[0] == "Gcore vuelve a estar listo para servir example.com (falló durante 20 min)"
+    assert tasks.gcore_ready_interval(state) == tasks.GCORE_READY_INTERVAL
+
+
+def test_readiness_skips_domains_already_on_gcore(ready_state):
+    from app.signals.dnscheck import Resolution
+    state = ready_state
+    state.resolutions = {h: Resolution(h, ("5.188.126.61",), "cl-test.gcorecdn.com.", "gcore")
+                         for h in ("example.com", "www.example.com")}
+    asyncio.run(tasks.check_gcore_readiness(state, now=T0))
+    assert state.result["calls"] == []  # watch_gcore covers it while it serves
+
+
+def test_check_gcore_now_button(ready_state, client):
+    page = client.get("/dominios/example.com").text
+    assert 'formaction="/dominios/example.com/gcore/comprobar"' in page and "cada 6 h" in page
+    r = client.post("/dominios/example.com/gcore/comprobar", follow_redirects=True)
+    assert "Gcore no podría servirlo ahora: example.com: HTTP 502 via Gcore" in r.text and "Falla" in r.text
+    ready_state.result["problem"] = None
+    r = client.post("/dominios/example.com/gcore/comprobar", follow_redirects=True)
+    assert "Gcore está listo: serviría example.com" in r.text and "Listo" in r.text
+    r = client.post("/dominios/example.net/gcore/comprobar", follow_redirects=True)
+    assert "Prepara antes el dominio en Gcore" in r.text
+
+
 # ---------------------------------------------------------------- DNS propagation after a switch
 
 def test_propagation_time_is_recorded_when_public_dns_shows_the_switch(client):

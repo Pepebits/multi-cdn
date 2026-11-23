@@ -85,10 +85,12 @@
       <div><dt>{{ _('DNS target') }}</dt><dd>{{ cfg.hostnames|map(attribute='gcore_target')|select|first|default('—') }}</dd></div>
       <div><dt>{{ _('Certificate') }}</dt><dd>{{ _m('valid until {date}', date=cert_until|day) }}</dd></div>
       <div><dt>{{ _('Automatic renewal') }}</dt><dd>{{ _m('from {date} (30 days before expiry)', date=renew_from|day) if renew_from else '—' }}</dd></div>
+      <div><dt>{{ _('Last readiness check') }}</dt><dd>{% if ready_check %}{{ ready_check[0]|when }} · {% if ready_check[1] %}<span class="pill pill--blocked">{{ _('Failing') }}</span> {{ ready_check[1] }}{% else %}<span class="pill pill--free">{{ _('Ready') }}</span>{% endif %}{% else %}{{ _('every 6 h while it is on Cloudflare') }}{% endif %}</dd></div>
     </dl>
     {% endif %}
     <p class="help" style="margin:0">{{ m.icon('info') }} {{ _m("Creates or updates on Gcore the origin, the certificate (Let's Encrypt via DNS-01 on Cloudflare) and the CDN resource. <strong>It does not change the public DNS</strong>: the domain stays on Cloudflare until you switch.") }}</p>
     <form method="post" action="/dominios/{{ d.name }}/gcore/preparar" class="actions-end">{{ csrf_field() }}
+      {% if cfg.gcore_resource_id %}<button class="btn" type="submit" formaction="/dominios/{{ d.name }}/gcore/comprobar" title="{{ _('Checks that Gcore would serve it now, without changing DNS') }}">{{ m.icon('check') }}{{ _('Check Gcore now') }}</button>{% endif %}
       <button class="btn btn--primary" type="submit" {% if job and not job.done %}disabled{% endif %}>
         {% if job and not job.done %}{{ m.icon('clock') }}{{ _('Preparing…') }}{% else %}{{ m.icon('refresh' if cfg.gcore_resource_id else 'wrench') }}{{ _('Update on Gcore') if cfg.gcore_resource_id else _('Prepare on Gcore') }}{% endif %}
       </button>

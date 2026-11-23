@@ -7,6 +7,12 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Gcore readiness check (a drill without DNS changes).** Every 6 h, for each domain prepared on
+  Gcore and still on Cloudflare, the panel runs the pre-switch checks: resource active, edge
+  answering HTTPS with the real hostname (which also tests the certificate and that the origin
+  accepts Gcore), edge not blocked. On a failure it looks again in 10 min and alerts if it still
+  fails, so a broken token, certificate or origin shows up before a match. "Check Gcore now" on
+  the domain page runs it at once; the page shows the last result.
 - **Gcore is watched while it serves.** Every 5 min, while a domain resolves to Gcore, the panel
   repeats the pre-switch checks (resource active, edge resolves and answers HTTPS for each
   hostname). It alerts on the second failure in a row, once, and again when Gcore serves it.

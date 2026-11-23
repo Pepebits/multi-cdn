@@ -50,6 +50,8 @@ from .tasks import (
     CF_SYNC_INTERVAL,
     DNS_INTERVAL,
     GCORE_WATCH_INTERVAL,
+    check_gcore_readiness,
+    gcore_ready_interval,
     HEARTBEAT_INTERVAL,
     ORIGIN_HEALTH_INTERVAL,
     PRUNE_INTERVAL,
@@ -116,6 +118,7 @@ async def lifespan(app: FastAPI):
             asyncio.create_task(_delayed_loop(120, HEARTBEAT_INTERVAL, heartbeat.beat, state)),
             asyncio.create_task(_delayed_loop(15, ORIGIN_HEALTH_INTERVAL, origin_health.check, state)),
             asyncio.create_task(_delayed_loop(60, GCORE_WATCH_INTERVAL, watch_gcore, state)),
+            asyncio.create_task(_delayed_loop(180, lambda: gcore_ready_interval(state), check_gcore_readiness, state)),
         ]
     yield
     for t in tasks:

@@ -38,6 +38,8 @@ BACKUP_INTERVAL = 24 * 3600
 HEARTBEAT_INTERVAL = 300
 ORIGIN_HEALTH_INTERVAL = 120
 GCORE_WATCH_INTERVAL = 300
+GCORE_READY_INTERVAL = 6 * 3600  # check prepared domains still on Cloudflare
+GCORE_READY_RETRY = 600          # after a failure, look again soon; alert if it still fails
 GCORE_WATCH_AFTER = timedelta(minutes=4)  # alert on the second failed check in a row (5 min apart)
 
 
@@ -423,4 +425,40 @@ def check_propagation(state: State, now: datetime | None = None) -> None:
             state.events.add(actor="auto", kind="alert", domain=domain, summary=tn(
                 "Public DNS still does not show {domain} on {cdn} {minutes} min after the switch: check its "
                 "records in Cloudflare", domain=domain, cdn=cdn, minutes=int(DNS_PROPAGATION_LIMIT.total_seconds() // 60)))
+
+
+def gcore_ready_interval(state: State) -> int:
+    """Every 6 h; every 10 min while some domain failed its last check."""
+    failing = any(problem for _, problem in state.gcore_ready.values())
+    return GCORE_READY_RETRY if failing else GCORE_READY_INTERVAL
+
+
+async def check_gcore_ready(state: State, name: str, now: datetime | None = None) -> str | None:
+    """Could Gcore serve this domain right now? The pre-switch checks (resource active, edge
+    resolves, HTTPS answers with the real hostname, edge not blocked), without touching DNS."""
+    problem = await failover.check_backup(state, name)
+    state.gcore_ready[name] = (now or datetime.now(UTC), problem)
+    return problem
+
+
+async def check_gcore_readiness(state: State, now: datetime | None = None) -> None:
+    """A drill without DNS changes: for each domain prepared on Gcore and still on Cloudflare, check
+    that the backup would work, so a broken token, certificate or origin shows up before a match."""
+    now = now or datetime.now(UTC)
+    for view in state.views():
+        cfg = state.inventory.domains[view.name]
+        key = f"gcore_ready:{view.name}"
+        if not cfg.gcore_resource_id or not view.gcore_ready or view.status == "gcore":
+            alerts.clear(state, key, now=now)  # not prepared, or on Gcore (watch_gcore covers it)
+            state.gcore_ready.pop(view.name, None)
+            continue
+        problem = await check_gcore_ready(state, view.name, now)
+        if problem:
+            alerts.problem(state, key, tn("Gcore could not serve {domain} if it had to switch now: {problem}",
+                                          domain=view.name, problem=problem),
+                           domain=view.name, after=timedelta(seconds=GCORE_READY_RETRY - 60), now=now)
+        else:
+            alerts.clear(state, key, lambda lasted, name=view.name: tn(
+                "Gcore is ready to serve {domain} again (it was failing for {minutes} min)", domain=name,
+                minutes=alerts.minutes(lasted)), domain=view.name, now=now)
 

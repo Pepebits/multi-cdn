@@ -22,6 +22,7 @@ from ..providers.cloudflare import OriginExposureError, plan_to_gcore
 from ..signals import calendar as match_calendar
 from ..state import State
 from ..tasks import (
+    check_gcore_ready,
     expect_dns,
     recheck_dns_soon,
     run_engine,
@@ -156,6 +157,7 @@ async def dominio(request: Request, name: str):
         inventory_servers={sid: bool(srv.origin_ipv4) for sid, srv in s.inventory.servers.items()},
         cert_until=cert_until,
         renew_from=cert_until - RENEW_BEFORE if cert_until else None,
+        ready_check=s.gcore_ready.get(name),
         tl=domain_timeline_view(s, name),
     ))
 
@@ -301,6 +303,20 @@ ORIGIN_RULE_FLASH = {
     "actualizada": N_("Cloudflare rule updated: requests to the origin carry the secret header"),
     "sin cambios": N_("Cloudflare rule unchanged: requests to the origin carry the secret header"),
 }
+
+
+@router.post("/dominios/{name}/gcore/comprobar")
+async def gcore_comprobar(request: Request, name: str):
+    """Runs now the check the panel makes every 6 h: could Gcore serve this domain? No DNS change."""
+    s = _state(request)
+    _require_domain(s, name)
+    url = str(request.url_for("dominio", name=name))
+    if not s.inventory.domains[name].gcore_resource_id:
+        return _back(url, "gcore", error=tr("Prepare the domain on Gcore first"))
+    problem = await check_gcore_ready(s, name)
+    if problem:
+        return _back(url, "gcore", error=tr("Gcore could not serve it now: {problem}", problem=problem))
+    return _back(url, "gcore", ok=tr("Gcore is ready: it would serve {domain} if it had to switch now", domain=name))
 
 
 @router.post("/dominios/{name}/gcore/preparar")

@@ -72,6 +72,8 @@ class State:
     feed_etag: str | None = None  # ETag of the last feed read (conditional GET)
     # domain -> (CDN it should resolve to, hostnames switched, when): until public DNS shows it
     pending_dns: dict[str, tuple[str, list[str], datetime]] = field(default_factory=dict)
+    # domain -> (when, problem or None): last check that Gcore could serve it (tasks.check_gcore_readiness)
+    gcore_ready: dict[str, tuple[datetime, str | None]] = field(default_factory=dict)
     feed_mode: str | None = None  # "fast" | "idle": feed polling mode, to log only its changes
 
     def __post_init__(self) -> None:

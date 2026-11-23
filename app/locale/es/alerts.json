@@ -32,5 +32,17 @@
   "it is being served by Gcore": "se está sirviendo por Gcore",
   "a match is on or about to start": "hay un partido en curso o a punto de empezar",
   "Public DNS shows {domain} on {cdn} {time} after the switch": "El DNS público ya muestra {domain} en {cdn} {time} después del cambio",
-  "Public DNS still does not show {domain} on {cdn} {minutes} min after the switch: check its records in Cloudflare": "El DNS público aún no muestra {domain} en {cdn} {minutes} min después del cambio: revisa sus registros en Cloudflare"
+  "Public DNS still does not show {domain} on {cdn} {minutes} min after the switch: check its records in Cloudflare": "El DNS público aún no muestra {domain} en {cdn} {minutes} min después del cambio: revisa sus registros en Cloudflare",
+  "Gcore could not serve {domain} if it had to switch now: {problem}": "Gcore no podría servir {domain} si hubiera que cambiar ahora: {problem}",
+  "Gcore is ready to serve {domain} again (it was failing for {minutes} min)": "Gcore vuelve a estar listo para servir {domain} (falló durante {minutes} min)",
+  "Prepare the domain on Gcore first": "Prepara antes el dominio en Gcore",
+  "Gcore could not serve it now: {problem}": "Gcore no podría servirlo ahora: {problem}",
+  "Gcore is ready: it would serve {domain} if it had to switch now": "Gcore está listo: serviría {domain} si hubiera que cambiar ahora",
+  "Last readiness check": "Última comprobación",
+  "Failing": "Falla",
+  "Ready": "Listo",
+  "every 6 h while it is on Cloudflare": "cada 6 h mientras está en Cloudflare",
+  "Checks that Gcore would serve it now, without changing DNS": "Comprueba que Gcore lo serviría ahora, sin cambiar el DNS",
+  "Check Gcore now": "Comprobar Gcore ahora",
+  "{domain}: Gcore could not serve it if it had to switch": "{domain}: Gcore no podría servirlo si hubiera que cambiar"
 }
