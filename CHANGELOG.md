@@ -12,6 +12,10 @@ All notable changes to this project are documented here. The format follows
   hostname). It alerts on the second failure in a row, once, and again when Gcore serves it.
   From the server it cannot see blocks inside Spanish ISPs, only Gcore failing for everyone.
 - `MULTICDN_VERSION` in `.env` pins the image version (`latest` by default), to roll back.
+- Tests for the code that changes things for real, against fake Cloudflare and Gcore APIs and a
+  stand-in for certbot: the DNS `PATCH` of a switch, the origin guard, Gcore resources and
+  certificates, the edge probe and the pre-switch checks. Coverage goes from 86 % to 89 % (Gcore
+  adapter 25 → 82 %, certificates 33 → 95 %), and CI fails below 85 %.
 
 ### Fixed
 - **A broken block feed no longer reads as "no blocks".** A feed with too few IPs (under 300; a

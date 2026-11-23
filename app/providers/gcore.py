@@ -115,7 +115,7 @@ async def probe_edge(edge_host: str, hostname: str, timeout: float = 15) -> tupl
     loop = asyncio.get_running_loop()
     infos = await loop.getaddrinfo(edge_host, 443, type=socket.SOCK_STREAM)
     # IPv4 primero: muchas redes no tienen salida IPv6 y el borde publica ambas
-    ips = sorted({str(i[4][0]) for i in infos}, key=lambda a: ":" in a)
+    ips = sorted({str(i[4][0]) for i in infos}, key=lambda a: (":" in a, a))  # always the same order
     ctx = ssl.create_default_context()
     reader = writer = None
     ip = "?"
