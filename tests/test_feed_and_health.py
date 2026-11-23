@@ -27,7 +27,15 @@ def payload(now=T0, blocked=False, extra_blocked=0):
     for i in range(extra_blocked):
         data += [{"ip": f"198.51.100.{i}", "isp": isp, "description": "Cloudflare",
                   "stateChanges": [{"timestamp": ts, "state": True}]} for isp in ("Movistar", "Vodafone", "Orange")]
+    data += FILLER  # a real feed has thousands of IPs; fewer is rejected as broken
     return {"lastUpdate": ts, "data": data}
+
+
+# Free IPs (documentation ranges) at the five ISPs, so the payload passes hayahora.check_feed.
+FILLER = [{"ip": ip, "isp": isp, "description": "Cloudflare",
+           "stateChanges": [{"timestamp": "2026-11-01 00:00:00Z", "state": False}]}
+          for ip in [f"192.0.2.{i}" for i in range(256)] + [f"203.0.113.{i}" for i in range(100, 250)]
+          for isp in ("Movistar", "Vodafone", "Orange", "DIGI", "Masmovil")]
 
 
 def feed_server(responses):
@@ -175,6 +183,90 @@ def test_feed_down_alerts_once_after_second_failure_and_recovers(client, tmp_pat
     assert state.feed_error is None
     assert summaries(state)[0] == "El feed de bloqueos vuelve a estar disponible (caído 7 min)"
     assert not alerts.active(state, "feed_down")
+
+
+def test_a_broken_feed_is_rejected_and_never_reads_as_no_blocks(client):
+    """Empty, renamed or reshaped: the last good read stays (it goes stale and the engine stops
+    deciding) instead of an empty one that would send domains back to Cloudflare mid-block."""
+    state = client.app.state.mc
+    now = datetime.now(UTC)
+    good = payload(now, blocked=True)
+    ts = now.strftime("%Y-%m-%d %H:%M:%SZ")
+    renamed = {"lastUpdate": ts, "items": good["data"]}
+    one_isp = {"lastUpdate": ts, "data": [e for e in good["data"] if e["isp"] == "Movistar"]}
+    state.client, _ = feed_server([good, {"lastUpdate": ts, "data": []}, renamed, one_isp])
+    asyncio.run(tasks.refresh_feed(state, now=now))
+    first = state.feed
+    assert first.state(CF_IP, "Movistar").blocked
+    for reason in ("solo 0 IPs", "solo 0 IPs", "solo 1 de las operadoras"):
+        asyncio.run(tasks.refresh_feed(state, now=now))
+        assert state.feed is first and reason in state.feed_error
+
+
+def test_a_sudden_drop_is_rejected_while_the_last_read_is_fresh():
+    ips = ([f"192.0.2.{i}" for i in range(256)] + [f"198.51.100.{i}" for i in range(256)]
+           + [f"203.0.113.{i}" for i in range(256)])
+
+    def snapshot(n):
+        return hayahora.parse_feed({"lastUpdate": "2026-11-15 12:00:00Z", "data": [
+            {"ip": ip, "isp": isp, "stateChanges": [{"timestamp": "2026-11-01 00:00:00Z", "state": False}]}
+            for ip in ips[:n] for isp in ("Movistar", "Vodafone", "Orange")]})
+    big, small = snapshot(768), snapshot(320)  # small is a valid size, but less than half of big
+    with pytest.raises(hayahora.FeedFormatError, match="lectura anterior"):
+        hayahora.check_feed(small, big)
+    hayahora.check_feed(small, None)  # with no fresh read to compare (stale), a lasting change is accepted
+
+
+def test_feed_format_alert_says_why(client):
+    state = client.app.state.mc
+    ts = T0.strftime("%Y-%m-%d %H:%M:%SZ")
+    state.client, _ = feed_server([{"lastUpdate": ts, "data": []}] * 2)
+    asyncio.run(tasks.refresh_feed(state, now=T0))
+    asyncio.run(tasks.refresh_feed(state, now=T0 + timedelta(seconds=95)))
+    assert summaries(state) == ["Feed de bloqueos no disponible (solo 0 IPs en vez de miles)"]
+
+
+# ---------------------------------------------------------------- Gcore while it serves
+
+def test_gcore_watch_alerts_on_the_second_failure_and_recovers(client, monkeypatch):
+    from app.engine import failover
+    from app.signals.dnscheck import Resolution
+    state = client.app.state.mc
+    state.store.set_gcore("example.com", 33, 22, (T0 + timedelta(days=80)).isoformat(), "cl-test.gcorecdn.com",
+                          ["example.com", "www.example.com"])
+    state.reload()
+    state.resolutions = {h: Resolution(h, ("5.188.126.61",), "cl-test.gcorecdn.com.", "gcore")
+                         for h in ("example.com", "www.example.com")}
+    result = ["example.com: no response from the Gcore edge (TimeoutError)"]
+
+    async def check(state_, name):
+        return result[0]
+    monkeypatch.setattr(failover, "check_backup", check)
+    asyncio.run(tasks.watch_gcore(state, now=T0))
+    assert not summaries(state, "error")  # one failed check is not enough
+    asyncio.run(tasks.watch_gcore(state, now=T0 + timedelta(minutes=4)))
+    assert summaries(state, "error") == ["Gcore no está sirviendo example.com: example.com: no response from the "
+                                         "Gcore edge (TimeoutError)"]
+    asyncio.run(tasks.watch_gcore(state, now=T0 + timedelta(minutes=6)))
+    assert len(summaries(state, "error")) == 1  # once, not every check
+    result[0] = None
+    asyncio.run(tasks.watch_gcore(state, now=T0 + timedelta(minutes=10)))
+    assert summaries(state)[0] == "Gcore vuelve a servir example.com (falló durante 10 min)"
+    assert not alerts.active(state, "gcore_serving:")
+
+
+def test_gcore_watch_skips_domains_on_cloudflare(client, monkeypatch):
+    from app.engine import failover
+    from app.signals.dnscheck import Resolution
+    state = client.app.state.mc
+    state.resolutions = {h: Resolution(h, (CF_IP,), None, "cloudflare") for h in ("example.com", "www.example.com")}
+    called = []
+
+    async def check(state_, name):
+        called.append(name)
+    monkeypatch.setattr(failover, "check_backup", check)
+    asyncio.run(tasks.watch_gcore(state, now=T0))
+    assert called == []
 
 
 # ---------------------------------------------------------------- 1. Cloudflare reads

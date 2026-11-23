@@ -19,5 +19,11 @@
   "Feed interval saved": "Intervalo del feed guardado",
   "Choose one of the listed intervals": "Elige uno de los intervalos de la lista",
   "Block feed read every {seconds} s when nothing is going on": "Feed de bloqueos leído cada {seconds} s cuando no pasa nada",
-  "Block state keeps changing; block alerts for this domain are muted for 1 h (see the panel history)": "El estado de bloqueo no deja de cambiar; se silencian 1 h los avisos de bloqueo de este dominio (ver historial del panel)"
+  "Block state keeps changing; block alerts for this domain are muted for 1 h (see the panel history)": "El estado de bloqueo no deja de cambiar; se silencian 1 h los avisos de bloqueo de este dominio (ver historial del panel)",
+  "only {n} IPs instead of thousands": "solo {n} IPs en vez de miles",
+  "only {n} of the known ISPs": "solo {n} de las operadoras conocidas",
+  "{n} IPs, down from {before} in the previous read": "{n} IPs, frente a {before} en la lectura anterior",
+  "{domain}: Gcore is not serving it while it is the active CDN": "{domain}: Gcore no lo sirve y es el CDN activo",
+  "Gcore is not serving {domain}: {problem}": "Gcore no está sirviendo {domain}: {problem}",
+  "Gcore serves {domain} again (it failed for {minutes} min)": "Gcore vuelve a servir {domain} (falló durante {minutes} min)"
 }

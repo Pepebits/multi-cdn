@@ -37,12 +37,16 @@ USAGE_INTERVAL = 3600
 BACKUP_INTERVAL = 24 * 3600
 HEARTBEAT_INTERVAL = 300
 ORIGIN_HEALTH_INTERVAL = 120
+GCORE_WATCH_INTERVAL = 120
+GCORE_WATCH_AFTER = timedelta(minutes=3)  # alert on the second failed check in a row
 
 
 async def refresh_feed(state: State, now: datetime | None = None) -> None:
     try:
         snapshot, etag = await hayahora.fetch_feed(state.http, state.feed_etag if state.feed else None)
         if snapshot is not None:
+            fresh = state.feed if state.feed is not None and not state.feed.is_stale(now) else None
+            hayahora.check_feed(snapshot, fresh)  # a broken feed must not read as "no blocks"
             state.feed = snapshot
         elif state.feed is not None:  # 304: same data, read just now
             state.feed.fetched_at = datetime.now(UTC)
@@ -52,7 +56,8 @@ async def refresh_feed(state: State, now: datetime | None = None) -> None:
         state.feed_error = f"{type(exc).__name__}: {exc}"
         log.warning("hayahora feed unavailable: %s", state.feed_error)
         # An isolated failure is retried in 90 s; alert from the second one in a row.
-        alerts.problem(state, "feed_down", tn("Block feed unavailable ({error})", error=type(exc).__name__),
+        error = str(exc) if isinstance(exc, hayahora.FeedFormatError) else type(exc).__name__
+        alerts.problem(state, "feed_down", tn("Block feed unavailable ({error})", error=error),
                        after=FEED_DOWN_AFTER, now=now)
         return
     alerts.clear(state, "feed_down", lambda lasted: tn("Block feed available again (down {minutes} min)",
@@ -363,3 +368,23 @@ async def recheck_dns_soon(state: State) -> None:
             await refresh_dns(state)
         except Exception:
             log.exception("DNS re-check after a switch failed")
+
+
+async def watch_gcore(state: State, now: datetime | None = None) -> None:
+    """While a domain is served by Gcore (public DNS), check that Gcore still serves it: the same
+    checks as before a switch (resource active, edge resolves and answers HTTPS for each hostname).
+    From the VPS this cannot see blocks inside Spanish ISPs, only Gcore failing for everyone."""
+    for view in state.views():
+        key = f"gcore_serving:{view.name}"
+        if view.status != "gcore":
+            alerts.clear(state, key, now=now)  # left Gcore: nothing to report
+            continue
+        problem = await failover.check_backup(state, view.name)
+        if problem:
+            alerts.problem(state, key, tn("Gcore is not serving {domain}: {problem}", domain=view.name, problem=problem),
+                           domain=view.name, kind="error", after=GCORE_WATCH_AFTER, now=now)
+        else:
+            alerts.clear(state, key, lambda lasted, name=view.name: tn(
+                "Gcore serves {domain} again (it failed for {minutes} min)", domain=name,
+                minutes=alerts.minutes(lasted)), domain=view.name, now=now)
+

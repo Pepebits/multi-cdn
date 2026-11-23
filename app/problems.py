@@ -66,6 +66,10 @@ def _alert_items(state, now: datetime) -> list[Problem]:
             codes = failover.readiness(state, cfg)
             anchor = "#gcore" if codes == ["not_prepared"] else "#config"
             out.append(Problem(key, "warn", text, since, _domain_href(name, anchor), name))
+        elif key.startswith("gcore_serving:"):
+            name = key.removeprefix("gcore_serving:")
+            out.append(Problem(key, "error", tr("{domain}: Gcore is not serving it while it is the active CDN",
+                                                domain=name), since, _domain_href(name, "#gcore"), name))
         else:
             out.append(Problem(key, "warn", tr("Open problem: {key}", key=key), since, None, None))
     return out

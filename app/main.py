@@ -49,6 +49,7 @@ from .tasks import (
     CALENDAR_INTERVAL,
     CF_SYNC_INTERVAL,
     DNS_INTERVAL,
+    GCORE_WATCH_INTERVAL,
     HEARTBEAT_INTERVAL,
     ORIGIN_HEALTH_INTERVAL,
     PRUNE_INTERVAL,
@@ -65,6 +66,7 @@ from .tasks import (
     refresh_dns,
     refresh_feed,
     restore_block_state,
+    watch_gcore,
 )
 
 log = logging.getLogger("multicdn")
@@ -113,6 +115,7 @@ async def lifespan(app: FastAPI):
             asyncio.create_task(_loop(int(firewall_status.CHECK_INTERVAL.total_seconds()), check_firewall, state)),
             asyncio.create_task(_delayed_loop(120, HEARTBEAT_INTERVAL, heartbeat.beat, state)),
             asyncio.create_task(_delayed_loop(15, ORIGIN_HEALTH_INTERVAL, origin_health.check, state)),
+            asyncio.create_task(_delayed_loop(60, GCORE_WATCH_INTERVAL, watch_gcore, state)),
         ]
     yield
     for t in tasks:

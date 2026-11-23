@@ -14,6 +14,8 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 
+from ..i18n import tn
+
 FEED_URL = "https://hayahora.futbol/estado/data.json"
 
 # Operadoras en el orden en que se muestran; clave = nombre en el feed.
@@ -64,6 +66,30 @@ class FeedSnapshot:
             if sum(s.blocked for s in by_isp.values()) >= min_isps:
                 count += 1
         return count
+
+
+# A real feed lists ~3,100 IPs at all five ISPs (Nov 2026). An empty or reshaped feed would
+# otherwise read as "no blocks" and send domains back to Cloudflare in the middle of a block.
+MIN_FEED_IPS = 300
+MIN_FEED_ISPS = 3
+MAX_FEED_DROP = 0.5  # fewer than half the IPs of the last good read: reject it (see check_feed)
+
+
+class FeedFormatError(ValueError):
+    """The feed answered, but not with something we can trust."""
+
+
+def check_feed(snapshot: FeedSnapshot, previous: FeedSnapshot | None = None) -> None:
+    """Raises FeedFormatError if the snapshot does not look like a real feed. `previous`: the
+    last good read while it is still fresh; once it goes stale a lasting change is accepted."""
+    ips = len(snapshot.states)
+    if ips < MIN_FEED_IPS:
+        raise FeedFormatError(tn("only {n} IPs instead of thousands", n=ips))
+    isps = {isp for per_ip in snapshot.states.values() for isp in per_ip} & set(ISPS)
+    if len(isps) < MIN_FEED_ISPS:
+        raise FeedFormatError(tn("only {n} of the known ISPs", n=len(isps)))
+    if previous is not None and ips < MAX_FEED_DROP * len(previous.states):
+        raise FeedFormatError(tn("{n} IPs, down from {before} in the previous read", n=ips, before=len(previous.states)))
 
 
 def parse_feed(payload: dict, fetched_at: datetime | None = None) -> FeedSnapshot:
