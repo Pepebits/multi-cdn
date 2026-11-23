@@ -30,5 +30,7 @@
   "certbot kept the current certificate: Gcore was not touched; it is tried again tomorrow": "certbot ha mantenido el certificado actual: no se ha tocado Gcore; se vuelve a intentar mañana",
   "its Cloudflare IPs are blocked": "sus IPs de Cloudflare están bloqueadas",
   "it is being served by Gcore": "se está sirviendo por Gcore",
-  "a match is on or about to start": "hay un partido en curso o a punto de empezar"
+  "a match is on or about to start": "hay un partido en curso o a punto de empezar",
+  "Public DNS shows {domain} on {cdn} {time} after the switch": "El DNS público ya muestra {domain} en {cdn} {time} después del cambio",
+  "Public DNS still does not show {domain} on {cdn} {minutes} min after the switch: check its records in Cloudflare": "El DNS público aún no muestra {domain} en {cdn} {minutes} min después del cambio: revisa sus registros en Cloudflare"
 }

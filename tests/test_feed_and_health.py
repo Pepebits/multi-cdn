@@ -226,6 +226,51 @@ def test_feed_format_alert_says_why(client):
     assert summaries(state) == ["Feed de bloqueos no disponible (solo 0 IPs en vez de miles)"]
 
 
+# ---------------------------------------------------------------- DNS propagation after a switch
+
+def test_propagation_time_is_recorded_when_public_dns_shows_the_switch(client):
+    from app.signals.dnscheck import Resolution
+    state = client.app.state.mc
+    hosts = ["example.com", "www.example.com"]
+    tasks.expect_dns(state, "example.com", "gcore", hosts, now=T0)
+    state.resolutions = {h: Resolution(h, (CF_IP,), None, "cloudflare") for h in hosts}
+    tasks.check_propagation(state, now=T0 + timedelta(seconds=40))
+    assert not summaries(state, "verify")  # still on Cloudflare
+    state.resolutions["example.com"] = Resolution("example.com", ("5.188.126.61",), "cl-test.gcorecdn.com.", "gcore")
+    tasks.check_propagation(state, now=T0 + timedelta(seconds=70))
+    assert not summaries(state, "verify")  # only one of the two hostnames
+    state.resolutions["www.example.com"] = Resolution("www.example.com", ("5.188.126.61",), "cl-test.gcorecdn.com.", "gcore")
+    tasks.check_propagation(state, now=T0 + timedelta(seconds=135))
+    assert summaries(state, "verify") == ["El DNS público ya muestra example.com en Gcore 2 min 15 s después del cambio"]
+    assert not state.pending_dns
+
+
+def test_propagation_that_never_happens_raises_an_alert(client):
+    from app.signals.dnscheck import Resolution
+    state = client.app.state.mc
+    tasks.expect_dns(state, "example.com", "cloudflare", ["example.com"], now=T0)
+    state.resolutions = {"example.com": Resolution("example.com", ("5.188.126.61",), "cl-test.gcorecdn.com.", "gcore")}
+    tasks.check_propagation(state, now=T0 + timedelta(minutes=29))
+    assert not summaries(state)
+    tasks.check_propagation(state, now=T0 + timedelta(minutes=31))
+    assert summaries(state)[0].startswith("El DNS público aún no muestra example.com en Cloudflare 30 min")
+    assert not state.pending_dns
+
+
+def test_engine_passes_the_switched_hostnames_to_its_callback(client, monkeypatch):
+    """A real automatic switch tells run_engine what to expect in public DNS."""
+    from app.engine import failover
+    state = client.app.state.mc
+    seen = []
+
+    async def evaluate(state_, now=None, on_switched=None):
+        on_switched("example.com", "gcore", ["example.com", "www.example.com"])
+    monkeypatch.setattr(failover, "evaluate", evaluate)
+    monkeypatch.setattr(tasks, "recheck_dns_soon", lambda s: seen.append("recheck") or asyncio.sleep(0))
+    asyncio.run(tasks.run_engine(state))
+    assert state.pending_dns["example.com"][:2] == ("gcore", ["example.com", "www.example.com"])
+
+
 # ---------------------------------------------------------------- Gcore while it serves
 
 def test_gcore_watch_alerts_on_the_second_failure_and_recovers(client, monkeypatch):

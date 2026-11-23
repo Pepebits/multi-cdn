@@ -145,7 +145,8 @@ async def run_engine(state: State) -> None:
     if state.engine_lock.locked():
         return
     async with state.engine_lock:
-        def recheck():
+        def recheck(domain: str, target: str, hostnames: list[str]):
+            expect_dns(state, domain, target, hostnames)
             if os.environ.get("MULTICDN_OFFLINE") != "1":
                 asyncio.create_task(recheck_dns_soon(state))
         await failover.evaluate(state, on_switched=recheck)
@@ -233,6 +234,7 @@ async def refresh_dns(state: State) -> None:
         ips = {ip for h in domain.hostnames if (r := state.resolutions.get(h.name)) and r.provider == "cloudflare" for ip in r.ips}
         state.engine.remember_ips(name, sorted(ips))
     check_block_transitions(state)
+    check_propagation(state)
     await run_engine(state)
     for res in state.resolutions.values():
         exposed = res.provider == "origin"
@@ -387,4 +389,38 @@ async def watch_gcore(state: State, now: datetime | None = None) -> None:
             alerts.clear(state, key, lambda lasted, name=view.name: tn(
                 "Gcore serves {domain} again (it failed for {minutes} min)", domain=name,
                 minutes=alerts.minutes(lasted)), domain=view.name, now=now)
+
+
+DNS_PROPAGATION_LIMIT = timedelta(minutes=30)
+CDN_NAME = {"gcore": "Gcore", "cloudflare": "Cloudflare"}
+
+
+def expect_dns(state: State, domain: str, target: str, hostnames: list[str], now: datetime | None = None) -> None:
+    """After a real switch: note where the public DNS should end up, to measure how long it takes."""
+    if hostnames:
+        state.pending_dns[domain] = (target, hostnames, now or datetime.now(UTC))
+
+
+def _seconds(delta: timedelta) -> str:
+    total = max(0, round(delta.total_seconds()))
+    return f"{total} s" if total < 60 else f"{total // 60} min {total % 60:02d} s"
+
+
+def check_propagation(state: State, now: datetime | None = None) -> None:
+    """Records in the history how long public DNS took to show each switch, and alerts if it still
+    does not after DNS_PROPAGATION_LIMIT (a record that did not change, a resolver stuck on it)."""
+    now = now or datetime.now(UTC)
+    for domain, (target, hostnames, since) in list(state.pending_dns.items()):
+        seen = {(r.provider if (r := state.resolutions.get(h)) else None) for h in hostnames}
+        cdn = CDN_NAME.get(target, target)
+        if seen == {target}:
+            del state.pending_dns[domain]
+            state.events.add(actor="auto", kind="verify", domain=domain, summary=tn(
+                "Public DNS shows {domain} on {cdn} {time} after the switch", domain=domain, cdn=cdn,
+                time=_seconds(now - since)))
+        elif now - since > DNS_PROPAGATION_LIMIT:
+            del state.pending_dns[domain]
+            state.events.add(actor="auto", kind="alert", domain=domain, summary=tn(
+                "Public DNS still does not show {domain} on {cdn} {minutes} min after the switch: check its "
+                "records in Cloudflare", domain=domain, cdn=cdn, minutes=int(DNS_PROPAGATION_LIMIT.total_seconds() // 60)))
 

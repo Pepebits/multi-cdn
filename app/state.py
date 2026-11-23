@@ -70,6 +70,8 @@ class State:
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     cf_ok_at: dict[str, datetime] = field(default_factory=dict)  # dominio -> última lectura correcta de Cloudflare
     feed_etag: str | None = None  # ETag of the last feed read (conditional GET)
+    # domain -> (CDN it should resolve to, hostnames switched, when): until public DNS shows it
+    pending_dns: dict[str, tuple[str, list[str], datetime]] = field(default_factory=dict)
     feed_mode: str | None = None  # "fast" | "idle": feed polling mode, to log only its changes
 
     def __post_init__(self) -> None:

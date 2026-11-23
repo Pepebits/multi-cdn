@@ -12,6 +12,8 @@ All notable changes to this project are documented here. The format follows
   hostname). It alerts on the second failure in a row, once, and again when Gcore serves it.
   From the server it cannot see blocks inside Spanish ISPs, only Gcore failing for everyone.
 - `MULTICDN_VERSION` in `.env` pins the image version (`latest` by default), to roll back.
+- **DNS propagation time**: after each real switch the history records how long public DNS took
+  to show it, and an alert is raised if it still does not after 30 min.
 - **Unprotected time on the statistics page**: for each block episode, how long the domain stayed
   on Cloudflare while its IPs were blocked, and the total for the period. It shows whether the
   automatic switch (and the lead time before matches) is fast enough.

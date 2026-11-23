@@ -454,7 +454,8 @@ def decide(view, cfg, st: DomainState, *, dry_run: bool, mass: int, now: datetim
 
 
 async def evaluate(state, now: datetime | None = None, on_switched=None) -> None:
-    """Un ciclo del motor. on_switched(): se llama tras un cambio real (p. ej. recomprobar el DNS)."""
+    """Un ciclo del motor. on_switched(domain, target, hostnames): tras un cambio real (p. ej.
+    recomprobar el DNS); target es "gcore" o "cloudflare"."""
 
     now = now or datetime.now(UTC)
     if not auto_enabled(state):
@@ -554,7 +555,7 @@ async def _act(state, view, cfg, st: DomainState, decision: Decision, now: datet
     state.events.add(actor="auto", kind="switch", domain=name, transition=transition, summary=summary,
                      dns_diff=diff, signals=signals, simulated=simulated)
     if on_switched and not simulated:
-        on_switched()
+        on_switched(name, "gcore" if decision.action == "switch" else "cloudflare", [row[0] for row in diff])
 
 
 def describe(state, name: str, now: datetime | None = None) -> dict:

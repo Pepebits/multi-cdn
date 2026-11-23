@@ -22,6 +22,7 @@ from ..providers.cloudflare import OriginExposureError, plan_to_gcore
 from ..signals import calendar as match_calendar
 from ..state import State
 from ..tasks import (
+    expect_dns,
     recheck_dns_soon,
     run_engine,
 )
@@ -410,6 +411,8 @@ async def volver_cloudflare(request: Request, name: str, confirm: str = Form("")
     s.events.add(actor=_actor(request), kind="switch", domain=name, transition="GCORE → CF",
                  summary=tn("Manual return to Cloudflare from the panel"), dns_diff=diff, simulated=simulated)
     await _after_inventory_change(s)
+    if not simulated:
+        expect_dns(s, name, "cloudflare", [row[0] for row in diff])
     if not simulated and os.environ.get("MULTICDN_OFFLINE") != "1":
         asyncio.create_task(recheck_dns_soon(s))
     if simulated:
@@ -440,6 +443,8 @@ async def cambiar(request: Request, name: str, target: str = Form(...), confirm:
     s.events.add(actor=_actor(request), kind="switch", domain=name, transition="CF → GCORE",
                  summary=tn("Manual switch to Gcore from the panel"), dns_diff=diff, simulated=simulated)
     await _after_inventory_change(s)
+    if not simulated:
+        expect_dns(s, name, "gcore", [row[0] for row in diff])
     if not simulated and os.environ.get("MULTICDN_OFFLINE") != "1":
         asyncio.create_task(recheck_dns_soon(s))
     if simulated:
