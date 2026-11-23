@@ -22,7 +22,7 @@ from fastapi.responses import (
 )
 from fastapi.staticfiles import StaticFiles
 
-from . import env_sync, error_reporting, heartbeat, i18n, origin_health, proxy
+from . import env_sync, error_reporting, heartbeat, i18n, origin_health, proxy, watchdog
 from .auth import AuthStore
 from .config import load_dotenv, load_inventory
 from .credentials import CredentialStore
@@ -120,6 +120,11 @@ async def lifespan(app: FastAPI):
             asyncio.create_task(_delayed_loop(60, GCORE_WATCH_INTERVAL, watch_gcore, state)),
             asyncio.create_task(_delayed_loop(180, lambda: gcore_ready_interval(state), check_gcore_readiness, state)),
         ]
+    watchdog.report_previous_exit(state)
+    if watchdog.enabled():
+        dog = watchdog.Watchdog(state)
+        tasks.append(asyncio.create_task(dog.tick_forever()))
+        dog.start_thread()
     yield
     for t in tasks:
         t.cancel()

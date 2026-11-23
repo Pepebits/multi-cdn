@@ -7,6 +7,10 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **The panel restarts itself when it is stuck.** Docker restarts a container whose process exits,
+  not one that is hung. A watchdog ends the process if the event loop stops responding for 5 min
+  or the panel's own tasks stay stopped for 20 min, so Docker starts it again; the next start
+  records why in the history (and alerts). `MULTICDN_WATCHDOG=0` turns it off.
 - **Gcore readiness check (a drill without DNS changes).** Every 6 h, for each domain prepared on
   Gcore and still on Cloudflare, the panel runs the pre-switch checks: resource active, edge
   answering HTTPS with the real hostname (which also tests the certificate and that the origin

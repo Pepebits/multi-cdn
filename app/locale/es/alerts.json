@@ -44,5 +44,8 @@
   "every 6 h while it is on Cloudflare": "cada 6 h mientras está en Cloudflare",
   "Checks that Gcore would serve it now, without changing DNS": "Comprueba que Gcore lo serviría ahora, sin cambiar el DNS",
   "Check Gcore now": "Comprobar Gcore ahora",
-  "{domain}: Gcore could not serve it if it had to switch": "{domain}: Gcore no podría servirlo si hubiera que cambiar"
+  "{domain}: Gcore could not serve it if it had to switch": "{domain}: Gcore no podría servirlo si hubiera que cambiar",
+  "its own tasks were stopped for {minutes} min ({loops})": "sus propias tareas llevaban {minutes} min paradas ({loops})",
+  "it stopped responding for more than {minutes} min": "dejó de responder durante más de {minutes} min",
+  "The panel restarted itself: {reason}": "El panel se ha reiniciado solo: {reason}"
 }
