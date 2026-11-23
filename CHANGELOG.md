@@ -21,7 +21,10 @@ All notable changes to this project are documented here. The format follows
 - **Browser tests** with Playwright (`uv run pytest -m e2e`): the real panel on a throwaway
   database, at desktop and phone size. Every page without horizontal overflow or console errors,
   the phone navigation bar, dialog focus, typed confirmations, show/hide password, the colour
-  theme and signing in with a recovery code. CI runs them before publishing an image.
+  theme and signing in with a recovery code. An axe-core scan of every page fails on any
+  accessibility problem of moderate impact or more. CI runs them before publishing an image.
+- Accessibility: the bars of the statistics charts are announced as images (they had a label but no
+  role), and the session and credits at the end of each page sit in a named region.
 - Tests for the code that changes things for real, against fake Cloudflare and Gcore APIs and a
   stand-in for certbot: the DNS `PATCH` of a switch, the origin guard, Gcore resources and
   certificates, the edge probe and the pre-switch checks. Coverage goes from 86 % to 89 % (Gcore

@@ -175,5 +175,6 @@
   "When the panel is back it reads these records and takes over again; pause its automatic switching for a domain if you want it to stay where you left it.": "Cuando el panel vuelva, lee estos registros y retoma el control; pausa su cambio automático en un dominio si quieres que se quede donde lo dejaste.",
   "Generate it again after adding domains or hostnames, or after preparing one on Gcore.": "Vuelve a generarla tras añadir dominios o hostnames, o tras preparar uno en Gcore.",
   "How to switch each domain by hand in the Cloudflare dashboard if the server is down. Keep it in your password manager.": "Cómo cambiar cada dominio a mano en el panel de Cloudflare si el servidor está caído. Guárdala en tu gestor de contraseñas.",
-  "Emergency sheet": "Ficha de emergencia"
+  "Emergency sheet": "Ficha de emergencia",
+  "Session and credits": "Sesión y créditos"
 }

@@ -93,9 +93,9 @@
         {% for t in timeline.xticks %}<line class="c-grid" x1="{{ t.x }}" x2="{{ t.x }}" y1="14" y2="{{ timeline.base }}"/><text class="c-tick" x="{{ t.x }}" y="{{ timeline.height - 8 }}" text-anchor="{{ t.anchor }}">{{ t.label }}</text>{% endfor %}
         {% for r in timeline.rows %}
           <text class="c-row" x="{{ timeline.left }}" y="{{ r.label_y }}">{{ r.name }}</text>
-          {% for g in r.segments %}<rect class="c-seg c-seg--{{ g.kind }}" x="{{ g.x }}" y="{{ r.cdn_y }}" width="{{ g.w }}" height="14" rx="2" data-tip="{{ r.name }} · {{ g.tip }}" tabindex="0" aria-label="{{ r.name }}: {{ g.tip }}"/>{% endfor %}
+          {% for g in r.segments %}<rect class="c-seg c-seg--{{ g.kind }}" x="{{ g.x }}" y="{{ r.cdn_y }}" width="{{ g.w }}" height="14" rx="2" data-tip="{{ r.name }} · {{ g.tip }}" tabindex="0" role="img" aria-label="{{ r.name }}: {{ g.tip }}"/>{% endfor %}
           <rect class="c-track" x="{{ timeline.left }}" y="{{ r.block_y }}" width="{{ timeline.right - timeline.left }}" height="8" rx="2"/>
-          {% for b in r.blocks %}<rect class="c-seg c-seg--blocked" x="{{ b.x }}" y="{{ r.block_y }}" width="{{ b.w }}" height="8" rx="2" data-tip="{{ r.name }} · {{ b.tip }}" tabindex="0" aria-label="{{ r.name }}: {{ b.tip }}"/>{% endfor %}
+          {% for b in r.blocks %}<rect class="c-seg c-seg--blocked" x="{{ b.x }}" y="{{ r.block_y }}" width="{{ b.w }}" height="8" rx="2" data-tip="{{ r.name }} · {{ b.tip }}" tabindex="0" role="img" aria-label="{{ r.name }}: {{ b.tip }}"/>{% endfor %}
         {% endfor %}
       </svg>
     </div>
@@ -125,8 +125,8 @@
         {% for t in traffic.yticks %}<line class="c-grid" x1="{{ traffic.left }}" x2="{{ traffic.right }}" y1="{{ t.y }}" y2="{{ t.y }}"/><text class="c-tick" x="{{ traffic.left - 8 }}" y="{{ t.y + 4 }}" text-anchor="end">{{ t.label }}</text>{% endfor %}
         {% for t in traffic.xticks %}<text class="c-tick" x="{{ t.x }}" y="{{ traffic.height - 8 }}" text-anchor="{{ t.anchor }}">{{ t.label }}</text>{% endfor %}
         {% for b in traffic.bars %}
-          {% if b.path %}<path class="c-bar c-s{{ b.slot }}" d="{{ b.path }}" data-tip="{{ b.tip }}" tabindex="0" aria-label="{{ b.tip }}"/>
-          {% else %}<rect class="c-bar c-s{{ b.slot }}" x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" data-tip="{{ b.tip }}" tabindex="0" aria-label="{{ b.tip }}"/>{% endif %}
+          {% if b.path %}<path class="c-bar c-s{{ b.slot }}" d="{{ b.path }}" data-tip="{{ b.tip }}" tabindex="0" role="img" aria-label="{{ b.tip }}"/>
+          {% else %}<rect class="c-bar c-s{{ b.slot }}" x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" data-tip="{{ b.tip }}" tabindex="0" role="img" aria-label="{{ b.tip }}"/>{% endif %}
         {% endfor %}
       </svg>
     </div>

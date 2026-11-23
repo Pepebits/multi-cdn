@@ -97,6 +97,8 @@
       {% include "_lang_switch.html" %}
       </div>
     </footer>
+    {#- A named region, so that screen readers do not find this content outside every landmark. #}
+    <section aria-label="{{ _('Session and credits') }}">
     {% if user %}
     {# En el móvil la barra lateral se oculta: sesión, acceso y modo aquí. #}
     <div class="mobile-session">
@@ -110,6 +112,7 @@
       <span>© {{ current_year() }} Multi-CDN</span>
       {{ m.pepebits_signature() }}
     </div>
+    </section>
   </div>
 </div>
 <script src="{{ asset('js/panel.js') }}" defer></script>

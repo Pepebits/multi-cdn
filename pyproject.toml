@@ -22,6 +22,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "axe-playwright-python>=0.1.8",
     "pytest>=8.3",
     "pytest-cov>=7.1.0",
     "pytest-playwright>=0.10.0",
