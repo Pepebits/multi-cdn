@@ -30,13 +30,23 @@ time.
 - 🔒 **Never exposes the origin**: a hostname is always proxied by Cloudflare or a CNAME to
   Gcore. The code refuses any DNS change that would reveal your IP.
 - ☁️ **Gcore ready in advance**: certificate, CDN resource and origin, prepared with one
-  click and checked on every edge before a switch.
+  click and checked on every edge before a switch. Every 6 h it checks again that Gcore could
+  serve each domain (a drill without touching DNS), and every 5 min while Gcore is serving.
+- 🛡️ **Does not trust a broken feed**: an empty or reshaped block feed is rejected instead of
+  being read as "no blocks", so a domain never goes back to Cloudflare in the middle of a block.
 - 🧱 **Origin firewall**: only the CDNs can reach ports 80/443, plus a secret header so
   nobody else can use a CDN to reach your server.
-- 🔔 **Alerts**: Telegram, email and an external heartbeat if the panel itself goes down.
+- 🔔 **Alerts**: Telegram, email (retried if they fail) and an external heartbeat if the panel
+  itself goes down. A stuck panel restarts itself and tells you why.
+- 🆘 **Emergency sheet**: how to switch each domain by hand in the Cloudflare dashboard if the
+  server is down, without the origin IP in it.
+- 💾 **Checked backups**: a daily copy of the database, verified right after it is written.
 - 🐞 **Optional error reporting** to Sentry or GlitchTip: off unless you set a DSN, and
   scrubbed of IPs, emails and tokens before anything is sent.
-- 📊 **Statistics**: blocks, switches and Gcore traffic against its free quota.
+- 📊 **Statistics**: blocks, switches, how long each block left a domain unprotected, DNS
+  propagation times and Gcore traffic against its free quota.
+- ♿ **Accessible and phone-ready**: checked in a real browser at desktop and phone size, with an
+  automatic accessibility scan of every page.
 - 🌍 **English and Spanish**: the panel follows your browser; switch in the footer.
 
 ## 🚀 Get started
