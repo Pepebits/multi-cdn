@@ -111,6 +111,7 @@
       </div>
     </div>
     <div class="card__foot actions-end">{{ m.more("retencion-help", _("Whichever limit is reached first applies. The cleanup runs at startup, every 6 hours and when saving. certbot logs are limited to 10 copies; the server logs are managed by systemd or Docker.")) }}
+      <a class="btn" href="/ajustes/ficha-emergencia.txt" title="{{ _('How to switch each domain by hand in the Cloudflare dashboard if the server is down. Keep it in your password manager.') }}">{{ m.icon('download') }} {{ _("Emergency sheet") }}</a>
       <a class="btn" href="/ajustes/inventario.yaml">{{ m.icon('download') }} {{ _("Export inventory (YAML, no secrets)") }}</a>
       <button class="btn btn--primary" type="submit">{{ _("Save retention") }}</button>
     </div>

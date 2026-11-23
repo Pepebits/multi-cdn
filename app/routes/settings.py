@@ -643,6 +643,15 @@ async def retencion_guardar(request: Request, events_max_days: int = Form(...), 
                                               "Retention saved · {n} old events deleted", deleted))
 
 
+@router.get("/ajustes/ficha-emergencia.txt")
+async def ficha_emergencia(request: Request):
+    from ..emergency import sheet
+    return PlainTextResponse(
+        sheet(_state(request).inventory, tr), media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="multicdn-emergency-sheet.txt"'},
+    )
+
+
 @router.get("/ajustes/inventario.yaml")
 async def exportar(request: Request):
     return PlainTextResponse(

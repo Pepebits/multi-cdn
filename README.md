@@ -116,6 +116,11 @@ docker compose exec panel python -m app.cli status                    # where ea
 docker compose exec panel python -m app.cli switch example.com gcore  # or: cloudflare
 ```
 
+If the server itself is down, switch by hand in the Cloudflare dashboard with the **emergency
+sheet** (Settings → System, or `python -m app.cli emergency-sheet`): which record to change in each
+domain, to what, and how to undo it. It never contains the origin IP; keep it in your password
+manager and generate it again when you add or prepare domains.
+
 ## 🐳 Docker image
 
 `ghcr.io/pepebits/multi-cdn` or `pepebits/multi-cdn` on Docker Hub: Alpine, non-root,

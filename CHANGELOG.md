@@ -15,6 +15,9 @@ All notable changes to this project are documented here. The format follows
 - **Unprotected time on the statistics page**: for each block episode, how long the domain stayed
   on Cloudflare while its IPs were blocked, and the total for the period. It shows whether the
   automatic switch (and the lead time before matches) is fast enough.
+- **Emergency sheet** (Settings → System, or `python -m app.cli emergency-sheet`): how to switch each
+  domain by hand in the Cloudflare dashboard if the server is down, how to check first that Gcore
+  serves it, and how to undo it. It never contains the origin IP.
 - **Browser tests** with Playwright (`uv run pytest -m e2e`): the real panel on a throwaway
   database, at desktop and phone size. Every page without horizontal overflow or console errors,
   the phone navigation bar, dialog focus, typed confirmations, show/hide password, the colour

@@ -74,6 +74,7 @@ COMMANDS = {
     "backup": ["copia-seguridad"],
     "status": ["estado"],
     "switch": ["cambiar"],
+    "emergency-sheet": ["ficha-emergencia"],
     "migrate-secrets": [],
 }
 
@@ -108,6 +109,7 @@ def _parser() -> argparse.ArgumentParser:
     sw.add_argument("--yes", "--si", dest="yes", action="store_true", help="do not ask for confirmation")
     sw.add_argument("--force", "--forzar", dest="force", action="store_true",
                     help="move to Gcore even if the pre-check fails")
+    add("emergency-sheet", "how to switch each domain by hand in Cloudflare (no origin IP in it)")
     ms = add("migrate-secrets", "move the panel-managed variables from .env to config/secrets.env (0.3.1)")
     ms.add_argument("env_file", nargs="?", default=".env")
     ms.add_argument("secrets_file", nargs="?", default="config/secrets.env")
@@ -136,6 +138,12 @@ def main(argv: list[str] | None = None) -> int:
         load_dotenv()
         _speak_notify_lang()
         print(tn("Backup saved to {path}", path=backup(Path(args.destination) if args.destination else None)))
+        return 0
+    if args.cmd == "emergency-sheet":
+        from .emergency import sheet
+        from .inventory_store import InventoryStore
+        _speak_notify_lang()
+        print(sheet(InventoryStore(SecretStore(os.environ.get("MULTICDN_DB", "data/multicdn.db"))).load(), tn), end="")
         return 0
     auth, events = _store()
 
