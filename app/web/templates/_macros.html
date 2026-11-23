@@ -250,6 +250,6 @@
 {# Password input with a "Show" toggle (panel.js switches the type). Without JavaScript the button
    stays hidden and the field works as usual. `attrs`: the input's other attributes, already escaped. #}
 {% macro password_field(id, name, autocomplete, attrs='') -%}
-<div class="with-reveal"><input id="{{ id }}" type="password" name="{{ name }}" autocomplete="{{ autocomplete }}" {{ attrs }}><button class="btn" type="button" data-reveal="{{ id }}" aria-controls="{{ id }}" aria-pressed="false" hidden>{{ _("Show") }}</button></div>
+<div class="with-reveal"><input id="{{ id }}" type="password" name="{{ name }}" autocomplete="{{ autocomplete }}" {{ attrs }}><button class="btn" type="button" data-reveal="{{ id }}" aria-controls="{{ id }}" data-show="{{ _('Show') }}" data-hide="{{ _('Hide') }}" hidden>{{ _("Show") }}</button></div>
 {%- endmacro %}
 

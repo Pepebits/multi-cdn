@@ -188,5 +188,5 @@ def test_password_fields_have_a_show_toggle(anon):
     page = anon.get("/login").text
     html = re.search(r'<div class="with-reveal">(.*?)</div>', page, re.S).group(1)
     assert 'id="password" type="password"' in html and 'autocomplete="current-password"' in html
-    assert 'data-reveal="password"' in html and 'aria-pressed="false"' in html and " hidden" in html
+    assert 'data-reveal="password"' in html and 'data-hide="Ocultar"' in html and " hidden" in html
     assert "js/panel.js" in page

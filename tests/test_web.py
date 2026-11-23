@@ -276,6 +276,19 @@ def test_remove_single_hostname_keeps_dns_and_last_one_protected(client):
     assert client.post("/dominios/example.com/hostnames/nope.example.com/quitar").status_code == 404
 
 
+def test_remove_hostname_asks_first_and_is_refused_while_on_gcore(client):
+    from app.signals.dnscheck import Resolution
+    state = client.app.state.mc
+    page = client.get("/dominios/example.com").text
+    # The row button only opens a confirmation; the dialog's form is the one that posts.
+    assert 'data-open="quitar-host-2"' in page and 'formaction="/dominios/example.com/hostnames/' not in page
+    assert 'action="/dominios/example.com/hostnames/www.example.com/quitar"' in page
+    state.resolutions = {"www.example.com": Resolution("www.example.com", ("5.188.126.61",), "cl-test.gcorecdn.com.", "gcore")}
+    r = client.post("/dominios/example.com/hostnames/www.example.com/quitar", follow_redirects=True)
+    assert "se sirve ahora por Gcore" in r.text
+    assert len(state.inventory.domains["example.com"].hostnames) == 2
+
+
 def test_flattened_apex_on_gcore_is_recognised(client):
     from app.tasks import apply_cf_live
     from app.signals.dnscheck import Resolution

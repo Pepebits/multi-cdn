@@ -24,7 +24,7 @@
     <div>
       <label for="recovery">{{ _("Recovery code") }}</label>
       <input id="recovery" class="otp otp--wide" type="text" name="code" autocomplete="off" pattern="[a-z0-9]{5}-[a-z0-9]{5}" maxlength="11" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="go" required aria-describedby="recovery-help">
-      <p id="recovery-help" class="help">{{ _m("No phone? Use one of your recovery codes (format <span class=\"mono\">xxxxx-xxxxx</span>).") }}</p>
+      <p id="recovery-help" class="help">{{ _m("Format <span class=\"mono\">xxxxx-xxxxx</span>, from the list you saved when you set up TOTP. Each code works once.") }}</p>
     </div>
     <div class="actions-end">
       <button class="btn btn--primary" type="submit">{{ _("Verify") }}</button>

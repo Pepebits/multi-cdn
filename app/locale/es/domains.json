@@ -184,5 +184,9 @@
   "{blocked}/{total} blocked": "{blocked}/{total} bloqueadas",
   "{n} domain": "{n} dominio",
   "{n} domains": "{n} dominios",
-  "{policy} policy": "política {policy}"
+  "{policy} policy": "política {policy}",
+  "Remove {host}": "Quitar {host}",
+  "The panel stops watching and switching {host}. Its DNS is not changed: it stays wherever it is served now.": "El panel deja de vigilar y conmutar {host}. Su DNS no cambia: sigue donde se sirve ahora.",
+  "Remove hostname": "Quitar hostname",
+  "{host} is served by Gcore now: switch it back to Cloudflare before removing it": "{host} se sirve ahora por Gcore: vuélvelo a Cloudflare antes de quitarlo"
 }

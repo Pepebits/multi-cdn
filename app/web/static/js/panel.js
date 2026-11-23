@@ -31,13 +31,10 @@ document.querySelectorAll('input[data-expected]').forEach(i => i.addEventListene
 document.querySelectorAll('[data-reveal]').forEach(b => {
   const input = document.getElementById(b.dataset.reveal);
   b.hidden = false;
-  b.addEventListener('click', () => {
-    const show = input.type === 'password';
-    input.type = show ? 'text' : 'password';
-    b.setAttribute('aria-pressed', String(show));
-  });
+  const set = (show) => { input.type = show ? 'text' : 'password'; b.textContent = show ? b.dataset.hide : b.dataset.show; };
+  b.addEventListener('click', () => set(input.type === 'password'));
   // Al enviar vuelve a ocultarse: el navegador no guarda la contraseña como texto en el historial.
-  input.form && input.form.addEventListener('submit', () => { input.type = 'password'; });
+  input.form && input.form.addEventListener('submit', () => set(false));
 });
 if (document.querySelector('.joblog[data-running]')) setTimeout(() => location.reload(), 3000);
 

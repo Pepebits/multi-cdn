@@ -26,6 +26,11 @@ All notable changes to this project are documented here. The format follows
   read is rejected: the last good read stays, goes stale after 10 min and the engine stops
   deciding, as when the feed is down. Before, an empty or reshaped feed could send a domain back
   to Cloudflare in the middle of a block. The alert says why the feed was rejected.
+- **Removing a hostname asks first, and is refused while it is on Gcore.** The red "Remove"
+  button acted at once; removed while served by Gcore, nothing would ever bring the hostname back
+  to Cloudflare.
+- The "Show" button next to a password now reads "Hide" while the password is visible, and the
+  recovery-code help no longer repeats the dropdown's title.
 - Telegram and email alerts are retried twice (after 5 and 30 s); if they still fail, the history
   notes it.
 - A Cloudflare error page in HTML no longer stops that cycle's reading of every domain.

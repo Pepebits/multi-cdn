@@ -79,7 +79,6 @@
   "No events recorded yet.": "Todavía no hay eventos registrados.",
   "No feed data in this period.": "Sin datos del feed en este periodo.",
   "No known Cloudflare IPs (never seen on Cloudflare): {domains}.": "Sin IPs de Cloudflare conocidas (no se ha visto nunca en Cloudflare): {domains}.",
-  "No phone? Use one of your recovery codes (format <span class=\"mono\">xxxxx-xxxxx</span>).": "¿Sin el móvil? Usa uno de tus códigos de recuperación (formato <span class=\"mono\">xxxxx-xxxxx</span>).",
   "Not configured": "Sin configurar",
   "Not responding": "No responde",
   "On Gcore": "En Gcore",
@@ -155,5 +154,7 @@
   "Show": "Mostrar",
   "Unprotected: {time} blocked while still on Cloudflare": "Sin protección: {time} bloqueado mientras seguía en Cloudflare",
   "Blocked while still served by Cloudflare": "Bloqueado mientras aún se servía por Cloudflare",
-  "Unprotected": "Sin protección"
+  "Unprotected": "Sin protección",
+  "Format <span class=\"mono\">xxxxx-xxxxx</span>, from the list you saved when you set up TOTP. Each code works once.": "Formato <span class=\"mono\">xxxxx-xxxxx</span>, de la lista que guardaste al configurar TOTP. Cada código sirve una vez.",
+  "Hide": "Ocultar"
 }

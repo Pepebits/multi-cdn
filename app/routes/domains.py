@@ -191,6 +191,9 @@ async def hostname_quitar(request: Request, name: str, host: str):
         raise HTTPException(404)
     if len(domain.hostnames) == 1:
         return _back(url, error=tr("It is the last hostname: delete the whole domain if you no longer want to monitor it"))
+    if ((r := s.resolutions.get(host)) and r.provider == "gcore") or (s.cf_live.get(host) or {}).get("to_backup"):
+        # Removed while on Gcore, nothing would ever bring it back to Cloudflare.
+        return _back(url, error=tr("{host} is served by Gcore now: switch it back to Cloudflare before removing it", host=host))
     s.store.delete_hostname(host)
     s.events.add(actor=_actor(request), kind="config", domain=name, summary=tn("{host} removed from the inventory (DNS unchanged)", host=host))
     await _after_inventory_change(s)

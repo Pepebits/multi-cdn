@@ -184,9 +184,8 @@
               <label class="inline" for="fo-{{ loop.index }}">{{ _('Yes') }}<span class="visually-hidden">{{ _(', switch {host} to Gcore', host=h.name) }}</span></label>
             </td>
             <td class="actions-cell">
-              <button class="btn btn--danger btn--sm" type="submit" formnovalidate
-                      formaction="/dominios/{{ d.name }}/hostnames/{{ h.name }}/quitar"
-                      title="{{ _('Stops watching it; does not change its DNS') }}">{{ _('Remove') }}<span class="visually-hidden">{{ _(' {host} from the inventory', host=h.name) }}</span></button>
+              <button class="btn btn--danger btn--sm" type="button" data-open="quitar-host-{{ loop.index }}"
+                      title="{{ _('Stops watching it; does not change its DNS') }}">{{ _('Remove') }}<span class="visually-hidden">{{ _(' {host} from the inventory', host=h.name) }}</span>…</button>
             </td>
           </tr>
           {% endfor %}
@@ -207,6 +206,12 @@
       <div class="form-actions"><button class="btn btn--primary" type="submit">{{ _('Save hostnames') }}</button></div>
     </div>
   </form>
+  {#- Outside the form: each confirmation posts on its own. #}
+  {% for h in d.hosts %}
+  {{ m.confirm('quitar-host-' ~ loop.index, _('Remove {host}', host=h.name),
+               _('The panel stops watching and switching {host}. Its DNS is not changed: it stays wherever it is served now.', host=h.name),
+               '/dominios/' ~ d.name ~ '/hostnames/' ~ h.name ~ '/quitar', _('Remove hostname')) }}
+  {% endfor %}
 </section>
 
 <section class="card" aria-labelledby="config">
