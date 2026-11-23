@@ -343,7 +343,7 @@ async def prune_events(state: State) -> None:
         log.info("retention: %s old events deleted", deleted)
 
 
-async def _delayed_loop(delay: int, interval: int, fn, *args) -> None:
+async def _delayed_loop(delay: int, interval: float | Callable[[], float], fn, *args) -> None:
     await asyncio.sleep(delay)  # no competir con el arranque
     await _loop(interval, fn, *args)
 
