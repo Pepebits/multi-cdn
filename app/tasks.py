@@ -266,7 +266,7 @@ async def refresh_cloudflare(state: State, alert: bool = True) -> None:
             multi = sorted(h.name for h in domain.hostnames if h.failover and counts[h.name] > 1)
             state.cf_multi_records[name] = multi
             state.cf_ok_at[name] = datetime.now(UTC)
-        except (RuntimeError, httpx.HTTPError) as exc:
+        except (RuntimeError, ValueError, httpx.HTTPError) as exc:  # ValueError: a 5xx HTML page, not JSON
             state.cf_sync_errors[name] = error_reporting.scrub_origin(str(exc) or type(exc).__name__)[:200]
             continue
         for h in domain.hostnames:

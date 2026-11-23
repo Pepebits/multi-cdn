@@ -255,3 +255,26 @@ def test_old_events_table_gets_the_code_column(tmp_path):
     assert store.list()[0].code is None
     store.add(actor="auto", kind="alert", summary="nuevo", code=event_codes.BLOCK_END)
     assert store.list()[0].code == event_codes.BLOCK_END
+
+
+def test_failed_delivery_is_retried_and_noted_in_the_history(tmp_path):
+    from app.db import EventStore
+    answers = [500, 500, 200]
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        status = answers.pop(0) if answers else 500
+        return httpx.Response(status, json={"ok": status == 200})
+
+    transport = httpx.MockTransport(handler)
+    store = EventStore(tmp_path / "e.db")
+    n = Notifier(FakeSecrets(telegram_token="t", telegram_chat_id="42"),
+                 client_factory=lambda **kw: httpx.AsyncClient(transport=transport, **kw),
+                 events=store, retry_delays=(0, 0))
+    assert asyncio.run(n.send(ev("alert", "Bloqueo"))) == {"telegram": "ok"} and len(calls) == 3
+    assert store.stats()["count"] == 0  # delivered on the third try: nothing to note
+    assert asyncio.run(n.send(ev("alert", "Bloqueo"))) == {"telegram": "HTTP 500"}
+    noted = store.list(limit=1)[0]
+    assert noted.kind == "verify" and "Aviso no entregado por Telegram (HTTP 500): Bloqueo" == noted.summary
+    assert not should_notify({"kind": noted.kind, "summary": noted.summary})  # never notified: no loop

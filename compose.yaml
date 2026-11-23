@@ -5,7 +5,8 @@
 services:
   panel:
     # Imagen publicada; `docker compose up -d --build` la construye desde este repo en su lugar.
-    image: ghcr.io/pepebits/multi-cdn:latest
+    # MULTICDN_VERSION (in .env, e.g. 0.3.5) pins a release; going back is changing it and `up -d`.
+    image: ghcr.io/pepebits/multi-cdn:${MULTICDN_VERSION:-latest}
     build: .
     container_name: multicdn-panel
     restart: unless-stopped

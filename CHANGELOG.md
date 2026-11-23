@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Gcore is watched while it serves.** Every 2 min, while a domain resolves to Gcore, the panel
+  repeats the pre-switch checks (resource active, edge resolves and answers HTTPS for each
+  hostname). It alerts on the second failure in a row, once, and again when Gcore serves it.
+  From the server it cannot see blocks inside Spanish ISPs, only Gcore failing for everyone.
+- `MULTICDN_VERSION` in `.env` pins the image version (`latest` by default), to roll back.
+
+### Fixed
+- **A broken block feed no longer reads as "no blocks".** A feed with too few IPs (under 300; a
+  real one lists about 3,100), fewer than 3 known ISPs, or under half the IPs of the previous
+  read is rejected: the last good read stays, goes stale after 10 min and the engine stops
+  deciding, as when the feed is down. Before, an empty or reshaped feed could send a domain back
+  to Cloudflare in the middle of a block. The alert says why the feed was rejected.
+- Telegram and email alerts are retried twice (after 5 and 30 s); if they still fail, the history
+  notes it.
+- A Cloudflare error page in HTML no longer stops that cycle's reading of every domain.
+
 ## [0.3.5] - 2026-11-22
 
 ### Added

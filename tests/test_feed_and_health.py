@@ -307,6 +307,17 @@ def test_cloudflare_read_failure_alerts_once_and_recovers(cf_state):
     assert summaries(cf_state)[0] == "Cloudflare vuelve a poder leerse con la credencial «Main» (falló durante 20 min)"
 
 
+def test_cloudflare_html_error_page_does_not_stop_the_read(cf_state, monkeypatch):
+    """A 5xx answered with an HTML page (not JSON) counts as that domain failing, not as a crash."""
+    import json as _json
+
+    async def html_page(token, zone_id):
+        raise _json.JSONDecodeError("Expecting value", "<html>502 Bad Gateway</html>", 0)
+    monkeypatch.setattr(tasks.cf, "list_web_records", html_page)
+    asyncio.run(tasks.refresh_cloudflare(cf_state, alert=False))
+    assert "example.com" in cf_state.cf_sync_errors and cf_state.cf_sync_at is not None
+
+
 def test_cloudflare_read_without_alerts_from_the_cli(cf_state):
     for _ in range(2):
         asyncio.run(tasks.refresh_cloudflare(cf_state, alert=False))

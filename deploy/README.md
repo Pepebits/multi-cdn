@@ -474,6 +474,11 @@ update that line yourself.
 cd /var/www/multi-cdn && git pull && deploy/install.sh
 ```
 
+**Pin or roll back** a version: set `MULTICDN_VERSION=0.3.5` (any published release) in `.env`
+and run `docker compose up -d`. Without it the panel follows `latest`. A database backup is
+taken daily; before going back across a release that changed the database, restore the backup
+made before upgrading.
+
 From 0.3.0 or earlier to 0.3.2: run `deploy/install.sh` after `git pull`, as the user who will
 own the panel (not root): from now on the container runs as that user, so the script gives it
 `data/` (it belonged to uid 10001) and `config/`, and writes `MULTICDN_UID`/`MULTICDN_GID` to

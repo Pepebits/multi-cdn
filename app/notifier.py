@@ -30,6 +30,7 @@ from .i18n import tn
 log = logging.getLogger("multicdn.notify")
 DEDUP_SECONDS = 600
 BLOCK_BURST, BLOCK_WINDOW = 4, 3600
+RETRY_DELAYS = (5, 30)  # seconds before the 2nd and 3rd attempt of a failed delivery
 BLOCK_CODES = (event_codes.BLOCK_START, event_codes.BLOCK_END)
 # Configuración que se avisa: la primera preparación y las renovaciones automáticas (una
 # actualización la lanza el usuario, que ya lo ve en el panel).
@@ -65,9 +66,12 @@ def format_text(event: dict) -> tuple[str, str]:
 
 
 class Notifier:
-    def __init__(self, secrets, client_factory=httpx.AsyncClient):
+    def __init__(self, secrets, client_factory=httpx.AsyncClient, events=None, retry_delays=RETRY_DELAYS):
         self.secrets = secrets
         self.client_factory = client_factory
+        # Where to note an alert that could not be delivered (the history); None in tests.
+        self.events = events
+        self.retry_delays = retry_delays
         self._recent: dict[str, float] = {}
         self._block_sent: dict[str, list[float]] = {}  # dominio -> envíos de inicio/fin de bloqueo en la última hora
 
@@ -99,13 +103,27 @@ class Notifier:
         subject, body = format_text(event)
         results = {}
         if self.secrets.get("telegram_token") and self.secrets.get("telegram_chat_id"):
-            results["telegram"] = await self._telegram(body)
+            results["telegram"] = await self._retry(lambda: self._telegram(body))
         if self.secrets.get("smtp_url") and self.secrets.get("alert_email_to"):
-            results["email"] = await asyncio.to_thread(self._email, subject, body)
+            results["email"] = await self._retry(lambda: asyncio.to_thread(self._email, subject, body))
         for channel, outcome in results.items():
             if outcome != "ok":
                 log.error("%s notification not sent: %s", channel, outcome)
+                if self.events is not None:  # kind "verify" is never notified: no loop
+                    self.events.add(actor="auto", kind="verify", domain=event.get("domain"), summary=tn(
+                        "Alert not delivered by {channel} ({error}): {summary}", channel=channel.capitalize(),
+                        error=outcome, summary=event["summary"][:200]))
         return results
+
+    async def _retry(self, attempt) -> str:
+        """Tries once and again after each delay in retry_delays; the last outcome."""
+        outcome = await attempt()
+        for delay in self.retry_delays:
+            if outcome == "ok":
+                break
+            await asyncio.sleep(delay)
+            outcome = await attempt()
+        return outcome
 
     async def _telegram(self, text: str) -> str:
         token, chat = self.secrets.get("telegram_token"), self.secrets.get("telegram_chat_id")

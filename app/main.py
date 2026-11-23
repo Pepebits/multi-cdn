@@ -88,7 +88,7 @@ async def lifespan(app: FastAPI):
     events = EventStore(db_path)
     load_notify_lang(events)
     env_sync.sync(secrets, events, creds)  # config/secrets.env has priority at startup
-    events.listeners.append(Notifier(secrets))
+    events.listeners.append(Notifier(secrets, events=events))
     state = State(
         store=store, secrets=secrets, creds=creds, auth=AuthStore(secrets), events=events,
         dry_run_env=os.environ.get("MULTICDN_DRY_RUN", "true").lower() != "false",

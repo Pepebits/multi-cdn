@@ -25,5 +25,6 @@
   "{n} IPs, down from {before} in the previous read": "{n} IPs, frente a {before} en la lectura anterior",
   "{domain}: Gcore is not serving it while it is the active CDN": "{domain}: Gcore no lo sirve y es el CDN activo",
   "Gcore is not serving {domain}: {problem}": "Gcore no está sirviendo {domain}: {problem}",
-  "Gcore serves {domain} again (it failed for {minutes} min)": "Gcore vuelve a servir {domain} (falló durante {minutes} min)"
+  "Gcore serves {domain} again (it failed for {minutes} min)": "Gcore vuelve a servir {domain} (falló durante {minutes} min)",
+  "Alert not delivered by {channel} ({error}): {summary}": "Aviso no entregado por {channel} ({error}): {summary}"
 }
