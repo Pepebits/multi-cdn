@@ -260,3 +260,47 @@ def domain_timeline(events, failover_hosts: list[str], current: dict[str, str], 
             periods.append(Period("match", m.kickoff, m.kickoff + match_length, detail=f"{m.competition}: {m.name}"))
     periods.sort(key=lambda p: (p.start, p.kind))
     return {"start": start, "end": end, "now": now, "segments": segments, "periods": periods}
+
+
+# ---------------------------------------------------------------- one domain over a period
+
+@dataclass
+class DomainPeriod:
+    """What happened to one domain in [start, end): where it was served, its block episodes, how
+    long it stayed unprotected (blocked while on Cloudflare) and the real switches. Shared by the
+    statistics page and the weekly summary, so both give the same numbers."""
+    name: str
+    segments: list[Segment]
+    blocks: list[Interval]
+    exposed: list[timedelta]     # per block, same order as `blocks`
+    on_gcore: list[timedelta]    # per block
+    gcore_time: timedelta
+    switches_auto: int
+    switches_manual: int
+
+    @property
+    def exposed_total(self) -> timedelta:
+        return sum(self.exposed, timedelta(0))
+
+
+def domain_period(state, name: str, start: datetime, end: datetime, now: datetime, known_ips=None) -> DomainPeriod:
+    cfg = state.inventory.domains[name]
+    hosts = [h.name for h in cfg.hostnames if h.failover] or [h.name for h in cfg.hostnames]
+    current = {h: r.provider for h in hosts if (r := state.resolutions.get(h))}
+    events = state.events.list(domain=name, limit=5000)
+    auto = manual = 0
+    for e in events:  # only the switches that moved a hostname that switches
+        if e.is_real_switch and start <= e.ts < end and any(d[0] in hosts for d in e.dns_diff):
+            auto, manual = (auto + 1, manual) if e.actor == "auto" else (auto, manual + 1)
+    segs = cdn_segments(events, hosts, current, start, min(end, now))
+    known = known_ips if known_ips is not None else state.engine.known_ips()
+    ivs = block_intervals(state.feed, known.get(name, []), start, end) if state.feed else []
+    on_gcore, exposed = [], []
+    for iv in ivs:
+        iv_end = iv.end or now
+        covered = sum((overlap(iv.start, iv_end, g.start, g.end) for g in segs if g.kind == "gcore"), timedelta(0))
+        on_gcore.append(covered)
+        exposed.append(max(iv.duration(now) - covered, timedelta(0)))
+    gcore_time = sum((g.end - g.start for g in segs if g.kind == "gcore"), timedelta(0))
+    return DomainPeriod(name, segs, ivs, exposed, on_gcore, gcore_time, auto, manual)
+

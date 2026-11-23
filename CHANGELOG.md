@@ -7,6 +7,10 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Weekly summary** every Monday at 07:00 UTC, through Telegram and email: the last 7 days of each
+  domain (block episodes, time unprotected, time on Gcore, switches), the mass-block hours and
+  the problems still open. On by default; switch it off in Settings → Notifications. It uses the
+  same calculation as the statistics page, so both give the same numbers.
 - **Backups are checked.** Each daily copy (and `app.cli backup`) is opened read-only right after
   and must pass SQLite's integrity check with the panel's tables in it. A failed or broken copy
   raises an alert and shows in open problems; before, it only went to the log.

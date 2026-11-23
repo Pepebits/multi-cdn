@@ -113,21 +113,15 @@ async def estadisticas(request: Request, dias: int = 7):
     rows, episodes = [], []
     gcore_time, switches = timedelta(0), {"auto": 0, "manual": 0}
     exposed_time = timedelta(0)  # blocked at some ISP while still served by Cloudflare
-    for name, cfg in s.inventory.ordered_domains():
-        hosts = [h.name for h in cfg.hostnames if h.failover] or [h.name for h in cfg.hostnames]
-        current = {h: r.provider for h in hosts if (r := s.resolutions.get(h))}
-        events = s.events.list(domain=name, limit=5000)
-        for e in events:  # solo cuentan los cambios que movieron algún hostname que conmuta
-            if e.is_real_switch and start <= e.ts < end and any(d[0] in hosts for d in e.dns_diff):
-                switches["auto" if e.actor == "auto" else "manual"] += 1
-        segs = stats.cdn_segments(events, hosts, current, start, min(end, now))
-        gcore_time += sum((g.end - g.start for g in segs if g.kind == "gcore"), timedelta(0))
-        ivs = stats.block_intervals(s.feed, known.get(name, []), start, end) if s.feed else []
-        for iv in ivs:
+    for name, _cfg in s.inventory.ordered_domains():
+        dp = stats.domain_period(s, name, start, end, now, known)
+        switches["auto"] += dp.switches_auto
+        switches["manual"] += dp.switches_manual
+        gcore_time += dp.gcore_time
+        exposed_time += dp.exposed_total
+        segs, ivs = dp.segments, dp.blocks
+        for iv, on_gcore, exposed in zip(ivs, dp.on_gcore, dp.exposed):
             iv_end = iv.end or now
-            on_gcore = sum((stats.overlap(iv.start, iv_end, g.start, g.end) for g in segs if g.kind == "gcore"), timedelta(0))
-            exposed = max(iv.duration(now) - on_gcore, timedelta(0))
-            exposed_time += exposed
             match = next((label for b0, b1, label in bands if b0 < iv_end and b1 > iv.start), None)
             episodes.append({"domain": name, "start": iv.start, "end": iv.end, "duration": stats.fmt_duration(iv.duration(now)),
                              "isps": iv.max_isps, "isp_names": ", ".join(sorted(hayahora.ISPS.get(i) or i for i in iv.isps)),

@@ -37,7 +37,8 @@ time.
 - 🧱 **Origin firewall**: only the CDNs can reach ports 80/443, plus a secret header so
   nobody else can use a CDN to reach your server.
 - 🔔 **Alerts**: Telegram, email (retried if they fail) and an external heartbeat if the panel
-  itself goes down. A stuck panel restarts itself and tells you why.
+  itself goes down. A stuck panel restarts itself and tells you why. A weekly summary every
+  Monday.
 - 🆘 **Emergency sheet**: how to switch each domain by hand in the Cloudflare dashboard if the
   server is down, without the origin IP in it.
 - 💾 **Checked backups**: a daily copy of the database, verified right after it is written.

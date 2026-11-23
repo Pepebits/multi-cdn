@@ -277,7 +277,19 @@ async def ajustes_notificaciones(request: Request):
     return _settings_page(request, "notificaciones", "ajustes_notificaciones.html",
                           fields={f.name: f for f in s.secrets.all_status()}, beat=s.last_beat,
                           beat_failures=[tr(x) for x in failures], beat_notes=[tr(x) for x in notes],
-                          notify_lang=i18n.notify_lang(), quota_gb=s.events.get_setting("gcore_quota_gb"))
+                          notify_lang=i18n.notify_lang(), quota_gb=s.events.get_setting("gcore_quota_gb"),
+                          weekly_summary=bool(s.events.get_setting("weekly_summary")))
+
+
+@router.post("/ajustes/notificaciones/resumen")
+async def resumen_semanal(request: Request, enabled: str = Form("")):
+    s = _state(request)
+    on = enabled == "1"
+    s.events.set_setting("weekly_summary", int(on))
+    s.events.add(actor=_actor(request), kind="config",
+                 summary=tn("Weekly summary enabled") if on else tn("Weekly summary disabled"))
+    return _card(request.url_for("ajustes_notificaciones"), "resumen",
+                 ok=tr("Weekly summary enabled") if on else tr("Weekly summary disabled"))
 
 
 CHANNELS = {"telegram": ("telegram_token", "telegram_chat_id"), "email": ("smtp_url", "alert_email_to")}

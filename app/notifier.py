@@ -34,7 +34,7 @@ RETRY_DELAYS = (5, 30)  # seconds before the 2nd and 3rd attempt of a failed del
 BLOCK_CODES = (event_codes.BLOCK_START, event_codes.BLOCK_END)
 # Configuración que se avisa: la primera preparación y las renovaciones automáticas (una
 # actualización la lanza el usuario, que ya lo ve en el panel).
-NOTIFIED_CONFIG = (event_codes.GCORE_PREPARED, event_codes.CERT_RENEWED)
+NOTIFIED_CONFIG = (event_codes.GCORE_PREPARED, event_codes.CERT_RENEWED, event_codes.WEEKLY_SUMMARY)
 ICON = {"switch": "🔀", "alert": "⚠️", "error": "❌", "auth": "🔐", "config": "✅"}
 
 
@@ -53,12 +53,17 @@ def should_notify(event: dict) -> bool:
 
 def format_text(event: dict) -> tuple[str, str]:
     """Devuelve (asunto, cuerpo en texto plano)."""
-    title = f"{ICON.get(event['kind'], 'ℹ️')} {event.get('domain') or 'Multi-CDN'}: {event['summary']}"
+    weekly = event.get("code") == event_codes.WEEKLY_SUMMARY
+    icon = "📊" if weekly else ICON.get(event["kind"], "ℹ️")
+    title = f"{icon} {event.get('domain') or 'Multi-CDN'}: {event['summary']}"
     lines = [title]
     if event.get("transition"):
         lines.append(tn("Switch: {transition}", transition=event["transition"]))
     for host, before, after in event.get("dns_diff") or []:
         lines.append(f"  {host}: {before} → {after}")
+    if weekly:
+        lines += event.get("signals") or []  # one line per domain, not "Signals: a · b"
+        return title[:150], "\n".join(lines)
     if event.get("signals"):
         lines.append(tn("Signals: {signals}", signals=" · ".join(event["signals"])))
     lines.append(tn("By: {actor}", actor=event["actor"]))

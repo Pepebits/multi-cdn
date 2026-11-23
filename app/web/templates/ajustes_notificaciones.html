@@ -87,6 +87,19 @@
 </section>
 {{ remove_dialog(fields.heartbeat_url) }}
 
+<section class="card" aria-labelledby="resumen">
+  <div class="card__head"><h2 id="resumen">{{ m.icon('chart') }} {{ _("Weekly summary") }}</h2>
+    <span class="pill {{ 'pill--free' if weekly_summary else 'pill--nodata' }}">{{ _("On") if weekly_summary else _("Off") }}</span></div>
+  {{ m.card_flash(flash, 'resumen') }}
+  <form method="post" action="/ajustes/notificaciones/resumen">{{ csrf_field() }}
+    <input type="hidden" name="enabled" value="{{ '0' if weekly_summary else '1' }}">
+    <div class="card__body stack-gap">
+      <p class="card__intro">{{ _("Every Monday at 07:00 UTC, through the same channels as the alerts: the last 7 days of each domain (block episodes, time unprotected, time on Gcore, switches), the mass-block hours and the problems still open.") }}</p>
+    </div>
+    <div class="card__foot actions-end"><button class="btn {{ '' if weekly_summary else 'btn--primary' }}" type="submit">{{ _("Turn off") if weekly_summary else _("Turn on") }}</button></div>
+  </form>
+</section>
+
 <section class="card" aria-labelledby="idioma">
   <div class="card__head"><h2 id="idioma">{{ m.icon('language') }} {{ _("Language of history and alerts") }}</h2></div>
   {{ m.card_flash(flash, 'idioma') }}
