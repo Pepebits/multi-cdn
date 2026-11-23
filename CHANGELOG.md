@@ -22,6 +22,10 @@ All notable changes to this project are documented here. The format follows
 - Telegram and email alerts are retried twice (after 5 and 30 s); if they still fail, the history
   notes it.
 - A Cloudflare error page in HTML no longer stops that cycle's reading of every domain.
+- **Certificate renewal no longer gets in the way of a switch.** It waits while the domain is
+  blocked, served by Gcore or inside a match window (it updates the Gcore resource, which then
+  propagates for a few minutes), except in its last 7 days. If certbot keeps the current
+  certificate, Gcore is not touched and no "renewed" alert is sent; it is tried again the next day.
 
 ## [0.3.5] - 2026-11-22
 

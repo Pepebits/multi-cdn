@@ -278,3 +278,73 @@ def test_failed_delivery_is_retried_and_noted_in_the_history(tmp_path):
     noted = store.list(limit=1)[0]
     assert noted.kind == "verify" and "Aviso no entregado por Telegram (HTTP 500): Bloqueo" == noted.summary
     assert not should_notify({"kind": noted.kind, "summary": noted.summary})  # never notified: no loop
+
+
+def _renewal_setup(make_client, monkeypatch, days_left: int, new_cert_days: int = 90):
+    """example.com on Gcore with a certificate that expires in `days_left`; certbot returns one
+    valid for `new_cert_days` (the same date as now = it kept the current one)."""
+    client = make_client(ORIGIN_VPS1_IPV4="192.0.2.10")
+    state = client.app.state.mc
+    calls = {"uploaded": 0, "resource": 0}
+    current = (datetime.now(UTC) + timedelta(days=days_left)).replace(microsecond=0)
+
+    async def account_cname(token): return "cl-test.gcorecdn.com"
+    async def ensure_origin_group(token, name, ip): return 11
+    async def upload_certificate(token, name, fc, pk):
+        calls["uploaded"] += 1
+        return 99
+    async def ensure_resource(token, payload):
+        calls["resource"] += 1
+        return 33
+    async def probe_edge(edge, host): return True, "ok"
+    async def delete_certificate(token, ssl_id): pass
+    async def issue(cert_name, hostnames, cf_token, log):
+        not_after = current if new_cert_days == days_left else datetime.now(UTC) + timedelta(days=new_cert_days)
+        return certs.IssuedCert("FC", "KEY", not_after, hostnames)
+    for mod, fn in ((gcore, account_cname), (gcore, ensure_origin_group), (gcore, upload_certificate),
+                    (gcore, ensure_resource), (gcore, probe_edge), (gcore, delete_certificate), (certs, issue)):
+        monkeypatch.setattr(mod, fn.__name__, fn)
+    cf_id = state.creds.add("cloudflare", "CF", "cf-token-123456")
+    gc_id = state.creds.add("gcore", "GC", "gc-token-123456")
+    state.store.set_credentials("example.com", cf_id, gc_id)
+    state.store.set_gcore("example.com", 33, 22, current.isoformat(), "cl-test.gcorecdn.com",
+                          ["example.com", "www.example.com"])
+    state.reload()
+    return state, calls
+
+
+def test_renewal_with_an_unchanged_certificate_does_not_touch_gcore(make_client, monkeypatch):
+    state, calls = _renewal_setup(make_client, monkeypatch, days_left=20, new_cert_days=20)
+    asyncio.run(gcore_setup.renew_due_certificates(state))
+    assert calls == {"uploaded": 0, "resource": 0}
+    assert not [e for e in state.events.list(limit=5) if e.kind in ("config", "error")]
+    assert state.jobs["example.com"].ok
+
+
+def test_renewal_waits_while_the_domain_is_on_gcore_or_blocked(make_client, monkeypatch):
+    from app.signals.dnscheck import Resolution
+    state, calls = _renewal_setup(make_client, monkeypatch, days_left=20)
+    state.resolutions = {h: Resolution(h, ("5.188.126.61",), "cl-test.gcorecdn.com.", "gcore")
+                         for h in ("example.com", "www.example.com")}
+    assert asyncio.run(gcore_setup.renew_due_certificates(state)) == []
+    state.resolutions = {}
+    state.blocked_domains.add("example.com")
+    assert asyncio.run(gcore_setup.renew_due_certificates(state)) == []
+    assert calls["resource"] == 0
+    state.blocked_domains.clear()
+    assert asyncio.run(gcore_setup.renew_due_certificates(state)) == ["example.com"] and calls["resource"] == 1
+
+
+def test_renewal_waits_during_a_match_window(make_client, monkeypatch):
+    from app.signals.calendar import Calendar, Match
+    state, calls = _renewal_setup(make_client, monkeypatch, days_left=20)
+    now = datetime.now(UTC)
+    state.calendar = Calendar([Match("LaLiga", "A", "B", now + timedelta(minutes=30), "scheduled")], fetched_at=now)
+    assert gcore_setup.renewal_busy(state, "example.com", now) is not None
+    assert asyncio.run(gcore_setup.renew_due_certificates(state, now)) == [] and calls["resource"] == 0
+
+
+def test_renewal_does_not_wait_past_the_last_week(make_client, monkeypatch):
+    state, calls = _renewal_setup(make_client, monkeypatch, days_left=5)
+    state.blocked_domains.add("example.com")  # busy, but only 5 days left: renew anyway
+    assert asyncio.run(gcore_setup.renew_due_certificates(state)) == ["example.com"] and calls["resource"] == 1

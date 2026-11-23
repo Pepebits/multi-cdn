@@ -26,5 +26,9 @@
   "{domain}: Gcore is not serving it while it is the active CDN": "{domain}: Gcore no lo sirve y es el CDN activo",
   "Gcore is not serving {domain}: {problem}": "Gcore no está sirviendo {domain}: {problem}",
   "Gcore serves {domain} again (it failed for {minutes} min)": "Gcore vuelve a servir {domain} (falló durante {minutes} min)",
-  "Alert not delivered by {channel} ({error}): {summary}": "Aviso no entregado por {channel} ({error}): {summary}"
+  "Alert not delivered by {channel} ({error}): {summary}": "Aviso no entregado por {channel} ({error}): {summary}",
+  "certbot kept the current certificate: Gcore was not touched; it is tried again tomorrow": "certbot ha mantenido el certificado actual: no se ha tocado Gcore; se vuelve a intentar mañana",
+  "its Cloudflare IPs are blocked": "sus IPs de Cloudflare están bloqueadas",
+  "it is being served by Gcore": "se está sirviendo por Gcore",
+  "a match is on or about to start": "hay un partido en curso o a punto de empezar"
 }

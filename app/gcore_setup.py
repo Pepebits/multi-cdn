@@ -6,6 +6,7 @@ No toca el DNS público: el dominio sigue en Cloudflare hasta que se conmute.
 from __future__ import annotations
 
 import hashlib
+import logging
 import secrets as pysecrets
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -15,6 +16,7 @@ from .error_reporting import scrub_origin
 from .i18n import format_when, notify_lang, tn, tnn, tr
 from .providers import gcore
 
+log = logging.getLogger("multicdn")
 
 
 @dataclass
@@ -93,6 +95,9 @@ async def prepare_domain(state, name: str, job: Job, renewal: bool = False) -> N
     try:
         await _prepare(state, name, job, renewal)
         job.ok = True
+    except NotRenewedYet:
+        job.log(tr("certbot kept the current certificate: Gcore was not touched; it is tried again tomorrow"))
+        job.ok = True
     except Exception as exc:  # se muestra en el panel y queda en el historial
         job.log(str(exc), "error")
         summary = tn("Certificate renewal on Gcore failed: {error}", error=exc) if renewal \
@@ -100,6 +105,10 @@ async def prepare_domain(state, name: str, job: Job, renewal: bool = False) -> N
         state.events.add(actor="auto", kind="error", domain=name, summary=summary[:500])
     finally:
         job.done = True
+
+
+class NotRenewedYet(Exception):
+    """certbot kept the current certificate: nothing to upload to Gcore (tried again tomorrow)."""
 
 
 async def _prepare(state, name: str, job: Job, renewal: bool = False) -> None:
@@ -139,6 +148,10 @@ async def _prepare(state, name: str, job: Job, renewal: bool = False) -> None:
     job.log(tr("Origin group multicdn-{server} ready (id {id}, HTTPS :443)", server=server_id, id=group_id))
 
     cert = await certs.issue(name, names, cf_token, job.log)
+    if renewal and domain.cert_not_after and cert.not_after <= datetime.fromisoformat(domain.cert_not_after):
+        # Same certificate as on Gcore (certbot decided it is not due yet): uploading it again and
+        # touching the resource would repeat the work and the "renewed" alert every day.
+        raise NotRenewedYet
     ssl_name = certificate_name(name, cert)
     ssl_id = await gcore.upload_certificate(gc_token, ssl_name, cert.fullchain, cert.privkey)
     job.log(tr("Certificate uploaded to Gcore as {name} (id {id})", name=ssl_name, id=ssl_id))
@@ -225,11 +238,37 @@ async def renew_and_check(state) -> None:
     cert_expiry_alerts(state)
 
 
-async def renew_due_certificates(state) -> list[str]:
+# Renewal starts 30 days ahead; while the domain is busy it waits, but not past this margin.
+RENEW_DEFER_UNTIL = timedelta(days=7)
+
+
+def renewal_busy(state, name: str, now: datetime | None = None) -> str | None:
+    """Why renewing this domain should wait (it updates the Gcore resource, which then propagates
+    for a few minutes and would make a switch fail its check), or None."""
+    from .engine import failover
+    now = now or datetime.now(UTC)
+    cfg = state.inventory.domains[name]
+    if name in state.blocked_domains:
+        return tn("its Cloudflare IPs are blocked")
+    view = next((v for v in state.views() if v.name == name), None)
+    if view is not None and view.status == "gcore":
+        return tn("it is being served by Gcore")
+    calendar = state.calendar
+    if calendar is not None and not calendar.is_stale(now) and calendar.active(now, failover.match_lead(state, cfg.priority)):
+        return tn("a match is on or about to start")
+    return None
+
+
+async def renew_due_certificates(state, now: datetime | None = None) -> list[str]:
     """Renueva los certificados de Gcore que caducan en menos de 30 días. Devuelve los dominios tratados."""
+    now = now or datetime.now(UTC)
     renewed = []
     for name, domain in list(state.inventory.domains.items()):
-        if not due_for_renewal(domain):
+        if not due_for_renewal(domain, now):
+            continue
+        left = datetime.fromisoformat(domain.cert_not_after) - now
+        if left > RENEW_DEFER_UNTIL and (busy := renewal_busy(state, name, now)):
+            log.info("certificate renewal of %s deferred: %s", name, busy)
             continue
         job = state.jobs[name] = Job(domain=name)
         job.log(tr("Automatic renewal: the certificate expires in less than 30 days"))
