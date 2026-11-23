@@ -42,6 +42,26 @@ jobs:
       - name: Type check
         run: uvx pyright@1.1.414 --pythonpath .venv/bin/python
 
+  e2e:
+    # The panel in a real browser (Playwright, Chromium) at desktop and phone size.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --frozen
+
+      - name: Browser
+        run: uv run playwright install --with-deps chromium
+
+      - name: Browser tests
+        run: uv run pytest -q -m e2e
+
   audit:
     runs-on: ubuntu-latest
     timeout-minutes: 10

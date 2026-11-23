@@ -15,6 +15,10 @@ All notable changes to this project are documented here. The format follows
 - **Unprotected time on the statistics page**: for each block episode, how long the domain stayed
   on Cloudflare while its IPs were blocked, and the total for the period. It shows whether the
   automatic switch (and the lead time before matches) is fast enough.
+- **Browser tests** with Playwright (`uv run pytest -m e2e`): the real panel on a throwaway
+  database, at desktop and phone size. Every page without horizontal overflow or console errors,
+  the phone navigation bar, dialog focus, typed confirmations, show/hide password, the colour
+  theme and signing in with a recovery code. CI runs them before publishing an image.
 - Tests for the code that changes things for real, against fake Cloudflare and Gcore APIs and a
   stand-in for certbot: the DNS `PATCH` of a switch, the origin guard, Gcore resources and
   certificates, the edge probe and the pre-switch checks. Coverage goes from 86 % to 89 % (Gcore

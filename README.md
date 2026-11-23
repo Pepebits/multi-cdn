@@ -135,6 +135,13 @@ uv run python -m app.cli create-user <user>
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8765
 ```
 
+Browser tests (Playwright, desktop and phone size) run apart from the rest:
+
+```bash
+uv run playwright install chromium   # once
+uv run pytest -m e2e
+```
+
 FastAPI with server-rendered templates, no frontend build. SQLite for inventory, encrypted
 credentials, history and engine state. Interface texts are English in the code, with the
 Spanish catalog in `app/locale/es/` (a test checks that nothing is missing). Examples and

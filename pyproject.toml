@@ -24,10 +24,14 @@ dependencies = [
 dev = [
     "pytest>=8.3",
     "pytest-cov>=7.1.0",
+    "pytest-playwright>=0.10.0",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Browser tests (tests/e2e) are slower and need Chromium: run them with `pytest -m e2e`.
+addopts = "-m 'not e2e'"
+markers = ["e2e: browser tests with Playwright against a running panel"]
 
 [tool.pyright]
 # Basic mode over the app code; CI runs it (a pinned pyright, see .github/workflows/ci.yml).
