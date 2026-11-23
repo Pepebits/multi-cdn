@@ -76,6 +76,8 @@ def test_page_renders_charts_tables_and_periods(client):
     assert page.count('class="c-hit"') == 360 and "c-seg--gcore" in page and "c-seg--blocked" in page
     assert "Episodios de bloqueo" in page and "3 de 5" in page and "Ver datos" in page
     assert "1 cambios reales: 1 automáticos" in page
+    # The 4 h block ended before the switch: all of it was on Cloudflare, unprotected.
+    assert "Sin protección: 4 h bloqueado mientras seguía en Cloudflare" in page
     assert client.get("/estadisticas?dias=999").status_code == 200  # periodo no válido: 7 días
 
 

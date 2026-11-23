@@ -152,5 +152,8 @@
   "{used}/{max} resources": "{used}/{max} recursos",
   "No phone? Use a recovery code": "¿Sin el móvil? Usa un código de recuperación",
   "Recovery code": "Código de recuperación",
-  "Show": "Mostrar"
+  "Show": "Mostrar",
+  "Unprotected: {time} blocked while still on Cloudflare": "Sin protección: {time} bloqueado mientras seguía en Cloudflare",
+  "Blocked while still served by Cloudflare": "Bloqueado mientras aún se servía por Cloudflare",
+  "Unprotected": "Sin protección"
 }

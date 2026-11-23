@@ -112,6 +112,7 @@ async def estadisticas(request: Request, dias: int = 7):
     known = s.engine.known_ips()
     rows, episodes = [], []
     gcore_time, switches = timedelta(0), {"auto": 0, "manual": 0}
+    exposed_time = timedelta(0)  # blocked at some ISP while still served by Cloudflare
     for name, cfg in s.inventory.ordered_domains():
         hosts = [h.name for h in cfg.hostnames if h.failover] or [h.name for h in cfg.hostnames]
         current = {h: r.provider for h in hosts if (r := s.resolutions.get(h))}
@@ -125,10 +126,13 @@ async def estadisticas(request: Request, dias: int = 7):
         for iv in ivs:
             iv_end = iv.end or now
             on_gcore = sum((stats.overlap(iv.start, iv_end, g.start, g.end) for g in segs if g.kind == "gcore"), timedelta(0))
+            exposed = max(iv.duration(now) - on_gcore, timedelta(0))
+            exposed_time += exposed
             match = next((label for b0, b1, label in bands if b0 < iv_end and b1 > iv.start), None)
             episodes.append({"domain": name, "start": iv.start, "end": iv.end, "duration": stats.fmt_duration(iv.duration(now)),
                              "isps": iv.max_isps, "isp_names": ", ".join(sorted(hayahora.ISPS.get(i) or i for i in iv.isps)),
                              "gcore_pct": round(100 * on_gcore / iv.duration(now)) if iv.duration(now) else 0,
+                             "exposed": stats.fmt_duration(exposed) if exposed >= timedelta(minutes=1) else "—",
                              "match": match})
         rows.append({
             "name": name,
@@ -151,6 +155,7 @@ async def estadisticas(request: Request, dias: int = 7):
     return templates.TemplateResponse(request, "estadisticas.html", _common(
         request, "estadisticas", days=days, periods=list(stats.PERIODS), start=start, end=end,
         kpi={"mass_hours": mass_hours, "episodes": len(episodes), "gcore_time": stats.fmt_duration(gcore_time),
+             "exposed_time": stats.fmt_duration(exposed_time),
              "switches": switches, "traffic": human_bytes(traffic_total)},
         mass=charts.line_chart(series, start, end, step, bands) if series else None,
         daily_mass=_daily_max(series),

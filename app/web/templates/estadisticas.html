@@ -29,6 +29,7 @@
       <p class="stat__label">{{ _("Block episodes") }}</p>
       <p class="stat__value">{{ kpi.episodes }}</p>
       <p class="stat__note">{{ _("Cloudflare IPs of your domains blocked at some ISP") }}</p>
+      {% if kpi.episodes %}<p class="stat__note">{{ _("Unprotected: {time} blocked while still on Cloudflare", time=kpi.exposed_time) }}</p>{% endif %}
     </div>
     <div class="card stat">
       <p class="stat__label">{{ _("Time on Gcore") }}</p>
@@ -144,7 +145,7 @@
   {% if episodes %}
   <div class="table-wrap">
     <table class="data">
-      <thead><tr><th scope="col">{{ _("Domain") }}</th><th scope="col">{{ _("Start") }}</th><th scope="col">{{ _("Duration") }}</th><th scope="col">{{ _("ISPs") }}</th><th scope="col" class="num">{{ _("On Gcore") }}</th><th scope="col">{{ _("Match") }}</th></tr></thead>
+      <thead><tr><th scope="col">{{ _("Domain") }}</th><th scope="col">{{ _("Start") }}</th><th scope="col">{{ _("Duration") }}</th><th scope="col">{{ _("ISPs") }}</th><th scope="col" class="num">{{ _("On Gcore") }}</th><th scope="col" title="{{ _('Blocked while still served by Cloudflare') }}">{{ _("Unprotected") }}</th><th scope="col">{{ _("Match") }}</th></tr></thead>
       <tbody>
       {% for e in episodes %}
         <tr>
@@ -153,6 +154,7 @@
           <td>{{ e.duration }}{% if not e.end %} <span class="pill pill--blocked">{{ _("Ongoing") }}</span>{% endif %}</td>
           <td><span title="{{ e.isp_names }}">{{ _("{n} of 5", n=e.isps) }}</span></td>
           <td class="num">{{ e.gcore_pct }} %</td>
+          <td>{{ e.exposed }}</td>
           <td>{{ e.match or '—' }}</td>
         </tr>
       {% endfor %}
