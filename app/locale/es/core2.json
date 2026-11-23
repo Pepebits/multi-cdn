@@ -7,7 +7,6 @@
   "API key valid · account DNS target: {cname}": "API key válida · destino DNS de la cuenta: {cname}",
   "Alert email": "Email de avisos",
   "Applied. Automatic mode for this domain is paused for 1 h.": "Aplicado. El automático de este dominio queda en pausa 1 h.",
-  "Backup saved to {path}": "Copia guardada en {path}",
   "Bot created with @BotFather.": "Bot creado con @BotFather.",
   "Cancelled: nothing has changed": "Cancelado: no se ha cambiado nada",
   "Chat or group that receives the alerts.": "Chat o grupo que recibe los avisos.",

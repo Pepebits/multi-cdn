@@ -40,6 +40,26 @@ def backup(dest: Path | None = None, keep: int = KEEP) -> Path:
     return dest
 
 
+REQUIRED_TABLES = ("events", "settings", "secrets", "servers", "domains", "hostnames", "users")
+
+
+def verify(path: Path) -> str | None:
+    """None if the copy can be restored: SQLite's integrity check passes and the panel's tables are
+    there. Otherwise, what is wrong. Opens it read-only: checking never changes the copy."""
+    try:
+        with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as conn:
+            result = conn.execute("PRAGMA integrity_check").fetchone()[0]
+            if result != "ok":
+                return f"integrity_check: {result}"
+            tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if missing := [t for t in REQUIRED_TABLES if t not in tables]:
+                return "missing tables: " + ", ".join(missing)
+            conn.execute("SELECT COUNT(*) FROM events").fetchone()
+    except sqlite3.Error as exc:
+        return f"{type(exc).__name__}: {exc}"
+    return None
+
+
 def prune(folder: Path, keep: int = KEEP) -> None:
     """Conserva las últimas `keep` copias y borra sus ficheros auxiliares y los huérfanos."""
     copies = sorted(folder.glob("multicdn-*.db"))

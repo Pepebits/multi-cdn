@@ -47,5 +47,10 @@
   "{domain}: Gcore could not serve it if it had to switch": "{domain}: Gcore no podría servirlo si hubiera que cambiar",
   "its own tasks were stopped for {minutes} min ({loops})": "sus propias tareas llevaban {minutes} min paradas ({loops})",
   "it stopped responding for more than {minutes} min": "dejó de responder durante más de {minutes} min",
-  "The panel restarted itself: {reason}": "El panel se ha reiniciado solo: {reason}"
+  "The panel restarted itself: {reason}": "El panel se ha reiniciado solo: {reason}",
+  "The daily database backup failed: {problem}": "Ha fallado la copia diaria de la base de datos: {problem}",
+  "The daily database backup works again": "La copia diaria de la base de datos vuelve a funcionar",
+  "Backup saved to {path}, but it failed its check: {problem}": "Copia guardada en {path}, pero no ha pasado la comprobación: {problem}",
+  "Backup saved to {path} and checked": "Copia guardada en {path} y comprobada",
+  "The daily database backup is failing": "La copia diaria de la base de datos está fallando"
 }

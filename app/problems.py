@@ -66,6 +66,9 @@ def _alert_items(state, now: datetime) -> list[Problem]:
             codes = failover.readiness(state, cfg)
             anchor = "#gcore" if codes == ["not_prepared"] else "#config"
             out.append(Problem(key, "warn", text, since, _domain_href(name, anchor), name))
+        elif key == "backup":
+            out.append(Problem(key, "error", tr("The daily database backup is failing"), since,
+                               "/ajustes/sistema", _settings("System")))
         elif key.startswith("gcore_ready:"):
             name = key.removeprefix("gcore_ready:")
             out.append(Problem(key, "error", tr("{domain}: Gcore could not serve it if it had to switch", domain=name),

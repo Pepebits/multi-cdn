@@ -331,10 +331,21 @@ async def check_firewall(state: State) -> None:
     firewall_status.check(state)
 
 
-async def daily_backup(state: State) -> None:
-    from .backup import backup
-    path = await asyncio.to_thread(backup)
-    log.info("backup: %s", path)
+async def daily_backup(state: State, now: datetime | None = None) -> None:
+    """The daily copy of the database, checked right after: a copy nobody can restore is no copy."""
+    from .backup import backup, verify
+    try:
+        path = await asyncio.to_thread(backup)
+        problem = await asyncio.to_thread(verify, path)
+    except Exception as exc:  # disk full, permissions…: alert instead of only logging
+        path, problem = None, f"{type(exc).__name__}: {exc}"
+    if problem:
+        log.error("backup failed: %s", problem)
+        alerts.problem(state, "backup", tn("The daily database backup failed: {problem}", problem=problem[:200]),
+                       kind="error", now=now)
+        return
+    log.info("backup: %s (verified)", path)
+    alerts.clear(state, "backup", tn("The daily database backup works again"), kind="alert", now=now)
 
 
 async def prune_events(state: State) -> None:

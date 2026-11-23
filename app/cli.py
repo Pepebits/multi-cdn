@@ -137,7 +137,13 @@ def main(argv: list[str] | None = None) -> int:
         from .backup import backup
         load_dotenv()
         _speak_notify_lang()
-        print(tn("Backup saved to {path}", path=backup(Path(args.destination) if args.destination else None)))
+        from .backup import verify
+        path = backup(Path(args.destination) if args.destination else None)
+        if problem := verify(path):
+            print(tn("Backup saved to {path}, but it failed its check: {problem}", path=path, problem=problem),
+                  file=sys.stderr)
+            return 1
+        print(tn("Backup saved to {path} and checked", path=path))
         return 0
     if args.cmd == "emergency-sheet":
         from .emergency import sheet

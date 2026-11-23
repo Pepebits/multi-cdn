@@ -7,6 +7,9 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Backups are checked.** Each daily copy (and `app.cli backup`) is opened read-only right after
+  and must pass SQLite's integrity check with the panel's tables in it. A failed or broken copy
+  raises an alert and shows in open problems; before, it only went to the log.
 - **The panel restarts itself when it is stuck.** Docker restarts a container whose process exits,
   not one that is hung. A watchdog ends the process if the event loop stops responding for 5 min
   or the panel's own tasks stay stopped for 20 min, so Docker starts it again; the next start
