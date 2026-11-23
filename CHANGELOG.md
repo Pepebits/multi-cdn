@@ -7,7 +7,7 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
-- **Gcore is watched while it serves.** Every 2 min, while a domain resolves to Gcore, the panel
+- **Gcore is watched while it serves.** Every 5 min, while a domain resolves to Gcore, the panel
   repeats the pre-switch checks (resource active, edge resolves and answers HTTPS for each
   hostname). It alerts on the second failure in a row, once, and again when Gcore serves it.
   From the server it cannot see blocks inside Spanish ISPs, only Gcore failing for everyone.

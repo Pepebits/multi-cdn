@@ -37,8 +37,8 @@ USAGE_INTERVAL = 3600
 BACKUP_INTERVAL = 24 * 3600
 HEARTBEAT_INTERVAL = 300
 ORIGIN_HEALTH_INTERVAL = 120
-GCORE_WATCH_INTERVAL = 120
-GCORE_WATCH_AFTER = timedelta(minutes=3)  # alert on the second failed check in a row
+GCORE_WATCH_INTERVAL = 300
+GCORE_WATCH_AFTER = timedelta(minutes=4)  # alert on the second failed check in a row (5 min apart)
 
 
 async def refresh_feed(state: State, now: datetime | None = None) -> None:
@@ -371,7 +371,7 @@ async def recheck_dns_soon(state: State) -> None:
 
 
 async def watch_gcore(state: State, now: datetime | None = None) -> None:
-    """While a domain is served by Gcore (public DNS), check that Gcore still serves it: the same
+    """While a domain is served by Gcore (public DNS), check every 5 min that Gcore still serves it: the same
     checks as before a switch (resource active, edge resolves and answers HTTPS for each hostname).
     From the VPS this cannot see blocks inside Spanish ISPs, only Gcore failing for everyone."""
     for view in state.views():

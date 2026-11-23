@@ -244,14 +244,14 @@ def test_gcore_watch_alerts_on_the_second_failure_and_recovers(client, monkeypat
     monkeypatch.setattr(failover, "check_backup", check)
     asyncio.run(tasks.watch_gcore(state, now=T0))
     assert not summaries(state, "error")  # one failed check is not enough
-    asyncio.run(tasks.watch_gcore(state, now=T0 + timedelta(minutes=4)))
+    asyncio.run(tasks.watch_gcore(state, now=T0 + timedelta(minutes=5)))
     assert summaries(state, "error") == ["Gcore no está sirviendo example.com: example.com: no response from the "
                                          "Gcore edge (TimeoutError)"]
-    asyncio.run(tasks.watch_gcore(state, now=T0 + timedelta(minutes=6)))
+    asyncio.run(tasks.watch_gcore(state, now=T0 + timedelta(minutes=10)))
     assert len(summaries(state, "error")) == 1  # once, not every check
     result[0] = None
-    asyncio.run(tasks.watch_gcore(state, now=T0 + timedelta(minutes=10)))
-    assert summaries(state)[0] == "Gcore vuelve a servir example.com (falló durante 10 min)"
+    asyncio.run(tasks.watch_gcore(state, now=T0 + timedelta(minutes=15)))
+    assert summaries(state)[0] == "Gcore vuelve a servir example.com (falló durante 15 min)"
     assert not alerts.active(state, "gcore_serving:")
 
 
